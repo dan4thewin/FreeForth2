@@ -16,7 +16,7 @@ Derived from FreeForth by Christophe Lavarenne
 
 ## Dependencies
 * flat assembler, a.k.a. fasm: https://flatassembler.net/
-** Likely available in your Linux distro, e.g., `sudo apt install fasm`
+* Likely available in your Linux distro, e.g., `sudo apt install fasm`
 
 ## Building
 * run `make` which should create `ff`
