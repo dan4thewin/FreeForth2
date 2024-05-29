@@ -1673,17 +1673,21 @@ boot At startup, the FreeForth executable first compiles its binary-embedded
   until "bye" is executed.
   see also: ff.boot ff.ff ff.help bed.ff hello
 
--v` *TODO*
+-v` ( -- ) types the list of features loaded
+  see also: needs -f
 
 turnkey *TODO* (update boot entry too)
 
-doargv *TODO*
+doargv ( -- ) evaluates command line arguments as FreeForth words
+  This happens before the interactive loop in a normal session and before
+  main in a turnkey. To disable the behavior for a turnkey add
+  doargv n^
+argc ( -- n ) count of arguments provided on command line
+argv ( n -- @ # ) address and length of argument n provided on command line
+  see also: doargv argc
 
-argc *TODO*
-
-argv *TODO*
-
-append *TODO*
+append ( @src # @dst -- ) append # bytes from the string @src to the end of @dst
+  and update the initial 8-bits of @dst with the new length
 
 see *TODO* disassemble a word
   0; needs see
