@@ -1,4 +1,4 @@
-LD=ld -m elf_i386 /lib/libdl.so.2 --dynamic-linker /lib/ld-linux.so.2 -s
+LD=ld -m elf_i386 -lc --dynamic-linker=/lib/ld-linux.so.2 -s
 
 all: ff fftk
 
