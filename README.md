@@ -16,7 +16,7 @@ Derived from FreeForth by Christophe Lavarenne
 
 ## Dependencies
 * flat assembler, a.k.a. fasm: https://flatassembler.net/
-* Likely available in your Linux distro, e.g., `sudo apt install fasm`
+  * Likely available in your Linux distro, e.g., `sudo apt install fasm`
 
 ## Building
 * run `make` which should create `ff`
@@ -24,9 +24,9 @@ Derived from FreeForth by Christophe Lavarenne
 ## Building a turnkey binary
 * NB. the source should have a `main` word
 * run `ff` with `-f` for each source file and `-f mkimage` at the end
-** `mkimage` exports the dictionary to `dict` and compiled code to `cmpl`
+  * `mkimage` exports the dictionary to `dict` and compiled code to `cmpl`
 * run `make fftk`
-** this assembles `fftk.asm` which includes `dict` and `cmpl`
+  * this assembles `fftk.asm` which includes `dict` and `cmpl`
 * rename `fftk` as desired
 
 ```
