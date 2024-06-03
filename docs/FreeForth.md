@@ -1,4 +1,6 @@
-FreeForth
+> [!NOTE]
+> This page preserves the writings of Christophe Lavarenne (1956-2011) about FreeForth.  
+> FreeForth2 differs from the original in certain details called out in notes below.
 
 # FreeForth Home
 
@@ -56,7 +58,7 @@ It is _very_ small and _very_ fast, completely _free_ and fully _open source_:
 *   _very_ small: the executable is less than 16 kilobytes, and if you look inside, it's 40% binary code and 60%
 embedded source text
 *   _very_ fast: being so small, it surely fully runs inside the i386 on-chip cache memory (the fastest one); it
-instantly compiles compact and efficient native i386 code, _incrementaly_ i.e. you can edit/compile/execute code on
+instantly compiles compact and efficient native i386 code, _incrementally_ i.e. you can edit/compile/execute code on
 the fly repeatedly, which is ideal for debugging and intensive testing
 *   completely _free_: its public domain license is the most permissive, although you may want to pay me for custom
 developments or support
@@ -75,21 +77,21 @@ development. Thanks if you do.
 ## Historical Notes
 
 "FreeForth" is the name I've given to a long series of Forth umbilical development environments that I've been
-designing and using for years for developping real-time applications for embedded systems based on microcontollers
+designing and using for years for developing real-time applications for embedded systems based on microcontrollers
 and digital signal processors.
 
 It all began with the article about Forth in the Byte magazine of august 1980. Then Loeliger's book "Threaded
 Interpretive Languages" (Mc Graw Hill, ISBN 0-07-038360-X) gave good insights in a Z80 implementation.
 
 With time and experience with lots of other languages, including interactive (among which Lisp and Smalltalk), and
-with Forth cross- and meta-compilers, I wanted, and realised, ever simpler and more interactive cross-compilers:
+with Forth cross- and meta-compilers, I wanted, and realized, ever simpler and more interactive cross-compilers:
 they now have no interpreter (although well interactive), no vocabularies, and no clumsy POSTPONE (although defining
 macros has never been easier). But they were still hosted by "standard" Forth systems (thanks Gforth and W32for)
 and I wanted a consistent development system across "host" and "target": this FreeForth version is for i386 hosts
 under Linux and Windows.
 
 This public domain FreeForth version was inspired by RetroForth minimalism: a minimal bootstrap compiler, assembled
-with fasm to support operating system portability, compiles executable-embedded Forth source upto a full featured
+with fasm to support operating system portability, compiles executable-embedded Forth source up to a full featured
 interactive Forth development environment. Although this relies on fasm (which is an excellent macro-assembler),
 this is a good shortcut compared with meta-compilation.
 
@@ -182,11 +184,15 @@ etc.). When an adef is closed, the compilation pointer is automatically reset to
 and the adef is executed: this gives user interactivity, and opens a way to simpler compilation optimizations,
 freed from the usual complexity of STATE (often "smart") handling.
 
-However, users of usual Forth systems may be surprised by the unusual need to close a FreeForth adef with a ;
+However, users of usual Forth systems may be surprised by the unusual need to close a FreeForth adef with a `;`
 (after trying `1 2 + .` and not seeing the expected `3` answer, some have thought FreeForth isn't worth another
 try). However, as soon as they understand, `1 2 + . ;` (with a final `;`) indeed displays `3`, and they can even
 try adefs with control structures (which can't be interpreted by usual Forth systems) such as `4 TIMES r . REPEAT ;`
 which simply displays `3 2 1 0`.
+
+> [!TIP]
+> FreeForth2 automatically terminates an anonymous definition with ` ;` at the end of the line.
+> To continue an anonymous definition onto the next line, use `\`.
 
 FreeForth is almost PREFIX-free: apart from the main loop, only a few FreeForth words parse the input source:
 
@@ -195,7 +201,7 @@ FreeForth is almost PREFIX-free: apart from the main loop, only a few FreeForth 
 *   headers-handling words: : `create` `needs` `mark` etc.
 *   and conditional compilation words: `[IF]` `[ELSE]` `[THEN]` etc.
 
-Usual Forth systems use other prefix words (which parse the input source to override the main loop default behaviour),
+Usual Forth systems use other prefix words (which parse the input source to override the main loop default behavior),
 which FreeForth implements more conveniently:
 
 *   usual quotes (and dot-quotes) are replaced with the SPACE-free _literal compiler_ (see next paragraph)
@@ -205,7 +211,7 @@ which FreeForth implements more conveniently:
 executed at compile time, must be defined (mainly by `:`) with a final backquote appended to their name; after
 parsing a word from the input source (between delimiters among NUL HT LF VT FF CR and space), the main loop
 first appends a backquote to the word before looking for it in the headers (i.e. symbol table): if it is found
-with an appended backquote, the code the header points to is immediately executed (this is a "macro" behaviour);
+with an appended backquote, the code the header points to is immediately executed (this is a "macro" behavior);
 otherwise, the main loop removes the appended backquote, and looks again for it in the headers: if it is found
 without an appended backquote, a call is compiled if the header is marked (mainly by `:`) to point to code, or an
 inline literal is compiled if the header is marked (by `create` and derivatives) to point to data (or by `constant`
@@ -214,6 +220,9 @@ an exception if it fails.
 
 Backquoted macros are very convenient to define new macros: see
 [ff.boot](http://christophe.lavarenne.free.fr/ff/ff.boot)
+
+> [!TIP]
+> FreeForth2 permits space characters within strings.
 
 FreeForth _literal compiler_ is SPACE-free for strings, and BASE-free for numbers. It interprets the literal final
 character as follows:
@@ -235,7 +244,7 @@ character as follows:
     number (see next item), and compiles the corresponding 386 instruction(s) with immediate addressing and with
     the converted number as immediate argument
 *   otherwise, the _literal compiler_ attempts to convert the full string into a number, starting by default with
-    a decimal convertion base, which may be overriden as follows:
+    a decimal conversion base, which may be overridden as follows:
     *   `$` changes conversion base to 16 (hexadecimal)
     *   `&` changes conversion base to 8 (octal)
     *   `%` changes conversion base to 2 (binary)
@@ -270,7 +279,7 @@ on real-machines with index-accessed registers: native instructions of most proc
 "register-indexes", that most Forth implementations use with almost always the same register(s). Instead, FreeForth
 uses this "free" resource by allocating two real registers to the two DATAstack top cells, and by swapping these two
 registers indexes at compile-time (so-called "register renaming") instead of swapping their contents at run-time:
-this is an easy and efficient optimization, which encourages the almost "free" use of swap to implicitely select
+this is an easy and efficient optimization, which encourages the almost "free" use of swap to implicitly select
 "the other" register, and which implied new pop-less conditional jumps (see "conditionals" and "flow-control"
 online help topics) which also allow a good reduction of push/pops operations around them.
 

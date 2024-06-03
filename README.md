@@ -1,5 +1,5 @@
 # FreeForth2
-Derived from FreeForth by Christophe Lavarenne
+Derived from FreeForth by Christophe Lavarenne (1956-2011)
 
 ## New Features
 * turnkey support
