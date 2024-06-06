@@ -1,6 +1,6 @@
 LD=ld -m elf_i386 -lc --dynamic-linker=/lib/ld-linux.so.2 -s
 
-all: ff fftk
+all: ff
 
 ff.o: fflin.asm ff.asm fflinio.asm ff.boot fflin.boot
 	fasm $< $@

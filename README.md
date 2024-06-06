@@ -15,6 +15,8 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
 * abandoned windows support
 
 ## Dependencies
+* GCC toolchain and 32-bit libraries
+  * For example, on Ubuntu LTS run `sudo apt install build-essential gcc-multilib`
 * flat assembler, a.k.a. fasm: https://flatassembler.net/
   * Likely available in your Linux distro, e.g., `sudo apt install fasm`
 
