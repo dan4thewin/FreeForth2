@@ -20,4 +20,18 @@ fftk: fftk.o
 clean:
 	rm -f ff fftk *.o
 
-.PHONY: clean
+
+PREFIX=$$HOME/.local
+FFBIN=$(PREFIX)/bin
+install-bin: ff
+	install -m 775 -d $(FFBIN)
+	install -m 775 $^ $(FFBIN)
+
+FFSHARE=$(PREFIX)/share/ff
+install-share: ff.ff full.ff ff.help see
+	install -m 775 -d $(FFSHARE)
+	install -m 664 $^ $(FFSHARE)
+
+install: install-bin install-share
+
+.PHONY: clean install install-bin install-share

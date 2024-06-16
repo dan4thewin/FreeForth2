@@ -19,9 +19,26 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
   * For example, on Ubuntu LTS run `sudo apt install build-essential gcc-multilib`
 * flat assembler, a.k.a. fasm: https://flatassembler.net/
   * Likely available in your Linux distro, e.g., `sudo apt install fasm`
+* The `see` utility uses `ndisasm` and `less`
+  * Likely available in your Linux distro, e.g., `sudo apt install nasm less`
 
-## Building
+## Build
 * run `make` which should create `ff`
+
+## Install
+* run `make install` to install `ff` in `$HOME/.local/bin`
+  * supporting files install to `$HOME/.local/share/ff`
+  * to install to a different directory, set `PREFIX`
+    * e.g., `make PREFIX=/opt install`
+
+## Library Search Path
+* Interactive `ff` uses files like `ff.ff` and `ff.help` at runtime
+* by default it searches:
+  * `$HOME/.local/share/ff`
+  * `/usr/local/share/ff`
+  * `.`
+* prepend directories to the search path with the environment variable `FFPATH`
+  * e.g., `export FFPATH=/opt/local/ff:/opt/ff`
 
 ## Building a turnkey binary
 * NB. the source should have a `main` word

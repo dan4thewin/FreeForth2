@@ -12,9 +12,14 @@ $40000000 `SEGVact 132+ ! \ SA_NODEFER
 : SEGVthrow 0 `SEGVact 11 3 "sigaction" libc_ drop ;
 : linsetup dlsetup SEGVthrow ;
 
-create ffpath "FFPATH" 1_ libc. getenv 0- 0<> IF zlen THEN dup 25+ ; allot
-0- 0<> IF tuck ffpath ':' overc! 1+ place + ELSE drop ffpath THEN
-":/usr/local/share/ff:.:^@" ( 24 ) rot place drop
+"HOME"   1_ libc. getenv 0- 0<> IF zlen THEN dup >r
+"FFPATH" 1_ libc. getenv 0- 0<> IF zlen THEN dup >r
+2r> + 42+
+create ffpath allot
+ffpath ':' overc! 1+ >r
+0- 0= IF drop ELSE tuck r> place + ':' overc! 1+ >r THEN
+0- 0= IF drop ELSE tuck r> place + "/.local/share/ff:" dup>r rot place r> + >r THEN
+"/usr/local/share/ff:.:^@" r> place drop
 
 ffpath zlen over+ swap 1+ dup >r
 START dupc@ ':' = 2drop IF r> 2dup - swap 1- c! 1+ dup >r THEN 1+
