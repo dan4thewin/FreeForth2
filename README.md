@@ -14,6 +14,13 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
 * quoted literals may contain spaces
 * abandoned windows support
 
+## Docs
+* Christophe Lavarenne's writings about the original FreeForth with some notes
+  pointing out differences in Freeforth2
+  * [FreeForth Home](/docs/FreeForth.md)
+  * [FreeForth Primer](/docs/FreeForth_Primer.md)
+  * [FreeForth Code Generation](/docs/FreeForth_Code_Generation.md)
+
 ## Dependencies
 * GCC toolchain and 32-bit libraries
   * For example, on Ubuntu LTS run `sudo apt install build-essential gcc-multilib`

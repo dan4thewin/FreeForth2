@@ -6,10 +6,10 @@
 
 ## Bonne Année ! Happy New Year! Feliĉan Novjaron!
 
-Public domain releases for Linux/i386 and Windows/i386:
+Public domain releases for Linux/i386 and Windows/i386: [dates are YY-MM-DD]
 
-* (10-12-15) [FreeForth Primer](ffprimer.md) a tutorial for beginners and Forth geeks
-* (09-09-03) [FreeForth Code Generation](ffcodegen.md), a case study
+* (10-12-15) [FreeForth Primer](FreeForth_Primer.md) a tutorial for beginners and Forth geeks
+* (09-09-03) [FreeForth Code Generation](FreeForth_Code_Generation.md), a case study
 * (10-01-04) [FreeForth v1.2 (ff100104.zip)](http://christophe.lavarenne.free.fr/ff/ff100104.zip)
   with new: `malloc` `free` `lseek` (added in ff.ff)
 
@@ -56,14 +56,14 @@ development environments.
 It is _very_ small and _very_ fast, completely _free_ and fully _open source_:
 
 *   _very_ small: the executable is less than 16 kilobytes, and if you look inside, it's 40% binary code and 60%
-embedded source text
+    embedded source text
 *   _very_ fast: being so small, it surely fully runs inside the i386 on-chip cache memory (the fastest one); it
-instantly compiles compact and efficient native i386 code, _incrementally_ i.e. you can edit/compile/execute code on
-the fly repeatedly, which is ideal for debugging and intensive testing
+    instantly compiles compact and efficient native i386 code, _incrementally_ i.e. you can edit/compile/execute
+    code on the fly repeatedly, which is ideal for debugging and intensive testing
 *   completely _free_: its public domain license is the most permissive, although you may want to pay me for custom
-developments or support
+    developments or support
 *   fully _open source_: it's so small and well documented (>100 K of online help) that it's easy to fully understand
-and customize to your needs
+    and customize to your needs
 
 It is now supported under Linux and Windows, thanks to [fasm](http://flatassembler.net), with a tiny compatibility
 layer for file-I/O and dynamic-link-libraries interface.
@@ -101,6 +101,9 @@ hereunder, saves lots of both code space and processor cycles.
 
 I also wanted to keep the number of source files to a minimum to support both Linux and Windows (I avoid using Windows,
 but I recognize that some others can't):
+
+> [!NOTE]
+> File links point to the original FreeForth files.
 
 Common files:
 *   [LICENSE](http://christophe.lavarenne.free.fr/ff/LICENSE)
@@ -168,7 +171,7 @@ Moreover, FreeForth generates efficient "subroutine-threaded" native code:
 *   with variables and constants generated inline as literals
 *   with constant-expressions reduction (not yet implemented)
 *   with immediate-to-direct addressing-mode automatic conversions by the memory and arithmetic primitives (not
-yet implemented)
+    yet implemented)
 
 FreeForth also natively implements and uses "throw"/"catch" for its compiler (or user application) exception handling,
 with error context display. FreeForth also accepts input from the command line and from redirected stdin, and supports
@@ -185,10 +188,10 @@ and the adef is executed: this gives user interactivity, and opens a way to simp
 freed from the usual complexity of STATE (often "smart") handling.
 
 However, users of usual Forth systems may be surprised by the unusual need to close a FreeForth adef with a `;`
-(after trying `1 2 + .` and not seeing the expected `3` answer, some have thought FreeForth isn't worth another
-try). However, as soon as they understand, `1 2 + . ;` (with a final `;`) indeed displays `3`, and they can even
-try adefs with control structures (which can't be interpreted by usual Forth systems) such as `4 TIMES r . REPEAT ;`
-which simply displays `3 2 1 0`.
+(after trying `1 2 + .` and not seeing the expected `3` answer, some have thought FreeForth isn't worth another
+try). However, as soon as they understand, `1 2 + . ;` (with a final `;`) indeed displays `3`, and they can even
+try adefs with control structures (which can't be interpreted by usual Forth systems) such as `4 TIMES r . REPEAT ;`
+which simply displays `3 2 1 0`.
 
 > [!TIP]
 > FreeForth2 automatically terminates an anonymous definition with ` ;` at the end of the line.
@@ -205,18 +208,18 @@ Usual Forth systems use other prefix words (which parse the input source to over
 which FreeForth implements more conveniently:
 
 *   usual quotes (and dot-quotes) are replaced with the SPACE-free _literal compiler_ (see next paragraph)
-*   usual \['\] is replaced by postfixed `'` which replaces the call compiled just before it by an inline literal
-(or throws an exception if no call was compiled just before it)
-*   usual \[COMPILE\] aka \[POSTPONE\] is replaced with backquoted macros: macros, i.e. words to be immediately
-executed at compile time, must be defined (mainly by `:`) with a final backquote appended to their name; after
-parsing a word from the input source (between delimiters among NUL HT LF VT FF CR and space), the main loop
-first appends a backquote to the word before looking for it in the headers (i.e. symbol table): if it is found
-with an appended backquote, the code the header points to is immediately executed (this is a "macro" behavior);
-otherwise, the main loop removes the appended backquote, and looks again for it in the headers: if it is found
-without an appended backquote, a call is compiled if the header is marked (mainly by `:`) to point to code, or an
-inline literal is compiled if the header is marked (by `create` and derivatives) to point to data (or by `constant`
-to contain a constant value); otherwise, the main loop passes the word to the _literal compiler_, which may throw
-an exception if it fails.
+*   usual `[']` is replaced by postfixed `'` which replaces the call compiled just before it by an inline literal
+    (or throws an exception if no call was compiled just before it)
+*   usual `[COMPILE]` aka `[POSTPONE]` is replaced with backquoted macros: macros, i.e. words to be immediately
+    executed at compile time, must be defined (mainly by `:`) with a final backquote appended to their name; after
+    parsing a word from the input source (between delimiters among NUL HT LF VT FF CR and space), the main loop
+    first appends a backquote to the word before looking for it in the headers (i.e. symbol table): if it is found
+    with an appended backquote, the code the header points to is immediately executed (this is a "macro" behavior);
+    otherwise, the main loop removes the appended backquote, and looks again for it in the headers: if it is found
+    without an appended backquote, a call is compiled if the header is marked (mainly by `:`) to point to code,
+    or an inline literal is compiled if the header is marked (by `create` and derivatives) to point to data (or by
+    `constant` to contain a constant value); otherwise, the main loop passes the word to the _literal compiler_,
+    which may throw an exception if it fails.
 
 Backquoted macros are very convenient to define new macros: see
 [ff.boot](http://christophe.lavarenne.free.fr/ff/ff.boot)
@@ -234,7 +237,7 @@ character as follows:
     *   if the initial is a `.` a call to dot-quote-runtime is compiled
     *   if the initial is a `!` a call to exception-runtime is compiled
     
-    then the source string is converted (see \_number and "String-codings" \[in ff.asm\] for special characters)
+    then the source string is converted (see `_number` and "String-codings" \[in ff.asm\] for special characters)
     and compiled into a literal counted-string; when later executed, the quotes-runtime will push on the DATAstack
     the compiled string base address and count, whereas the dot-quotes-runtime will display the compiled string
     (with `type`), then both will resume execution after the compiled string, whereas the exception-runtime will pass
@@ -253,7 +256,7 @@ character as follows:
     For example, all the following literals represent the same number: `18` `$12` `&22` `%10010` `3#200` `12#16`
     `%10&2`  
     More complex base changes are possible, as already implemented for date and/or time conversion:
-    `2006-5-6\_17:42:15` (see \_number \[in ff.asm\])
+    `2006-5-6_17:42:15` (see `_number` \[in ff.asm\])
 
 FreeForth compiler generates efficient "subroutine-threaded" code with primitives implemented as macros generating
 native 386 code inline: see the following "Compiler implementation notes".
