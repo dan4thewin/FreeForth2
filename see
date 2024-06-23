@@ -1,4 +1,6 @@
 \ xt[4],ct[1],sz[1],nm[sz],nul
+: .hdr		dup @ . 4+ dup c@ . 1+ dup>r c@+ tuck type 2+ r> + ;
+: .hdrs		H@ START .hdr cr ENTER dup 5+ c@ 0- 0= drop UNTIL drop ;
 
 variable ~xt
 : 3dup		>r 2dup r -rot r> ;
@@ -11,8 +13,23 @@ variable ~xt
 : findxt	here ~xt! H@ START sz= IF nm= IF BREAK THEN xtsave nexth
 		ENTER stop? REPEAT noconst nip nip @ ~xt@ over- ;
 
+variable ustr 8 allot \ 4+8
+: 0uc!		0 ustr! ;
+: uac		ustr appendc ;
+: uac!^		uac ' putc !^ ;
+: uac^^		putc ^^ ;
+: u2str		0uc! .dec\ ustr c@+ ;
+
+variable buf 60 allot \ 4+60
+: ba		buf append ;
+: gdbscript	over+ swap
+		uac!^
+		  0 buf!
+		  "attach_" ba getpid u2str ba "^J" ba
+		  "disass/r_" ba u2str ba "," ba u2str ba "^J" ba
+		uac^^ ;
+: gdbrun	"gdb --batch -x .see | less -F -+c" shell ;
 : tmpfile	".see" ;
 : tmpsave	openw0 dup >r ?ior r write ?ior r close ?ior rdrop ;
-: objdump	tmpfile tmpsave "ndisasm -u .see | less -F -+c; rm .see" shell ;
-\ : objdump	tmpfile tmpsave "objdump -D -b binary -mi386 .see | less -F -+c; rm .see" shell ;
-: see`		wsparse findxt objdump ;
+: gdbdump	gdbscript buf c@+ tmpfile tmpsave gdbrun ;
+: see`		wsparse findxt gdbdump ;

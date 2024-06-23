@@ -1508,7 +1508,9 @@ key ( -- c ) requests the operating system to read one byte from the
 .digit ( c -- ) displays the digit c using the characters 0..9 for
   the digit values 0..9, or A..Z for the digit values 10..35, or ?
   for the digit values above 35.
-  : .digit '0'+ '9' u> drop IF 7+ 'Z' u> drop IF '?'_ THEN THEN emit ;
+  : .digit '0'+ '9' u> drop IF 7+ 'Z' u> drop IF '?'_ THEN THEN putc ;
+putc ( c -- ) redirectable vector used in ".digit", by default points to emit;
+  words that call ".digit": ".", ".\", ".dec", ".dec\", ".#s", and so on.
 base ( -- @ ) system variable: output conversion base for "." and ".\"
   variable base  10 base!  \ initially decimal
   see also: . .l .dec  ff.boot
@@ -1527,7 +1529,7 @@ base ( -- @ ) system variable: output conversion base for "." and ".\"
   : .dec base@ 10 base! swap . base! ;
 .dec\ ( n -- ) same as .dec but uses .\ instead of .
   : .dec\ base@ 10 base! swap .\ base! ;
-  see also: . .dec .l .#s  ff.ff
+  see also: . .dec .l .#s  ff.boot
 
   -----------
   MEMORY DUMP
@@ -1686,12 +1688,22 @@ argc ( -- n ) count of arguments provided on command line
 argv ( n -- @ # ) address and length of argument n provided on command line
   see also: doargv argc
 
-append ( @src # @dst -- ) append # bytes from the string @src to the end of @dst
-  and update the initial 8-bits of @dst with the new length
+append ( @src # @dst -- ) appends # bytes from the string @src to the end of
+  @dst and updates the initial 8-bits of @dst with the new length
+appendc ( c @dst -- ) appends 8-bits "c" to the end of @dst and increments the
+  initial 8-bits of @dst
+  see also: append
 
-see *TODO* disassemble a word
-  0; needs see
-  0; see swap`
+.hdr ( @ -- @next ) displays the header at address in TOS, replacing TOS with
+  the address of the next header; outputs xt, type, and name.
+  Use "16 base!" first for hex addresses.
+.hdrs ( -- ) like "words", displays the symbol table headers in full,
+  one per line (last defined first displayed)
+see ( <name> -- ) calls gdb to display the disassembly of name or throws an
+  exception with error message "not found".
+  Addresses in calls and jumps may be found in the list output by ".hdrs".
+  NB. If name is not found, you may want to try name`
+  see also: .hdr .hdrs header words
 
 bye` ( -- ) requests the operating system to terminate the FreeForth session
   with a null return value
@@ -1800,6 +1812,10 @@ zt ( @ # -- @ ) append a NUL byte to string starting at address "@"
   : zt over+ 0 swap c! ;
   see also: libc  ff.ff
 
+getenv ( @key # -- @value # | 0 0 ) returns the counted string value for the
+  environment variable key or 0 in TOS and 0 in NOS if not found
+getpid ( -- n ) returns the PID of this process
+getppid ( -- n ) returns the PID of the parent of this process
 cd` ( <newdir> -- ) changes the current directory to the next parsed word
   Lin: cd` wsparse zt 1 12 syscall ?ior ;
   Win: cd` wsparse zt 1 k32. SetCurrentDirectoryA 1- ?ior ;
@@ -1809,7 +1825,7 @@ shell ( @ # -- ) passes the string at address "@" for "#" bytes to the shell
 !!` ( <line> -- ) passes the rest of the current line to "shell"
   this is very convenient to pass command lines to the shell
   : !!` lnparse zt shell ;
-  see also: cd !! shell ?ior zt  ff.ff
+  see also: getenv getpid getppid cd shell !! ?ior zt  ff.ff
 
   ---------
   UTILITIES

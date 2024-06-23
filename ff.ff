@@ -1,5 +1,7 @@
-variable features 80 allot
-: append ( @ # c@ -- ) 2dup c@ + over 2>r c@+ + place drop 2r> c! ;
+variable features 76 allot
+: append ( @ # c@ -- ) 2dup c@ + over 2>r c@+ + place drop 2r>
+  2dup c! + 1+ 0 swap c! ;
+: appendc ( c c@ -- ) tuck c@+ + tuck c! 0 over 1+ c! over- swap c! ;
 : -v` ."\\_features:_" features c@+ type cr ;
 
 "help" features append
@@ -77,7 +79,11 @@ variable `fdset  0 , 0 , \ for select, the 2 zeros are a null timeval
   over+ 0 swap c! ;
 
 : `getenv "getenv" fixup
-:  getenv zt 1 dup `getenv #call 0- 0= IF 0 ELSE zlen THEN ;
+:  getenv 1_ dup `getenv #call 0- 0= IF 0 ELSE zlen THEN ;
+: `getpid "getpid" fixup
+:  getpid 0 0 `getpid #call ;
+: `getppid "getppid" fixup
+:  getppid 0 0 `getppid #call ;
 : `system "system" fixup
 :  system zt 1 dup `system #call ;
 

@@ -16,7 +16,7 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
 
 ## Docs
 * Christophe Lavarenne's writings about the original FreeForth with some notes
-  pointing out differences in Freeforth2
+  pointing out differences in FreeForth2
   * [FreeForth Home](/docs/FreeForth.md)
   * [FreeForth Primer](/docs/FreeForth_Primer.md)
   * [FreeForth Code Generation](/docs/FreeForth_Code_Generation.md)
@@ -26,8 +26,8 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
   * For example, on Ubuntu LTS run `sudo apt install build-essential gcc-multilib`
 * flat assembler, a.k.a. fasm: https://flatassembler.net/
   * Likely available in your Linux distro, e.g., `sudo apt install fasm`
-* The `see` utility uses `ndisasm` and `less`
-  * Likely available in your Linux distro, e.g., `sudo apt install nasm less`
+* The `see` utility uses `gdb` and `less`
+  * Likely available in your Linux distro, e.g., `sudo apt install gdb less`
 
 ## Build
 * run `make` which should create `ff`

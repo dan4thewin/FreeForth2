@@ -57,8 +57,6 @@ $20 equ MAP_ANON    $100 equ MAP_GROWSDOWN  $4000 equ MAP_NORESERVE
 
 : stopdump? key 10- drop ;
 : ;dump` ;` BEGIN 16 bounds under 2dump stopdump? UNTIL drop ;  \ @ --
-: .dec base@ 10 base! swap . base! ;  \ n -- ; display in decimal
-: .dec\ base@ 10 base! swap .\ base! ;  \ n -- ; display in decimal
 
 \ --------------------------------------------------------------------
 \ console display control (topleft=0,0)

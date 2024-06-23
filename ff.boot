@@ -192,14 +192,16 @@ create `mrk 0 , 0 ,
 variable `io
 : key `io 1 under accept drop c@ ;
 : space 32
-: emit `io 2dupc! swap 1_ type ;
+:^ putc : emit `io 2dupc! swap 1_ type ;
 :^ cr ."^J" ;
 
 variable base 10 base!
 : `.d 0 base@ m/mod 0; `.d
-: .digit '0'+ '9' u> drop IF 7+ 'Z' u> drop IF '?'_ THEN THEN emit ;
+: .digit '0'+ '9' u> drop IF 7+ 'Z' u> drop IF '?'_ THEN THEN putc ;
 : .\ 0- 0< IF ."-" negate THEN `.d .digit ;
 : . .\ space ;
+: .dec base@ 10 base! swap . base! ;
+: .dec\ base@ 10 base! swap .\ base! ;
 : .b 2
 : .#s TIMES dup r 4* >> $F& .digit REPEAT drop ;
 : .w 4 .#s ;
