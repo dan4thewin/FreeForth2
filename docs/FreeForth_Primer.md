@@ -714,7 +714,7 @@ control structures, possibly nested with two-alternatives control structures, su
     \ anonymous definition: displays a multiplication table
     9 TIMES  9 r -    \ -- 9-i     | == i ; i from 8 downto 0, 9-i from 1 upto 9
       9 TIMES  9 r -  \ -- 9-i 9-j | == j ; j from 8 downto 0, 9-j from 1 upto 9
-        over*         \ -- 9-i (9-j)\*(9-i) ; compute product
+        over*         \ -- 9-i (9-j)*(9-i) ; compute product
         9 <= drop IF space THEN .  \ -- 9-i ; display product right justified
       REPEAT  drop cr \ -- ; dispose of 9-i, "carriage-return" to newline
     REPEAT ;          \ -- ; end of anonymous definition: execute it

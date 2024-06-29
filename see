@@ -1,17 +1,17 @@
 \ xt[4],ct[1],sz[1],nm[sz],nul
-: .hdr		dup @ . 4+ dup c@ . 1+ dup>r c@+ tuck type 2+ r> + ;
+: .hdr		dup @ . 4+ dup c@ . 1+ c@+ 2dup type + 1+ ;
 : .hdrs		H@ START .hdr cr ENTER dup 5+ c@ 0- 0= drop UNTIL drop ;
 
 variable ~xt
 : 3dup		>r 2dup r -rot r> ;
-: sz=		under 5 over+ c@ rot = 2drop nzTRUE ? zFALSE ;
-: nm=		3dup 6+ swap $- 0- 0= drop nzTRUE ? zFALSE ;
-: nexth		5+ dupc@ + 2+ ;
+: sz=		under 5 over+ c@ rot - ;
+: nm=		3dup 6+ swap $- ;
+: nexth		5+ c@+ + 1+ ;
 : stop?		dup 5+ c@ 0- 0= drop IF !"not found" THEN ;
-: xtsave	4 over+ c@ 1- drop IF dup@ ~xt! THEN ;
+: xtsave	4 over+ c@ 1- 0<> drop IF dup@ ~xt! THEN ;
 : noconst	dup 4+ c@ 1- 0= drop IF !"matched a constant or variable" THEN ;
-: findxt	here ~xt! H@ START sz= IF nm= IF BREAK THEN xtsave nexth
-		ENTER stop? REPEAT noconst nip nip @ ~xt@ over- ;
+: findxt	here ~xt! H@ START sz= 0= drop IF nm= 0= drop IF BREAK THEN
+		xtsave nexth ENTER stop? REPEAT noconst nip nip @ ~xt@ over- ;
 
 variable ustr 8 allot \ 4+8
 : 0uc!		0 ustr! ;
