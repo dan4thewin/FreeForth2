@@ -152,7 +152,7 @@ variable `?#
 : SKIP` $EB c, here SC c@ c, ;
 : ELSE` SKIP` swap dupc@ SC c!
 : THEN` dupc@ >SC
-: `then here over- 1- `?off swap c! ;
+: `then here over- 1- `?off swap c! 0 callmark! ;
 : 0;` 0-` 0=` IF` drop`
 : ;THEN` ;;` dupc@ SC c! `then ;
 : BOOL` 0 lit` IF` ~` THEN` ;
