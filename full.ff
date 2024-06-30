@@ -56,7 +56,7 @@ $20 equ MAP_ANON    $100 equ MAP_GROWSDOWN  $4000 equ MAP_NORESERVE
 ;
 
 : stopdump? key 10- drop ;
-: ;dump` ;` BEGIN 16 bounds under 2dump stopdump? UNTIL drop ;  \ @ --
+: ;dump` ;` BEGIN 16 bounds under 2dump stopdump? 0<> UNTIL drop ;  \ @ --
 
 \ --------------------------------------------------------------------
 \ console display control (topleft=0,0)
@@ -142,7 +142,7 @@ create ts 64 allot
 : REPEAT' $EB `-jmp END' ;
 : -longconds'  \ -- ; remove headers -longconds`..IF`
   [ "`then" find 2drop which@ H@ - constant `size ]
-  "-longconds`" find IF !"-longconds`_not_found" ;THEN 2drop
+  "-longconds`" find 0<> IF !"-longconds`_not_found" ;THEN 2drop
   H@ which@ START 1- dupc@ over `size+ c! ENTER = UNTIL drop `size+ H! ;
 : +longconds`  \ -- ; copy headers -longconds'..IF' -> -longconds`..IF`
   "-longconds'" find 2drop which@ `size H@ dup>r over- place dup H!
@@ -215,8 +215,8 @@ create ts 64 allot
 
 \ Class2 = FPU macro, inlines 1 or 2 FPU instructions embedded in its header:
 : `f:` ;` wsparse rot 2 header ; \ FPUinstr <name> -- ; class2 definer
-: `f, dup lit` $FFFF0000& drop IF ,` ;THEN w,` ; \ postpone, immediate;
-: `f; dup      $FFFF0000& drop IF ,  ;THEN w,  ; `f, ' `f; ' classes &20+ 2! ;
+: `f, dup lit` $FFFF0000& 0<> drop IF ,` ;THEN w,` ; \ postpone, immediate;
+: `f; dup      $FFFF0000& 0<> drop IF ,  ;THEN w,  ; `f, ' `f; ' classes &20+ 2! ;
 
 $E3DB `f: finit` \ fninit  initialize FPU cw=$037F sw=$0000
 $EED9 `f: 0.`  \ fldz
@@ -403,7 +403,7 @@ create COM \ UART current context
 : .ports` \ -- ; displays all available ttyS* or ttyUSB* ports
   "/dev/ttyUSB0^@" "/dev/ttyS0^@"
   2 BEGIN >r 32 BEGIN >r 2dup+ 1- \ -- @ # @+#-1
-    r ~ $1F& 10 /% swap '0'+ swap 0- IF '0'+ swap THEN rot tuckc! 1- c!
+    r ~ $1F& 10 /% swap '0'+ swap 0- 0<> IF '0'+ swap THEN rot tuckc! 1- c!
     2dup openr dup eob $5401 rot ioctl swap close drop 0- drop \ -- @ #
     0= IF over 5+ over 5- type space THEN
   r> 1- 0= UNTIL drop 2drop r> 1- 0= UNTIL drop
@@ -414,27 +414,27 @@ create COM \ UART current context
   "/bin/stty___38400_raw_-echo_cs8_-parenb_-cstopb_</dev/ttyUSB0_"
   \ 123456789012345^                                ^1098^65432^0
   dup>r swap dup>r + 1- >r \ -- bps s | == # @ @+#-1 ; setup port type&number:
-  dup $80& drop IF "ttyUSB" ELSE "./ttyS" THEN r 7- place drop
+  dup $80& 0<> drop IF "ttyUSB" ELSE "./ttyS" THEN r 7- place drop
   dup 4/ $1F& 10 /% 0- 0= IF $10- swap THEN '0'+ swap '0'+ r tuckc! 1- c!
 \ '0'+ r 1- c! '0'+ r c!
   \ -- bps s | == # @ @+#-1
 [1] [IF] \ with /bin/stty only, for standard baudrates:
   over $100* + swap r> swap r 16+ swap \ -- s @+#-1 @+16 bps | == # @
-  7 TIMES 0- IF 10 /% >r '0'+ ELSE >r $20 THEN overc! 1- r> REPEAT 2drop
+  7 TIMES 0- 0<> IF 10 /% >r '0'+ ELSE >r $20 THEN overc! 1- r> REPEAT 2drop
   \ -- s @+#-1 | == # @ ; /bin/stty command ready
 [ELSE] \ with /bin/setserial (to be installed), for custom baudrates:
-  tuck $80& 115'200_ IF 24'000'000_ THEN \ -- s bps clk | -- # @ @+#-1
+  tuck $80& 0<> 115'200_ IF 24'000'000_ THEN \ -- s bps clk | -- # @ @+#-1
   swap under / tuck / $100* rot + \ -- div s ; s with bps
   \ man setserial: gives 115200/divisor bps when 38400 bps asked
   "/bin/setserial_/dev/ttyUSB0__spd\_cust_divisor_______3" \ -- div s @ #
   \ 123456789ABCDE^
   over $F+ r 12- swap 13 cmove \ copy port type/number from /bin/stty command
   dup>r swap dup>r + 1- rot \ -- s @+#-1 div | -- # @ @+# # @ ; setup divisor:
-  7 TIMES 0- IF 10 /% >r '0'+ ELSE >r $20 THEN overc! 1- r> REPEAT 2drop
+  7 TIMES 0- 0<> IF 10 /% >r '0'+ ELSE >r $20 THEN overc! 1- r> REPEAT 2drop
   r> r> shell r> \ -- s @+# | == # @ ; execute /bin/setserial command
 [THEN] \ -- s @+#-1 | == # @
   r> r> shell \ -- s @+#-1 ; execute /bin/stty command
-  dupc@ $20- 12_ IF 1+ THEN swap 12- swap openw tuck COM 2! ?ior
+  dupc@ $20- 0<> 12_ IF 1+ THEN swap 12- swap openw tuck COM 2! ?ior
 ;
 
 \ variable `fdset  0 , 0 ,  \ the 2 zeros are a null timeval
@@ -449,7 +449,7 @@ create COM \ UART current context
 : `waitRX \ -- c ; waits until RX? or throws KBDirq/RX when key?
   1 COM@ << 1+ `fdset! \ fd_set READ([n]=uart,[0]=stdin)
   0 0 0 `fdset $20 select ?ior \ -- ; sleep until key? or RX?
-  `fdset@ 1& IF !"KBDirq/RX" ;THEN
+  `fdset@ 1& 0<> IF !"KBDirq/RX" ;THEN
   `io_ 1 under COM@ read ?ior c@
 ;
 
@@ -515,18 +515,18 @@ create COM \ UART current context
   eob `TCGETS eob 8+ @ & | eob 8+ ! eob `TCSETS
 ;
 : .bps` \ -- ; display current context
-  ;` COM 4+ @ ."uart" dup 3& .\  dup $80& drop IF .":ttyUSB" ELSE .":ttyS" THEN
+  ;` COM 4+ @ ."uart" dup 3& .\  dup $80& 0<> drop IF .":ttyUSB" ELSE .":ttyS" THEN
   dup 4/ $1F& .dec  eob `TCGETS  $100/ .dec ."bps_8bits_"  eob 8+ @ $300&
-  BEGIN IF $200& IF ."odd" BREAK ."even" BREAK ."no" END drop ."Parity_1stop^J"
+  BEGIN 0<> IF $200& 0<> IF ."odd" BREAK ."even" BREAK ."no" END drop ."Parity_1stop^J"
 ;
 
 variable utrace  \ default 0: no trace
 : RX \ -- c ; receive one byte
   `waitRX \ wait aborted by throwing "KBDirq/RX" exception when "key?"
-  utrace@ 0- drop IF ."<" dup .b THEN
+  utrace@ 0- 0<> drop IF ."<" dup .b THEN
 ;
 : TX \ c -- ; send one byte
-  utrace@ 0- drop IF .">" dup .b THEN
+  utrace@ 0- 0<> drop IF .">" dup .b THEN
   `io tuckc!  1 COM@ write ?ior
 ;
 : XRECV TIMES RX overc! 1+ REPEAT drop ; \ @ # -- ; receive # bytes at @
@@ -535,15 +535,15 @@ variable utrace  \ default 0: no trace
 : dumbterm`  1 SKIP    \ hexa[00..1F]ascii[20..7E]hexa[7F..FF]CR[0D]LF[0A]
 : dumpterm`  0 THEN >r \ hexa[00..FF]
   BEGIN normal RX ' catch 0- drop 0= IF \ (nz when key?)
-    inverse r 0- IF \ dumbterm:
+    inverse r 0- 0<> IF \ dumbterm:
       $7E_ <= IF $20_ >= IF : `e drop emit AGAIN 13_ = `e ? 10_ = `e ? THEN
     THEN '\'_ emit .b AGAIN
     here dup 256 accept \ -- here n ; Lin:here+n-1:^J Win:here+n-2:^M^J
     over+ 1- 13 swap ! \ EOL:^M^@^@^@
-    BEGIN c@+ 0- WHILE \ -- @ c
+    BEGIN c@+ 0- 0<> WHILE \ -- @ c
       '^' CASE c@+ $40^ ELSE \ -- @ c ; "^c":control-char
       '\' CASE dup 2+ swap 1- '$' overc! 3 number \ -- @+2 n 0 ; "\xx":hexa
-        0- drop IF swap 1- nipdup 1- c@ \ -- @+1 c
+        0- 0<> drop IF swap 1- nipdup 1- c@ \ -- @+1 c
         13 <> drop WHILE \ -- @+1 c ; "\EOL":zapCR
         'q' = drop IF 2drop rdrop ;THEN \ "\q":quit.
       THEN      THEN    THEN TX \ -- @+1

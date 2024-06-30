@@ -13,6 +13,7 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
 * interactive input automatically terminated
 * quoted literals may contain spaces
 * abandoned windows support
+* require explicit conditions before IF
 
 ## Docs
 * Christophe Lavarenne's writings about the original FreeForth with some notes
@@ -20,6 +21,7 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
   * [FreeForth Home](/docs/FreeForth.md)
   * [FreeForth Primer](/docs/FreeForth_Primer.md)
   * [FreeForth Code Generation](/docs/FreeForth_Code_Generation.md)
+* Exploration of FreeForth criticism: [Criticism.md](/docs/Criticism.md)
 
 ## Dependencies
 * GCC toolchain and 32-bit libraries

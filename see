@@ -20,12 +20,13 @@ variable ustr 8 allot \ 4+8
 : uac^^		putc ^^ ;
 : u2str		0uc! .dec\ ustr c@+ ;
 
-variable buf 60 allot \ 4+60
+variable buf 76 allot \ 4+76
 : ba		buf append ;
 : gdbscript	over+ swap
 		uac!^
 		  0 buf!
 		  "attach_" ba getpid u2str ba "^J" ba
+		  "set disassembly-flavor intel^J" ba
 		  "disass/r_" ba u2str ba "," ba u2str ba "^J" ba
 		uac^^ ;
 : gdbrun	"gdb --batch -x .see | less -F -+c" shell ;

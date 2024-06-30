@@ -647,6 +647,9 @@ If the `alternativeIfFalse` is empty, the `ELSE` may be omitted. If the `alterna
 `cond` with its opposite condition specifier, and omit the `ELSE` too. If `cond` is omitted, `0<>` will be used
 as default condition specifier.
 
+> [!TIP]
+> FreeForth2 requires an explicit condition or throws an error!
+
 `IF ELSE THEN` are macros (i.e. executed at compile time) which resolve the forward jumps on the fly, in a single pass:
 
 * `` IF` `` compiles a conditional forward jump assembly instruction depending on the _opposite_ of the condition

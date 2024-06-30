@@ -17,7 +17,7 @@ variable features 76 allot
 
 : pick` \ xn..x0 n -- xn..x0 xn
   \ must be preceded by "52(push edx)6Axx(push byte)5A(pop edx)"
-  here 4- @ $FE00FFFE& $5A006A52- IF !"is_not_preceded_by_a_constant" ;THEN
+  here 4- @ $FE00FFFE& $5A006A52- 0<> IF !"is_not_preceded_by_a_constant" ;THEN
   drop -3 allot  here 1+ c@ 1- 0= IF drop ;THEN  \ "52(push edx)"=over` C=1
   0< IF drop swap` nipdup` ;THEN  \ i.e. dup`
   $5C8B, s08 10 << $24+ w, ;  \ 8B5C24xx(mov ebx,[esp+4n])

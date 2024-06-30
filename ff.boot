@@ -128,11 +128,12 @@ variable `?#
 : >=` $7D `?2 ;
 : <=` $7E `?2 ;
 : >` $7F `?2 ;
+: `?@ `?# c@ : 0?1 0 `?#! ;
 : `-c` here dup 4- @ + -5 allot 0 callmark! ;
 : `-js c, c, ;
 : `-jc $0F, ,1 $12+ swap 1- swap
 : `-ju 2- c, 3- , ;
-: `?` `?# c@ 0<>` swap
+: `?` `?@ 0- ,"u^C" $75_ swap
 : `-j here 2+ - -$80 >= drop swap `-js [ `-c` 1 here +! ] `?
   $EB = drop `-ju `-c `? `-jc ;
 : -call callmark@ here = 2drop `-c` `-c `? !"is_not_preceded_by_a_call"
@@ -147,7 +148,8 @@ variable `?#
 
 : `off !"jump_off_range"
 : `?off dup 2* over^ -$100& drop `off ? ;
-: `cond `?# c@ 1^ 0<>` ;
+: `?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition"
+: `cond `?@ `?nn 1^ ;
 : IF` `cond c, here SC c@ c, ;
 : SKIP` $EB c, here SC c@ c, ;
 : ELSE` SKIP` swap dupc@ SC c!
@@ -180,8 +182,8 @@ create `mrk 0 , 0 ,
 : REPEAT` $EB `-jmp END` ;
 
 : `[] '[' parse 2drop wsparse  0- 0= drop IF drop >in! !"unbalanced" ;THEN
-  1 >in -! dup "ELSE]" $- drop IF dup "THEN]" $- drop IF "IF]" $- drop `[] ?
-  BEGIN `[] UNTIL `[] ;THEN 1+ THEN drop ;
+  1 >in -! dup "ELSE]" $- 0<> drop IF dup "THEN]" $- 0<> drop IF "IF]" $- drop `[] ?
+  BEGIN `[] 0<> UNTIL `[] ;THEN 1+ THEN drop ;
 : [IF]` 0- 0= drop IF
 : [ELSE]` >in@ `[] drop
 : [THEN]` THEN ;
@@ -219,7 +221,7 @@ variable base 10 base!
 
 : words` H@ START 2dup+ 1+ -rot type space ENTER 5+ c@+ 0- 0= UNTIL 2drop cr ;
 : hid'm` H@ 0 over 2- c! dup 1- swap
-  START over+ 1+ swap dupc@ '`'- drop swap IF nip THEN
+  START over+ 1+ swap dupc@ '`'- 0<> drop swap IF nip THEN
   ENTER 5+ c@+ 0- 0= UNTIL 2drop
   dup 1- c@+ + 1+ >r  START over 1- c@+ + 1+ swap 6-
     START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop

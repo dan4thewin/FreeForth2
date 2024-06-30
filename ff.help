@@ -225,7 +225,7 @@ pick` ( xn..x0 n -- xn..x0 xn ) compiles inline code to replace TOS=n with
   the n-th DATAstack item under TOS, where "0 pick" is equivalent to "dup"
   Note: n is expected to be a (small) constant compiled just before "pick"
   : pick` \ must be preceded by "52(push edx)6Axx(push byte)5A(pop edx)"
-    here 4- @ $FE00FFFE& $5A006A52- IF !"is_not_preceded_by_a_constant" ;THEN
+    here 4- @ $FE00FFFE& $5A006A52- 0<> IF !"is_not_preceded_by_a_constant" ;THEN
     drop -3 allot  here 1+ c@ 1- 0= IF drop ;THEN  \ "52(push edx)"=over` C=1
     0< IF drop swap` nipdup` ;THEN  \ i.e. dup`
     $5C8B, s08 10 << $24+ w, ;  \ 8B5C24xx(mov ebx,[esp+4n])
@@ -861,7 +861,7 @@ classes ( -- @ ) base address of the compiler's classes table, indexed by
   separate, there may be several entry points sharing the same exit point(s);
   some entry points may also be used as target for "tail recursion"
   source code in ff.asm, functionally equivalent to:
-  : :` anon@ 0- drop IF ;` 0 anon! THEN rst wsparse here 0 header ;
+  : :` anon@ 0- 0<> drop IF ;` 0 anon! THEN rst wsparse here 0 header ;
   see also: :` ;; ; anon anonymous  ff.asm
 
 alias` ( @ <name> -- ) creates a synonym for a header of "code" type:
@@ -1082,13 +1082,15 @@ zFALSE ( -- ; z ) sets the i386 z condition (i.e. sets the i386 Z flag)
 `?off ( n -- n ) hidden compiler word, checks n within signed-byte range
   : `?off dup 2* over^ -$100& drop IF !"jump_off_range" THEN ;
 `cond ( -- c ) hidden compiler word, inverts condition for IF/TILL/WHILE
-  : `cond `?# c@ 1^ 0<>` ;
+  if condition is not null, otherwise throws an error
+  : `?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition" \ t=$74 ^A=$01 C~=$C3
+  : `cond `?@ `?nn 1^ ;                                \ jz over ret
   see also: `?off ff.boot
 
 IF` ( -- ) compiles a forward conditional jump, to be resolved by the
   right-balancing "ELSE" or "THEN" or ";THEN" or "BREAK" or "AGAIN" macro.
   This is typically used in control structures with the following patterns:
-  "0- drop IF <nonnull> ELSE <null> THEN", "0- 0< drop IF <negative> ;THEN",
+  "0- 0<> drop IF <nonnull> ELSE <null> THEN", "0- 0< drop IF <negative> ;THEN",
   "+ 0= drop IF <null> THEN", "BEGIN <...> < drop IF <less> BREAK <...> END"
   Implementation note: the current registers allocation state is stored
   into the space allocated for the jump offset, such that the balancing
@@ -1296,8 +1298,8 @@ next` ( -- | n == n-1 | 1 == ) closes a counted loop by compiling code
   until the balancing next "[THEN]"
   : `[] '[' parse 2drop wsparse  \ -- @ # ; parse next word with "[" initial
     0- 0= drop IF drop >in! !"unbalanced" ;THEN  \ -- @ ; #=0:sourceEnd
-    1 >in -! dup "ELSE]" $- drop IF dup "THEN]" $- drop IF "IF]" $- drop `[] ?
-    BEGIN `[] UNTIL `[] ;THEN 1+ THEN drop ;
+    1 >in -! dup "ELSE]" $- 0<> drop IF dup "THEN]" $- 0<> drop IF "IF]" $- drop `[] ?
+    BEGIN `[] 0<> UNTIL `[] ;THEN 1+ THEN drop ;
   : [ELSE]` >in@ `[] drop ;
 [IF]` ( ? -- ) conditional compilation: pops TOS and if null skips the
   following source until the next balancing "[ELSE]" or "[THEN]"
@@ -1553,7 +1555,7 @@ dump ( @ # -- ) displays an hexadecimal memory dump of # bytes
   16 bytes and waits for user input; if the user input is empty (simply
   hit the Enter key), proceed with the 16 next bytes; otherwise (hit a
   space before Enter) returns
-  : ;dump` ;` BEGIN 16 bounds under 2dump stopdump? UNTIL drop ;
+  : ;dump` ;` BEGIN 16 bounds under 2dump stopdump? 0<> UNTIL drop ;
 stopdump? ( -- ; nz? ) check whether we are at end of user input:
   Linux receives LF at each end-of-line, whereas Windows receives CR+LF
   : stopdump? [os] [IF] key 10- [ELSE] key 13- key 10- | [THEN] drop ;
@@ -1599,7 +1601,7 @@ hid'm` ( -- ) removes from the compiler symbol table all the headers with
   freeing heap space, and also speeding up future symbol table searches.
   source code in ff.boot:
   : hid'm` H @ 0 over 2- c! dup 1- swap  \ first push all backquotes addresses
-    START over+ 1+ swap dupc@ '`'- drop swap IF nip THEN
+    START over+ 1+ swap dupc@ '`'- 0<> drop swap IF nip THEN
     ENTER 5+ c@+ 0- 0= UNTIL 2drop       \ then pop addresses and pack headers
     dup 1- c@+ + 1+ >r  START over 1- c@+ + 1+ swap 6-
       START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop
@@ -1913,8 +1915,8 @@ s>f ( n -- f:n ) converts 32-bits integer to float
 
 `f:` ( FPUinstr <name> -- ) defines words with header-type=2 (see classes),
   which will inline one or two 16-bits FPU instruction opcodes
-  : `f, dup lit` $FFFF0000& drop IF ,` ;THEN w,` ; \ postpone-handler
-  : `f; dup      $FFFF0000& drop IF ,  ;THEN w,  ; \ immediate-handler
+  : `f, dup lit` $FFFF0000& 0<> drop IF ,` ;THEN w,` ; \ postpone-handler
+  : `f; dup      $FFFF0000& 0<> drop IF ,  ;THEN w,  ; \ immediate-handler
   : `f:` ;` wsparse rot 2 header ;  `f, ' `f; ' classes &20+ 2! ;
 
 finit` ( -- ) initializes the FPU (ControlWord=$037F StatusWord=$0000)

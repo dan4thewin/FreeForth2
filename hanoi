@@ -73,13 +73,13 @@ create st 30 allot  \ 3 stacks
   swap -- 2dup+ 8 type swap - swap emit 16+ 8 type ;
 : ._  \ --
   50 ms cls` 3 TIMES r >st  r 17*
-  9 TIMES 2dup  r atxy  r + c@ $F&  r 0- 32_ IF '|'_ THEN  .- REPEAT
+  9 TIMES 2dup  r atxy  r + c@ $F&  r 0- 0<> 32_ IF '|'_ THEN  .- REPEAT
   2drop REPEAT  0 9 atxy  0 'a' 2dup .- 1+ 2dup .- 1+ .-
 [THEN]  \ --------------------------------------------------
   cr #m@ .
   ."(a:b<->c__b:c<->a__c:a<->b__i(n--):init__s(n--):solution__h:help)^J" ;
 : top  \ @ -- @'
-  BEGIN c@+ $F& drop UNTIL 1- ;
+  BEGIN c@+ $F& 0<> drop UNTIL 1- ;
 : up  \ @ -- n
   dup>r top dupc@ 32$00+ swap BEGIN 1- 2dupw! ._ r = drop UNTIL
   32 swap c! rdrop ;
@@ -96,7 +96,7 @@ create st 30 allot  \ 3 stacks
   0 >st swap TIMES r '1'+ over dn REPEAT drop ;
 : s`  \ n -- ; solution
   ;` 1- 7& 1+  dup i`  500 ms
-  1 swap << BEGIN 1- WHILE b` 1- WHILE c` 1- WHILE a` REPEAT drop ;
+  1 swap << BEGIN 1- 0<> WHILE b` 1- 0<> WHILE c` 1- 0<> WHILE a` REPEAT drop ;
 
 [THEN]  \ ================================================================
 
