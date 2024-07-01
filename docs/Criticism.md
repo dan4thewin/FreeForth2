@@ -175,6 +175,10 @@ subtleties involved.
      0; : show IF ."T" ELSE ."F" THEN ;
     : show IF <-error: is not preceded by a condition
 
+I see nothing misguided about `IF` referencing the processor flags.
+This simply surfaces a design decision of the hardware rather than hiding
+it away under Boolean semantics.
+
 # A Bug?!?
 
 FreeForth happily lets you do questionable things.  I breathed a great
@@ -269,3 +273,32 @@ the optimization globally, `0 tailrec!`, or locally with `0 callmark!`:
 
 Freeforth2 fixes the bug by disabling the optimization for a call
 immediately preceding a THEN, REPEAT, UNTIL, or END.
+
+# Passing Judgement
+
+The critic thinks that due to the existence of the bug it's impossible to
+do meaningful work with FreeForth.  I rather think Christophe Lavarenne
+never encountered the bug given the way he coded.
+
+    0; : show IF ."T" ELSE ."F" THEN ;
+
+This first line from the critic's code uses the idiomatic dot-string.
+This inlines the string to type after a call to `dotstr` (see
+[ff.asm](/ff.asm)) and does not trigger the bug.
+
+Instead of writing
+
+    0; : display IF 42 . ELSE 63 . THEN ;
+
+had the critic written
+
+    0; : display IF 42 ELSE 64 THEN . ;
+
+then the tail recursion optimization would work as intended.
+
+I see only a few cases in the FreeForth 1.2 code base of a definition
+ending in `THEN` but none are preceded by a call.
+
+While the bug presents a hazard to a newcomer, I see no reason it would
+have impeded Mr. Lavarenne in his endeavors.  Nevertheless, I'm glad
+it's fixed in FreeForth2.
