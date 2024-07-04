@@ -3,7 +3,6 @@
 : .hdrs		H@ START .hdr cr ENTER dup 5+ c@ 0- 0= drop UNTIL drop ;
 
 variable ~xt
-: 3dup		>r 2dup r -rot r> ;
 : sz=		under 5 over+ c@ rot - ;
 : nm=		3dup 6+ swap $- ;
 : nexth		5+ c@+ + 1+ ;

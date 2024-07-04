@@ -207,10 +207,12 @@ swap` ( x y -- y x ) exchanges the top two DATAstack cells TOS and NOS
   : swap` [ $8035 w, SC , 2 c, ] ; \ xorb[SC],2
   see also: >S1 dup rot  ff.asm
 
-2dup` ( x y -- x y x y ) double-duplicate DATAstack
-  : 2dup` over` over` ;
 dup` ( x -- x x ) duplicates TOS contents on top of DATAstack
   : dup` under` nipdup` ;
+2dup` ( x y -- x y x y ) double-duplicate DATAstack
+  : 2dup` over` over` ;
+3dup` ( x y z -- x y z x y z ) triple-duplicate DATAstack
+  : 3dup` 2dup` $082474FF, ,4 ;  \ FF742408(push [esp+8])
 nipdup` ( x y -- y y ) overwrites NOS with TOS
   : nipdup` $DA89, s09 ; \ mov edx,ebx
 tuck` ( x y -- y x y ) duplicates TOS contents under NOS
@@ -219,7 +221,7 @@ over` ( x y -- x y x ) duplicates NOS contents over TOS
   : over` under` swap` ;
 under` ( x y -- x x y ) duplicates NOS contents under TOS
   : under` >C1 $52, s1 ; \ push edx
-  see also: dup over tuck under  ff.asm ff.boot
+  see also: dup 2dup 3dup nipdup over tuck under  ff.asm ff.boot
 
 pick` ( xn..x0 n -- xn..x0 xn ) compiles inline code to replace TOS=n with
   the n-th DATAstack item under TOS, where "0 pick" is equivalent to "dup"
@@ -412,8 +414,12 @@ bounds` ( @ # -- @+# @ ) converts start address "@" under count "#"
   :  @` $1B8B, s09 ; \ mov ebx,[ebx]
 c@` ( @ -- c ) fetch 8-bits byte from @, zero-extended into TOS 32 bits
   : c@` $1BB60F, ,1 s09 ; \ movzx ebx,byte[ebx]
+cs@` ( @ -- c ) fetch 8-bits byte from @, sign-extended into TOS 32 bits
+  : c@` $1BBE0F, ,1 s09 ; \ movsx ebx,byte[ebx]
 w@` ( @ -- w ) fetch 16-bits word from @, zero-extended into TOS 32 bits
   : w@` $1BB70F, ,1 s09 ; \ movzx ebx,word[ebx]
+ws@` ( @ -- w ) fetch 16-bits word from @, sign-extended into TOS 32 bits
+  : w@` $1BBF0F, ,1 s09 ; \ movsx ebx,word[ebx]
 2@` ( @ -- lo hi ) fetch 64-bits from @ (hi 32-bits at @, lo 32-bits at @+4)
   : 2@` @+` swap` @` swap` ;
   see also: @ dup@ @+ !  ff.boot

@@ -49,7 +49,9 @@
 : >>` $EAD3D989, s08 s01 drop` ;
 : @` $1B8B, s09 ;
 : c@` $1BB60F, ,1 s09 ;
+: cs@` $1BBE0F, ,1 s09 ;
 : w@` $1BB70F, ,1 s09 ;
+: ws@` $1BBF0F, ,1 s09 ;
 : dup@`  over` $1A8B, s09 ;
 : dupc@` over` $1AB60F, ,1 s09 ;
 : dupw@` over` $1AB70F, ,1 s09 ;
@@ -86,6 +88,7 @@
 : on` -1 lit` swap` !` ;
 
 : 2dup` over` over` ;
+: 3dup` 2dup` $082474FF, ,4 ;
 : 2r>` 2dup` dropr>` swap` dropr>` swap` ;
 : 2>r` swap` dup>r` swap` dup>r`
 : 2drop` drop` drop` ;
