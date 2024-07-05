@@ -113,14 +113,14 @@ variable `fdset  0 , 0 , \ for select, the 2 zeros are a null timeval
 : r5` over` $14588B, s08 ,1 ;
 : r5!` >C1  $145889, s08 ,1 drop` ;
 \ 83E804(sub eax,4)8F00(pop dword[eax])4B(dec ebx)75F8(jnz -8)
-: >>r` under` 0-` IF` $4E883, ,3 $1008F, ,2 $4B, s1 $F875, ,2 THEN` 2drop` ;
+: >>r` under` 0-` 0>` IF` $4E883, ,3 $1008F, ,2 $4B, s1 $F875, ,2 THEN` 2drop` ;
 \ C1E302(shl ebx,2)01D8(add eax,ebx)
 : +r` >C1 $02E3C1, s01 ,1 $D801, s08 drop` ;
 \ 29D8(sub eax,ebx)
 : -r` >C1 $02E3C1, s01 ,1 $D829, s08 drop` ;
 \ C1E202(shl edx,2)29D0(sub eax,edx)
 \ 8F00(pop dword[eax])83C004(add eax,4)4B(dec ebx)75F8(jnz -8)
-: >>rr` dup` 0-` IF` $02E2C1, ,3 $D029, ,2
+: >>rr` dup` 0-` 0>` IF` $02E2C1, ,3 $D029, ,2
   $1008F, ,2 $4C083, ,3 $4B, ,1 $F875, ,2
   $D029, ,2 THEN` 2drop` ;
 r` ' alias r0`
