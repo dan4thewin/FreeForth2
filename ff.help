@@ -373,7 +373,14 @@ mod see %
   numbers by 2 4 8 with rounding towards zero, use 2 / or 4 / or 8 / (or better
   02/ or 04/ or 08/ that literalcompiler generates in 10 bytes instead of 16).
   Note: >> is unsigned (the MSBit is not propagated to the right)
-  see also: 1- 1+ 2+ 4+ 2* 2/ 4* 4/ 8* 8/ << >>  + - * / % m/mod  ff.boot
+  see also: 1- 1+ 2+ 4+ 2* 2/ 4* 4/ 8* 8/ << >>  + - * / % m/mod ++ --  ff.boot
+
+++` ( -- ) increment a variable
+--` ( -- ) decrement a variable
+  Must be preceded by a fetch literal ( foo@ ) or throws an error.
+  Overwrites the 8B15(mov edx,DWORD...) or 8B1D(mov ebx,DWORD...) with
+  FF05(inc DWORD...) or FF0D(dec DWORD...) and the preceding under with 90(nop)
+  see also: ++  1- 1+  ff.boot
 
 m/mod` ( xl xh y -- x%y x/y) divides the signed 64 bits dividend (xh<<32)+xl
   by signed divisor in TOS, TOS gets signed quotient, and NOS signed remainder

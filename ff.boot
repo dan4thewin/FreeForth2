@@ -184,6 +184,12 @@ create `mrk 0 , 0 ,
   drop `mrk 2! ;
 : REPEAT` $EB `-jmp END` ;
 
+: `mov? here 6- c@ $8b- 0; !"is_not_preceded_by_a_mov" ;
+: `dst? here 5- c@ $15- 0; $8- 0; !"destination_is_not_edx_or_ebx" ;
+: `>mov `mov? `dst? $90 here 7- c! here 6- w! ;
+: ++` $5FF `>mov ;
+: --` $DFF `>mov ;
+
 : `[] '[' parse 2drop wsparse  0- 0= drop IF drop >in! !"unbalanced" ;THEN
   1 >in -! dup "ELSE]" $- 0<> drop IF dup "THEN]" $- 0<> drop IF "IF]" $- drop `[] ?
   BEGIN `[] 0<> UNTIL `[] ;THEN 1+ THEN drop ;
