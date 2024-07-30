@@ -226,8 +226,8 @@ $68 : `pushi32	`5b "push   "     `ba `xa ;op
 $ba : `movDi32	`5b "mov    edx," `ba `xa ;op
 $bb : `movBi32	`5b "mov    ebx," `ba `xa ;op
 $e8 : `call	`5b "call   " `ba over+ dup `jba BEGIN
-		[ number ' $247+ ] lit CASE " "  `ba BREAK
-		[ number ' $24e+ ] lit CASE " ." `ba BREAK
+		[ number ' $23f+ ] lit CASE " "  `ba BREAK
+		[ number ' $246+ ] lit CASE " ." `ba BREAK
 		[ catch  ' $28+  ] lit CASE " !" `ba BREAK
 		drop ;; END c@+ 2dup "^b" `ba `ba "^b" `ba + 1+ ;op
 $e9 : `jmpE9	`5b "jmp    " `ba over+ `jba ;op
