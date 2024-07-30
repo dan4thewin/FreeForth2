@@ -37,12 +37,12 @@ create open' 80 allot
   2dup openlib 0- 0< IF drop type space !"Can't_open_file." ;THEN
   >r marker tp@ eob over- under r read r> close drop
   over w@ [ "#!" drop w@ ] lit = 2drop
-  IF bounds BEGIN c@+ 10- 0= drop UNTIL swap over- THEN eval ;
+  IF bounds BEGIN c@+ 10- 0= drop UNTIL swap over- THEN eval 0 `noauto! ;
 : see` "see.ff" needed H@ @ execute ;
 
 variable main_
 : `main main_ @ execute 0 exit
-: -f` needs` "main" find 0- 0= drop IF main_ ! `main ' `top !^ ELSE 2drop THEN ;
+: -f` needs` "main" find 0- 0= drop IF main_ ! `main ' `top !^ ELSE drop THEN ;
 : quit `top ^^ `top ;
 
 linsetup ' ossetup !^ `boot ' >r

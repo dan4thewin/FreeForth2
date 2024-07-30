@@ -96,10 +96,6 @@
 : 2swap` rot` >r` rot` r>` ;
 : bounds` over+` swap` ;
 
-: \` 2 >in -! lnparse 2drop ;
-: (` ')' parse 2drop ;
-: EOF` tp@ >in! ;` ;
-
 : [` anon@ SC c@  anon:` ;
 : ]` 2>r ;` 2r> : `] SC c! anon! ;
 : execute >r ;
@@ -111,6 +107,11 @@
 : variable` create` 0 , anon:` ;
 : constant` create` `alias ;
 : :^` :` $68, ,1 here 5+ , $C3, ,1 ;
+
+variable `noauto
+: \` 2 >in -! lnparse 2drop 1 `noauto! ;
+: (` ')' parse 2drop ;
+: EOF` tp@ >in! ;` ;
 
 variable `?#
 : 0-` $DB09, s09 ;
@@ -258,9 +259,9 @@ variable base 10 base!
 : `eval eval '
 : `exec catch 0;  `back ."_<-error:_" c@+ type cr  2drop
   anon@ 0- 0= IF drop H@ dup@ swap 5+ c@+ + 1+ H! THEN
-  here - allot  0 SC c! anon:` 0<>`  START `eval ENTER
-:^ `top ui tib 1024 under accept 0- 0= exit ? dup 1- 0= drop IF AGAIN
-  2dup 2- + c@ ';' - 0= drop IF AGAIN 2dup 1- + $3b20 swap w! 1+ REPEAT ;
+  here - allot  0 SC c! anon:` 0<>`
+  START `eval `noauto@ 0- drop 0= IF ;` THEN ENTER
+:^ `top ui 0 `noauto! tib 1024 under accept 0- 0= UNTIL
 : bye` ;` cr 0 exit ;
 : help` !"Can't_find_file_ff.ff_needed_for_help!"
 :^ doargv argc 1- 0; 1 `argv swap 2+ `argv over- tuck tib place swap `eval ;

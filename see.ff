@@ -235,4 +235,4 @@ $e9 : `jmpE9	`5b "jmp    " `ba over+ `jba ;op
 \ 2-byte opcodes starting with 0F
 $0f : `0f	dup 1+ `callop ;op
 
-: see`		wsparse 2dup findxt 2swap type cr `see ;
+: see`		wsparse 0- 0= IF 2drop ;THEN 2dup findxt 2swap type cr `see ;
