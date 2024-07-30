@@ -1,0 +1,238 @@
+\ xt[4],ct[1],sz[1],nm[sz],nul
+: .hdr+		dup ."$" .l .": " dup @ ."$" .l space 4+ dup c@ . 1+ c@+ 2dup type + 1+ ;
+: .hdrs		H@ START .hdr+ cr ENTER dup 5+ c@ 0- 0= drop UNTIL drop ;
+: .hdr		.hdr+ drop ;
+
+variable `xt
+: `sz-		2dup 5+ c@ - drop ;
+: `nm-		3dup 6+ swap $- drop ;
+: `hdr-		`sz- `nm- 0= ? ;
+: `skip?	dup 4+ c@ 8& drop ;
+: `stop?	dup 5+ c@ 0<>; !"not found" ;
+: `nexth	START 5+ c@+ + 1+ `skip? 0<> WHILE ENTER `stop? REPEAT ;
+: findxt	here `xt! H@
+		START `hdr- 0<> WHILE dup@ `xt! `nexth ENTER `stop? REPEAT
+		nip nip @ `xt@ over- ;
+: findh		H@
+		START 2dup @ < 2drop WHILE `nexth ENTER `stop? REPEAT
+		swap over @ - ;
+: findnm	findh swap 5+ c@+ type 0; ."+" .x ;
+
+create `nbuf 12 allot
+: `nac		`nbuf appendc ;
+: `nac!^	`nac ' putc !^ ;
+: `nac^^	putc ^^ ;
+: n2str		0 `nbuf! execute `nbuf c@+ ;
+: u2str		`nac!^ 10 .ub\ ' n2str `nac^^ ;
+: x2str		`nac!^ .x\ ' n2str `nac^^ ;
+
+create buf 80 allot
+: `ba		buf append ;
+: `ua		u2str `ba ;
+: `xa		x2str `ba ;
+: `gdbscript	over+ swap
+		0 buf!
+		"attach_" `ba getpid `ua "^J" `ba
+		"set disassembly-flavor intel^J" `ba
+		"disass/r_" `ba `ua "," `ba `ua "^J" `ba ;
+: `gdbrun	"gdb --batch -x .see | less -F -+c" shell ;
+: `tmpsave	openw0 dup >r ?ior r write ?ior r close ?ior rdrop ;
+: `gdbdump	`gdbscript buf c@+ ".see" `tmpsave `gdbrun ;
+: dis`		wsparse findxt `gdbdump ;
+
+variable `unknown
+create `op	256 4* allot
+
+: `.le		dup 4 TIMES c@+ .b REPEAT drop ;	\ @ -- @	; show little-endian
+: `.A		dup ."   $" .l .":  " ;			\ @ -- @	; show address
+: `.B		dup 1+ swap c@ dup .b space ;		\ @ -- @+1 c	; show 1 byte
+: `.N		dup 4+ swap `.le space @ ;		\ @ -- @+4 n	; show 4-byte number
+: `jba		dup `xa " " `ba				\ @ --		; show jump destination
+		findh swap 5+ c@+ `ba 0; "+" `ba `xa ;
+: `se		dup $80& 0; drop -$80| ;		\ n -- n	; sign extend a byte
+: `col41	."^[[41G" ;
+: `,a		"," `ba ;
+: `???		"???" `ba `unknown@ ++ ;
+: `.A?		`.A `.B drop `??? ;
+`.A? ' 256 TIMES dup `op r 4* + ! REPEAT drop ;
+
+: `callop	c@ 4* `op+ @ execute ;
+: `oneop	0 buf! `callop buf c@+ `col41 type cr ;
+: `see		0 `unknown! over+ swap
+		BEGIN dup `oneop 2dup - drop 0<= UNTIL
+		2drop `unknown@ 0; ."unknown bytes: " . cr ;
+
+\ Op/En	Operand 1	Operand 2
+\ MR	ModRM:r/m (w)	ModRM:reg (r)
+\ RM	ModRM:reg (w)	ModRM:r/m (r)
+
+create `regs32	24 allot "eaxecxedxebxespebpesiedi" `regs32 swap move
+create `regs16	16 allot "axcxdxbxspbpsidi"         `regs16 swap move
+create `regs8	16 allot "alcldlblahchdhbh"         `regs8  swap move
+variable `regxt
+: `reg		>r swap 7& over* r> + swap `ba ;
+: `r32		3 `regs32 `reg ;
+: `r16		2 `regs16 `reg ;
+: `r8		2 `regs8  `reg ;
+: `sib		dup c@ dup .b space dup BEGIN $20 CASE `r32 BREAK $24 CASE `r32 BREAK drop `??? END 1+ ;
+: `r@.		BEGIN 4 CASE `sib BREAK 5 CASE `.le dup @ `xa 4+ BREAK `r32 END ;
+: `disp		0- 0>= IF "+" `ba THEN `xa ;
+: `r@+8.	BEGIN 4 CASE `sib BREAK `r32 END dup cs@ dup .b `disp 1+ ;
+: `r@+32.	`r32 dup @ `.le `disp 4+ ;
+: `brkt		"[" `ba execute "]" `ba ;
+: `r@		`r@.    ' `brkt ;
+: `r@+8		`r@+8.  ' `brkt ;
+: `r@+32	`r@+32. ' `brkt ;
+
+: `ext		dup 3 >> 7& ;
+: `split	dup 7& swap `ext swap 6 >> ;
+: `mod.		3& BEGIN 0 CASE `r@ BREAK 1 CASE `r@+8 BREAK 2 CASE `r@+32 BREAK drop `regxt@ execute END ;
+: `rm.		`split swap `regxt@ execute `,a `mod. ;
+: `mr.		swap >r `split >rswapr> r> -rot `mod. `,a swap `regxt@ execute ;
+: `rm		`r32 ' `regxt! `rm. ;
+: `mr		`r32 ' `regxt! `mr. ;
+: `rm16		`r16 ' `regxt! `rm. ;
+: `mr16		`r16 ' `regxt! `mr. ;
+: `rm8		`r8  ' `regxt! `rm. ;
+: `mr8		`r8  ' `regxt! `mr. ;
+: `mod		`r32 ' `regxt! `mod. ;
+
+: `0f<>		$f- drop 0= IF `??? rdrop THEN ;
+: `0f=		$f- drop 0<> IF `??? rdrop THEN ;
+: `0falt	over c@ $f- drop 0= IF rdrop >r ;THEN drop ;
+
+: `1b		`.A `.B `0f<> ;
+: `1b.		`.A `.B `0f= `.B drop ;
+: ;op` 		;` 4* `op + H@ @ swap ! ;
+$42 : `incD	`1b "inc    edx" `ba ;op
+$43 : `incB	`1b "inc    ebx" `ba ;op
+$45 : `incBP	`1b "inc    ebp" `ba ;op
+$49 : `decC	`1b "dec    ecx" `ba ;op
+$4a : `decD	`1b "dec    edx" `ba ;op
+$4b : `decB	`1b "dec    ebx" `ba ;op
+$4d : `decBP	`1b "dec    ebp" `ba ;op
+$50 : `pushA	`1b "push   eax" `ba ;op
+$51 : `pushC	`1b "push   ecx" `ba ;op
+$52 : `pushD	`1b "push   edx" `ba ;op
+$53 : `pushB	`1b "push   ebx" `ba ;op
+$55 : `pushBP	`1b "push   ebp" `ba ;op
+$58 : `popA	`1b "pop    eax" `ba ;op
+$59 : `popC	`1b "pop    ecx" `ba ;op
+$5a : `popD	`1b "pop    edx" `ba ;op
+$5b : `popB	`1b "pop    ebx" `ba ;op
+$5d : `popBP	`1b "pop    ebp" `ba ;op
+$5e : `popSI	`1b "pop    esi" `ba ;op
+$5f : `popDI	`1b "pop    edi" `ba ;op
+    : `j_i32	`ba `.le dup 4+ swap @ over+ `jba ;
+$82 : `jbi32	`1b. "jb     " `j_i32 ;op
+    : `jaei32	`1b. "jae    " `j_i32 ;	\ $0f $83
+$84 : `jzi32	`1b. "jz     " `j_i32 ;op
+$85 : `jnzi32	`1b. "jnz    " `j_i32 ;op
+$86 : `jbei32	`1b. "jbe    " `j_i32 ;op
+    : `jai32	`1b. "ja     " `j_i32 ;	\ $0f $87
+    : `jsi32	`1b. "js     " `j_i32 ;	\ $0f $88
+$8c : `jli32	`1b. "jl     " `j_i32 ;op
+    : `jgei32	`1b. "jge    " `j_i32 ;	\ $0f $8d
+$8e : `jlei32	`1b. "jle    " `j_i32 ;op
+$8f : `jgi32	`1b. "jg     " `j_i32 ;op
+$90 : `nop	`1b "nop" `ba ;op
+$93 : `xchgBA	`1b "xchg   ebx,eax" `ba ;op
+$94 : `xchgSA	`1b "xchg   esp,eax" `ba ;op
+$99 : `cdq	`1b "cdq" `ba ;op
+$b9 : `movC	`1b "mov    ecx," `ba `.le dup @ `xa 4+ ;op
+$c3 : `ret	`1b "ret" `ba ;op
+$fc : `cld	`1b "cld" `ba ;op
+$fd : `std	`1b "std" `ba ;op
+
+: `2b		`.A `.B `0f<> `.B ;
+: `2b.		`.A `.B `0f= `.B drop `.B ;
+$01 : `add	`2b  "add    " `ba `mr ;op
+$03 : `add'	`2b  "add    " `ba `rm ;op
+$09 : `or	`2b  "or     " `ba `mr ;op
+$0b : `or'	`2b  "or     " `ba `rm ;op
+$29 : `sub	`2b  "sub    " `ba `mr ;op
+$2b : `sub'	`2b  "sub    " `ba `rm ;op
+$31 : `xor	`2b  "xor    " `ba `mr ;op
+$33 : `xor'	`2b  "xor    " `ba `rm ;op
+$39 : `cmp	`2b  "cmp    " `ba `mr ;op
+$3b : `cmp'	`2b  "cmp    " `ba `rm ;op
+$6a : `pushi8	`2b  "push   " `ba `se `xa ;op
+    : `j_	`ba `se over+ `jba ;
+$72 : `jb	`2b  "jb     " `j_ ;op
+$73 : `jae	`2b  "jae    " `j_ ;op
+$74 : `jz	`2b  "jz     " `j_ ;op
+$75 : `jnz	`2b  "jnz    " `j_ ;op
+$76 : `jbe	`2b  "jbe    " `j_ ;op
+$77 : `ja	`2b  "ja     " `j_ ;op
+$78 : `js	`2b  "js     " `j_ ;op
+$7c : `jl	`2b  "jl     " `j_ ;op
+$7d : `jge	`2b  "jge    " `j_ ;op
+$7e : `jle	`2b  "jle    " `j_ ;op
+$7f : `jg	`2b  "jg     " `j_ ;op
+$87 : `xchg	`jai32 ' `0falt
+		`2b  "xchg   " `ba `rm ;op
+$88 : `mov8	`jsi32 ' `0falt
+		`2b  "mov    " `ba `mr8 ;op
+$89 : `mov	`2b  "mov    " `ba `mr ;op
+$8b : `mov'	`2b  "mov    " `ba `rm ;op
+$8d : `lea	`jgei32 ' `0falt
+		`2b  "lea    " `ba `rm ;op
+$95 : `setne	`2b. "setne  " `ba BEGIN $c1 CASE "cl" `ba BREAK drop `??? END ;op
+$af : `imulaf	`2b. "imul   " `ba `rm ;op
+    : `mov_x	`ba `split 0- drop 0<> IF 2drop `??? ;THEN `r32 ",byte" `ba `r@ ;
+    : `mov_x16	`ba `split 0- drop 0<> IF 2drop `??? ;THEN `r32 ",word" `ba `r@ ;
+$b6 : `movzx	`2b. "movzx  " `mov_x ;op
+$b7 : `movzx16	`2b. "movzx  " `mov_x16 ;op
+$be : `movsx	`2b. "movsx  " `mov_x ;op
+$bf : `movsx16	`2b. "movsx  " `mov_x16 ;op
+$c6 : `movi8	`2b  "mov    byte" `ba `split nip `mod `,a dup cs@ dup space .b `xa 1+ ;op
+$c7 : `movi32	`2b  "mov    " `ba `split nip `mod `,a space `.le dup @ `xa 4+ ;op
+$d1 : `shl1	`2b `ext 4- 0<> drop IF 2drop `??? ;THEN "shl    " `ba `r32 ",1" `ba ;op
+$d3 : `sh_cl	`2b `ext
+		BEGIN 4 CASE "shl" BREAK 5 CASE "shr" BREAK 2drop `??? ;; END
+		`ba "    " `ba `r32 ",cl" `ba ;op
+$e3 : `jecxz	`2b "jecxz  " `ba over+ `jba ;op
+$f7 : `f7	`2b `split swap
+		BEGIN 3 CASE "neg " BREAK 7 CASE "idiv" BREAK 2drop drop `??? ;; END
+		`ba "   " `ba `mod ;op
+$ff : `ff	`2b `split swap
+		BEGIN 0 CASE "inc " BREAK 1 CASE "dec " BREAK 6 CASE "push" BREAK 2drop drop `??? ;; END
+		`ba "   " `ba `mod ;op
+
+create `exts	24 allot "addor adcsbbandsubxorcmp" `exts swap move
+: `exta		7& 3* `exts+ 3 `ba "    " `ba ;
+$81 : `81	`2b `ext `exta `r32 `,a    `.le dup @  `xa 4+ ;op
+$83 : `83	`jaei32 ' `0falt
+		`2b `ext `exta `r32 `,a dup cs@ dup .b `xa 1+ ;op
+
+$eb : `jmp	`2b "jmp    " `ba `se over+ `jba ;op
+$f3 : `rep	`2b BEGIN
+		$a4 CASE "rep    movsb" BREAK
+		$a6 CASE "repz   cmpsb" BREAK
+		$aa CASE "rep    stosb" BREAK
+		drop `??? ;; END `ba ;op
+
+: `3b		`.A `.B `0f<> `.B swap `.B swap 2xchg ;
+$6b : `imul	`3b  "imul   " `ba `rm `,a `xa ;op
+$c1 : `shl	`3b  `ext 4- 0<> drop IF 2drop `??? ;THEN "shl    " `ba `r32 `,a `xa ;op
+$80 : `80	`3b  `ext `exta `r8 `,a `xa ;op
+
+: `66movi16	`3b  "mov    word" `ba drop `mr16 ;
+: `66movi32	`3b  "mov    word" `ba drop `split nip `mod `,a dup space c@+ .b c@+ .b drop dup ws@ `xa 2+ ;
+$66 : `66	dup 1+ c@ BEGIN $89 CASE `66movi16 BREAK $c7 CASE `66movi32 BREAK drop `.A? END ;op
+
+: `5b		`.A `.B `0f<> `.N ;
+$68 : `pushi32	`5b "push   "     `ba `xa ;op
+$ba : `movDi32	`5b "mov    edx," `ba `xa ;op
+$bb : `movBi32	`5b "mov    ebx," `ba `xa ;op
+$e8 : `call	`5b "call   " `ba over+ dup `jba BEGIN
+		[ number ' $247+ ] lit CASE " "  `ba BREAK
+		[ number ' $24e+ ] lit CASE " ." `ba BREAK
+		[ catch  ' $28+  ] lit CASE " !" `ba BREAK
+		drop ;; END c@+ 2dup "^b" `ba `ba "^b" `ba + 1+ ;op
+$e9 : `jmpE9	`5b "jmp    " `ba over+ `jba ;op
+
+\ 2-byte opcodes starting with 0F
+$0f : `0f	dup 1+ `callop ;op
+
+: see`		wsparse 2dup findxt 2swap type cr `see ;

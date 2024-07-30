@@ -38,9 +38,11 @@ create open' 80 allot
   >r marker tp@ eob over- under r read r> close drop
   over w@ [ "#!" drop w@ ] lit = 2drop
   IF bounds BEGIN c@+ 10- 0= drop UNTIL swap over- THEN eval ;
+: see` "see.ff" needed H@ @ execute ;
 
-here 0 , dup : `main lit @ execute 0 exit
-: -f` lit needs` "main" find 0- 0= drop IF swap ! `main ' `top !^ ELSE 2drop THEN ;
+variable main_
+: `main main_ @ execute 0 exit
+: -f` needs` "main" find 0- 0= drop IF main_ ! `main ' `top !^ ELSE 2drop THEN ;
 : quit `top ^^ `top ;
 
 linsetup ' ossetup !^ `boot ' >r

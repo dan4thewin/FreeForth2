@@ -349,7 +349,7 @@ macro DATA name, addr, init {   ; data variable
 addr    dd init                 ; initialized data buffer
 }
 macro CSTE name, value {        ; literal constant
-        WORD name, value, 1     ; literal value
+        WORD name, value, 9     ; literal value
 }
 macro VECT name, entry {        ; vectorizable subroutine entry
         CODE name, entry

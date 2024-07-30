@@ -22,6 +22,7 @@
 : -rot` swap`
 : >rswapr>` $201487, s08 -1 allot c04 ;
 : rot` >rswapr>` swap` ;
+: 2xchg` swap` >rswapr>` swap` ;
 
 : ~` $D3F7, s01 ;
 : negate` $DBF7, s01 ;
@@ -105,7 +106,7 @@
 : reverse` $D1FF59, ,3 ;
 
 : alias` :`
-: `alias H@ ! anon:` ;
+: `alias H@ swap over! 4+ dupc@ 8| swap c! anon:` ;
 : create` :` 1 H@ 4+ c! anon:` ;
 : variable` create` 0 , anon:` ;
 : constant` create` `alias ;
@@ -160,6 +161,7 @@ variable `?#
 : `then here over- 1- `?off swap c! 0 callmark! ;
 : 0;` 0-` 0=` IF` drop`
 : ;THEN` ;;` dupc@ SC c! `then ;
+: 0<>;` 0-` 0<>` IF` drop` ;THEN` ;
 : BOOL` 0 lit` IF` ~` THEN` ;
 : zFALSE 0 0- drop ;
 : nzTRUE 1 0- drop ;
@@ -187,8 +189,8 @@ create `mrk 0 , 0 ,
 : `mov? here 6- c@ $8b- 0; !"is_not_preceded_by_a_mov" ;
 : `dst? here 5- c@ $15- 0; $8- 0; !"destination_is_not_edx_or_ebx" ;
 : `>mov `mov? `dst? $90 here 7- c! here 6- w! ;
-: ++` $5FF `>mov ;
-: --` $DFF `>mov ;
+: ++` $5FF `>mov swap` ;
+: --` $DFF `>mov swap` ;
 
 : `[] '[' parse 2drop wsparse  0- 0= drop IF drop >in! !"unbalanced" ;THEN
   1 >in -! dup "ELSE]" $- 0<> drop IF dup "THEN]" $- 0<> drop IF "IF]" $- drop `[] ?
@@ -207,12 +209,17 @@ variable `io
 :^ cr ."^J" ;
 
 variable base 10 base!
-: `.d 0 base@ m/mod 0; `.d
-: .digit '0'+ '9' u> drop IF 7+ 'Z' u> drop IF '?'_ THEN THEN putc ;
-: .\ 0- 0< IF ."-" negate THEN `.d .digit ;
+: `.d tuck 0 swap m/mod 0- 0= IF drop nip ;THEN rot `.d
+: .digit '0'+ '9' u> drop IF 39+ 'z' u> drop IF '?'_ THEN THEN putc ;
+: .ub\ `.d .digit ;
+: .ub .ub\ space ;
+: `.sign 0- 0< IF '-' putc negate THEN ;
+: .\ `.sign base@ .ub\ ;
 : . .\ space ;
-: .dec base@ 10 base! swap . base! ;
-: .dec\ base@ 10 base! swap .\ base! ;
+: .dec\ `.sign 10 .ub\ ;
+: .dec .dec\ space ;
+: .x\ `.sign 9 > drop IF '$' putc THEN $10 .ub\ ;
+: .x .x\ space ;
 : .b 2
 : .#s TIMES dup r 4* >> $F& .digit REPEAT drop ;
 : .w 4 .#s ;

@@ -28,7 +28,7 @@ install-bin: ff
 	install -m 775 $^ $(FFBIN)
 
 FFSHARE=$(PREFIX)/share/ff
-install-share: ff.ff full.ff ff.help see
+install-share: ff.ff full.ff ff.help see.ff
 	install -m 775 -d $(FFSHARE)
 	install -m 664 $^ $(FFSHARE)
 

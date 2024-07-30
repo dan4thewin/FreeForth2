@@ -5,7 +5,7 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
 * turnkey support
 * simple locals
 * segfault handler
-* see disassembles words
+* see disassembles words - Improved! resolves calls/jumps and handles inline strings
 * simple approach to arguments
 * library search path
 
@@ -28,8 +28,6 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
   * For example, on Ubuntu LTS run `sudo apt install build-essential gcc-multilib`
 * flat assembler, a.k.a. fasm: https://flatassembler.net/
   * Likely available in your Linux distro, e.g., `sudo apt install fasm`
-* The `see` utility uses `gdb` and `less`
-  * Likely available in your Linux distro, e.g., `sudo apt install gdb less`
 
 ## Build
 * run `make` which should create `ff`

@@ -53,6 +53,7 @@ full.ff has additional FreeForth kernel extensions for special uses.
   Load it as desired (i.e. needs full.ff).
   Edit full.ff to enable([1]) or disable([0]) its optional sections,
   or to add your own startup code, such as:  needs mystartup.ff
+see.ff provides debugging tools: .hdrs, findnm, see, and more.
   see also: ff.asm ff.boot ff.help boot bed.ff hello needs
 
 fflin.asm is the Linux-port main assembler source file
@@ -247,6 +248,9 @@ rot` ( x y z -- y z x ) rotates the top three DATAstack cells, 3rd to top
   : -rot` swap` >rswapr>` ;
 >rswapr>` ( x y z -- y x z ) exchanges the 2nd and 3rd DATAstack cells
   : >rswapr>` $201487, s08 -1 allot c04 ; \ xchg edx,[eax/esp]
+2xchg` ( x y z -- z y x ) exchanges the 1st and 3rd DATAstack cells
+  : 2xchg` swap` >rswapr>` swap` ; \ xchg ebx,[eax/esp]
+  \ e.g., 871C20(xchg ebx,[eax]), 871424(xchg edx,[esp])
   see also: rot -rot swap 2drop 2dup  ff.boot
 
 depth ( -- n ) returns the net number of cells pushed onto (positive)
@@ -1177,6 +1181,8 @@ ENTER` ( -- ) resolves the forward jump compiled by "START" at looping
   typically use this within loops or recursive subroutines, but WARNING:
   DON'T use this within counted loops (because of the index on CALLstack)!
   : 0;` 0-` 0=` IF` drop` ;THEN` ;
+0<>;` ( nn -- | 0 -- 0 ) like 0; but reversed, i.e., if TOS is not null...
+  : 0<>;` 0-` 0<>` IF` drop` ;THEN` ;
   see also: ;THEN  ff.boot
 
 TILL` ( -- ) compiles a backward conditional jump to the entry of the
@@ -1521,13 +1527,25 @@ key ( -- c ) requests the operating system to read one byte from the
   : `.d base@ /% 0; `.d .digit ;  \ recursive decomposition and display
   : .\ 0- 0< IF ."-" negate THEN `.d .digit ;
 .digit ( c -- ) displays the digit c using the characters 0..9 for
-  the digit values 0..9, or A..Z for the digit values 10..35, or ?
+  the digit values 0..9, or a..z for the digit values 10..35, or ?
   for the digit values above 35.
-  : .digit '0'+ '9' u> drop IF 7+ 'Z' u> drop IF '?'_ THEN THEN putc ;
+  : .digit '0'+ '9' u> drop IF 39+ 'Z' u> drop IF '?'_ THEN THEN putc ;
 putc ( c -- ) redirectable vector used in ".digit", by default points to emit;
   words that call ".digit": ".", ".\", ".dec", ".dec\", ".#s", and so on.
 base ( -- @ ) system variable: output conversion base for "." and ".\"
   variable base  10 base!  \ initially decimal
+.ub ( u base -- ) displays unsigned u using the conversion base in TOS,
+  using the minimum number of digits, and followed by a space
+.ub\ ( u base -- ) .ub without a space
+.x ( n -- ) displays n in hexadecimal with a '$' if >9 or <-9
+  : .x .x\ space ;
+.x\ ( n -- ) .x without a space
+  : `.sign 0- 0< IF '-' putc negate THEN ;
+  : .x\ `.sign 9 > drop IF '$' putc THEN $10 .ub\ ;
+.dec ( n -- ) display n in decimal
+  : .dec .dec\ space ;
+.dec\ ( n -- ) .dec without a space
+  : .dec\ `.sign 10 .ub\ ;
   see also: . .l .dec  ff.boot
 
 .l ( u -- ) displays the unsigned long u using 8 hexadecimal digits
@@ -1539,12 +1557,6 @@ base ( -- @ ) system variable: output conversion base for "." and ".\"
 .#s ( u c -- ) displays the unsigned number "u" using "c" hexadecimal digits
   : .#s TIMES dup r 4* >> $F& .digit REPEAT drop ;
   see also: .l .w .b .  ff.boot
-
-.dec ( n -- ) display n in decimal, whatever the current value of "base"
-  : .dec base@ 10 base! swap . base! ;
-.dec\ ( n -- ) same as .dec but uses .\ instead of .
-  : .dec\ base@ 10 base! swap .\ base! ;
-  see also: . .dec .l .#s  ff.boot
 
   -----------
   MEMORY DUMP
@@ -1709,16 +1721,18 @@ appendc ( c @dst -- ) appends 8-bits "c" to the end of @dst and increments the
   initial 8-bits of @dst
   see also: append
 
-.hdr ( @ -- @next ) displays the header at address in TOS, replacing TOS with
-  the address of the next header; outputs xt, type, and name.
-  Use "16 base!" first for hex addresses.
+.hdr ( @ -- ) displays the header at address in TOS - outputs header address,
+  xt, type, and name.
+.hdr+ ( @ -- @next ) displays the header replacing TOS with the address
+  of the next header.
 .hdrs ( -- ) like "words", displays the symbol table headers in full,
   one per line (last defined first displayed)
-see ( <name> -- ) calls gdb to display the disassembly of name or throws an
+dis ( <name> -- ) calls gdb to display the disassembly of name or throws an
   exception with error message "not found".
-  Addresses in calls and jumps may be found in the list output by ".hdrs".
   NB. If name is not found, you may want to try name`
-  see also: .hdr .hdrs header words
+see ( <name> -- ) uses a native disassembler to display name, resolving calls
+  and jumps and showing inline strings appropriately. (loads see.ff)
+  see also: .hdr .hdrs dis header words  see.ff
 
 bye` ( -- ) requests the operating system to terminate the FreeForth session
   with a null return value
