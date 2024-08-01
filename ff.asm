@@ -816,7 +816,9 @@ litnumd:                        ; @ # -- n ; called from other lit*
 litdata:                        ; @ # -- xt ; called from lit@!
         call _find              ; -- @ # | xt 0
         jnz notfnd
-        cmp byte[esi+4],1       ; 1=data 0=code
+        mov cl,byte[esi+4]
+        and ecx,7               ; firewall!
+        cmp ecx,1               ; 9 or 1=data, 8 or 0=code
         jnz notfnd
         jmp drop1               ; -- xt
 litfetch:                       ; @ # --
