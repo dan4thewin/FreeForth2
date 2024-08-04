@@ -141,13 +141,14 @@ variable `?#
 : `?` `?@ 0- ,"u^C" $75_ swap
 : `-j here 2+ - -$80 >= drop swap `-js [ `-c` 1 here +! ] `?
   $EB = drop `-ju `-c `? `-jc ;
-: -call callmark@ here = 2drop `-c` `-c `? !"is_not_preceded_by_a_call"
+:^ -call callmark@ here = 2drop `-c` `-c `? !"is_not_preceded_by_a_call"
 : ?` -call `?` ;
 : '` -call lit` ;
 : @^` -call over` $1D8B, s08 1+ , ;
 : !^` -call $1D89, s08 1+ , drop` ;
 : ^^` -call $05C7, ,2 dup 1+ , 6+ , ;
 : n^` -call $05C7, ,2 , $441F0F , ;
+: x^` -call 6+ dcall, ;
 : lib:` :` #lib lit` #fun ' call, ;` ;
 : fun:` :` lit` lit` #call ' call, ;` ;
 
@@ -189,9 +190,9 @@ create `mrk 0 , 0 ,
 
 : `mov? here 6- c@ $8b- 0; !"is_not_preceded_by_a_mov" ;
 : `dst? here 5- c@ $15- 0; $8- 0; !"destination_is_not_edx_or_ebx" ;
-: `>mov `mov? `dst? $90 here 7- c! here 6- w! ;
-: ++` $5FF `>mov swap` ;
-: --` $DFF `>mov swap` ;
+:^ >mov `mov? `dst? $90 here 7- c! here 6- w! ;
+: ++` $5FF >mov swap` ;
+: --` $DFF >mov swap` ;
 
 : `[] '[' parse 2drop wsparse  0- 0= drop IF drop >in! !"unbalanced" ;THEN
   1 >in -! dup "ELSE]" $- 0<> drop IF dup "THEN]" $- 0<> drop IF "IF]" $- drop `[] ?

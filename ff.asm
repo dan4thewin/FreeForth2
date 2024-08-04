@@ -647,7 +647,7 @@ CODE "number",_number           ; @ # -- @ # | n 0
 ;;; -------------------------------------------------------
 ;;; literal compiler: this is rich but quite simple
 
-literalcompiler:                ; @ # -- ; from _wsparse
+CODE "litcomp",literalcompiler  ; @ # -- ; from _wsparse
         mov edi,.f              ; finals
         mov ecx,(.x - .f)
         dec ebx                 ; -- @ #-1
@@ -872,6 +872,7 @@ _drop1: DROP1                   ; --
 DATA "callmark",callmark,0      ; saves last-call address
 CODE "call,",_call
         call _rst               ; xt -- ; compile a call to runtime entry
+CODE "dcall,",_dcall            ; direct call - no reset
         POSTPN ebx
         mov [callmark],ebp      ; save last-call address for ;;
         jmp _drop1
@@ -895,7 +896,7 @@ CODE ";;`",_semisemi            ; --
         inc ebp                 ;
         ret
 
-CODE ";`",_semi                 ; -- ; who needs the interpreter anyway!
+VECT ";`",_semi                 ; -- ; who needs the interpreter anyway!
         call _rst
         mov ecx,[anon]
         cmp ecx,ebp             ; empty?

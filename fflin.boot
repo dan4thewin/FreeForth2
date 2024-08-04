@@ -38,7 +38,9 @@ create open' 80 allot
   >r marker tp@ eob over- under r read r> close drop
   over w@ [ "#!" drop w@ ] lit = 2drop
   IF bounds BEGIN c@+ 10- 0= drop UNTIL swap over- THEN eval 0 `noauto! ;
-: see` "see.ff" needed H@ @ execute ;
+: `needexec needed H@ @ execute ;
+: see` "see.ff" `needexec ;
+: -d` "debug.ff" `needexec ;
 
 variable main_
 : `main main_ @ execute 0 exit

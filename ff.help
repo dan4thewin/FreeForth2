@@ -54,6 +54,7 @@ full.ff has additional FreeForth kernel extensions for special uses.
   Edit full.ff to enable([1]) or disable([0]) its optional sections,
   or to add your own startup code, such as:  needs mystartup.ff
 see.ff provides debugging tools: .hdrs, findnm, see, and more.
+debug.ff provides an alternate compiler that makes verbose words.
   see also: ff.asm ff.boot ff.help boot bed.ff hello needs
 
 fflin.asm is the Linux-port main assembler source file
@@ -918,7 +919,7 @@ equ` ( n <name> -- ; -- n ) a shorter, assembly friendly, alias for constant
   calls ":" and compiles default redirection code pointing just after itself
   (push $+6 ret), as also does "^^"
   : :^` :` $68 c, here 5+ , $C3 c, ; \ push long  ret
-  see also: : :^ @^ ' !^ ^^ n^  ff.boot
+  see also: : :^ @^ ' !^ ^^ n^ x^  ff.boot
 
 ^^` ( -- ) resets vector: if a call was compiled just before, converts it
   to runtime code which will reset the vector target address to its default,
@@ -926,21 +927,21 @@ equ` ( n <name> -- ; -- n ) a shorter, assembly friendly, alias for constant
   redirection code; otherwise throws an exception with error message
   "is not preceded by a call".
   : ^^` -call $05C7, 2 allot dup 1+ , 6+ , ; \ mov[],long
-  see also: :^ @^ !^ ^^ n^  ff.boot
+  see also: :^ @^ !^ ^^ n^ x^  ff.boot
 
 !^` ( @ -- ) sets vector contents: if a call was compiled just before,
   converts it to runtime code which will set the vector target address
   from TOS; otherwise throws an exception with error message
   "is not preceded by a call".
   : !^` -call $1D89, s08 1+ , drop` ; \ mov [],ebx
-  see also: :^ @^ !^ ^^ n^  ff.boot
+  see also: :^ @^ !^ ^^ n^ x^  ff.boot
 
 @^` ( -- @ ) gets vector contents: if a call was compiled just before,
   converts it to runtime code which will read the vector target address
   and will push it onto the DATAstack; otherwise throws an exception
   with error message "is not preceded by a call".
   : @^` -call over` $1D8B, s08 1+ , ; \ mov ebx,[]
-  see also: :^ @^ !^ ^^ n^  ff.boot
+  see also: :^ @^ !^ ^^ n^ x^  ff.boot
 
 n^` ( -- ) disables vector contents: if a call was compiled just before,
   converts it to runtime code which will replace the initial call
@@ -948,7 +949,14 @@ n^` ( -- ) disables vector contents: if a call was compiled just before,
   otherwise throws an exception with error message
   "is not preceded by a call".
   : n^` -call $05C7, ,2 , $441F0F , ; \ mov [],nop
-  see also: :^ @^ !^ ^^ n^  ff.boot
+  see also: :^ @^ !^ ^^ n^ x^  ff.boot
+
+x^` ( -- ) executes original vector target: if a call was compiled just before,
+  it adds 6 to the call target which corresponds to the unmodified vector;
+  otherwise throws an exception with error message
+  "is not preceded by a call".
+  : x^` -call 6+ dcall, ;
+  see also: :^ @^ !^ ^^ n^ x^  ff.boot
 
   ------------
   FLOW-CONTROL
@@ -1730,9 +1738,16 @@ appendc ( c @dst -- ) appends 8-bits "c" to the end of @dst and increments the
 dis ( <name> -- ) calls gdb to display the disassembly of name or throws an
   exception with error message "not found".
   NB. If name is not found, you may want to try name`
-see ( <name> -- ) uses a native disassembler to display name, resolving calls
+see` ( <name> -- ) uses a native disassembler to display name, resolving calls
   and jumps and showing inline strings appropriately. (loads see.ff)
-  see also: .hdr .hdrs dis header words  see.ff
+debug` ( -- ) swaps the normal compiler for a debug compiler.
+  Other words that backtrack are also swapped for debug versions.
+  A word compiled by the debug compiler shows the stack and the corresponding
+  source before executing the operations for that source.
+-d` ( -- ) loads debug.ff and runs debug`.
+nodebug` ( -- ) swaps compiler and other words back to their normal versions.
+  debug and nodebug can be used repeatedly.
+  see also: .hdr .hdrs dis header words  see.ff debug.ff
 
 bye` ( -- ) requests the operating system to terminate the FreeForth session
   with a null return value

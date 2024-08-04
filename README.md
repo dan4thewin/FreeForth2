@@ -8,6 +8,7 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
 * see disassembles words - Improved! resolves calls/jumps and handles inline strings
 * simple approach to arguments
 * library search path
+* debug compiler makes verbose words
 
 ## Changes
 * interactive input automatically terminated

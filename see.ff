@@ -7,7 +7,7 @@ variable `xt
 : `sz-		2dup 5+ c@ - drop ;
 : `nm-		3dup 6+ swap $- drop ;
 : `hdr-		`sz- `nm- 0= ? ;
-: `skip?	dup 4+ c@ 8& drop ;
+: `skip?	dup 4+ c@ 0; 1- drop ;
 : `stop?	dup 5+ c@ 0<>; !"not found" ;
 : `nexth	START 5+ c@+ + 1+ `skip? 0<> WHILE ENTER `stop? REPEAT ;
 : findxt	here `xt! H@
@@ -139,6 +139,8 @@ $90 : `nop	`1b "nop" `ba ;op
 $93 : `xchgBA	`1b "xchg   ebx,eax" `ba ;op
 $94 : `xchgSA	`1b "xchg   esp,eax" `ba ;op
 $99 : `cdq	`1b "cdq" `ba ;op
+$9c : `pushf	`1b "pushf" `ba ;op
+$9d : `popf	`1b "popf" `ba ;op
 $b9 : `movC	`1b "mov    ecx," `ba `.le dup @ `xa 4+ ;op
 $c3 : `ret	`1b "ret" `ba ;op
 $fc : `cld	`1b "cld" `ba ;op
@@ -179,12 +181,17 @@ $8d : `lea	`jgei32 ' `0falt
 		`2b  "lea    " `ba `rm ;op
 $95 : `setne	`2b. "setne  " `ba BEGIN $c1 CASE "cl" `ba BREAK drop `??? END ;op
 $af : `imulaf	`2b. "imul   " `ba `rm ;op
-    : `mov_x	`ba `split 0- drop 0<> IF 2drop `??? ;THEN `r32 ",byte" `ba `r@ ;
+    : `mov_x	`ba `split BEGIN 0 CASE `r32 ",byte" `ba `r@ BREAK 3 CASE `r32 `,a `r8 BREAK 2drop drop `??? END ;
     : `mov_x16	`ba `split 0- drop 0<> IF 2drop `??? ;THEN `r32 ",word" `ba `r@ ;
+$b1 : `movCi8	`2b  "mov    cl," `ba `se `xa ;op
 $b6 : `movzx	`2b. "movzx  " `mov_x ;op
 $b7 : `movzx16	`2b. "movzx  " `mov_x16 ;op
-$be : `movsx	`2b. "movsx  " `mov_x ;op
-$bf : `movsx16	`2b. "movsx  " `mov_x16 ;op
+    : `movsx	`2b. "movsx  " `mov_x ;		\ $0f $be
+    : `movsx16	`2b. "movsx  " `mov_x16 ;	\ $0f $bf
+$be : `movSI	`movsx ' `0falt
+		`1b  "mov    esi," `ba `.le dup @ `xa 4+ ;op
+$bf : `movDI	`movsx16 ' `0falt
+		`1b  "mov    edi," `ba `.le dup @ `xa 4+ ;op
 $c6 : `movi8	`2b  "mov    byte" `ba `split nip `mod `,a dup cs@ dup space .b `xa 1+ ;op
 $c7 : `movi32	`2b  "mov    " `ba `split nip `mod `,a space `.le dup @ `xa 4+ ;op
 $d1 : `shl1	`2b `ext 4- 0<> drop IF 2drop `??? ;THEN "shl    " `ba `r32 ",1" `ba ;op
@@ -226,8 +233,8 @@ $68 : `pushi32	`5b "push   "     `ba `xa ;op
 $ba : `movDi32	`5b "mov    edx," `ba `xa ;op
 $bb : `movBi32	`5b "mov    ebx," `ba `xa ;op
 $e8 : `call	`5b "call   " `ba over+ dup `jba BEGIN
-		[ number ' $23f+ ] lit CASE " "  `ba BREAK
-		[ number ' $246+ ] lit CASE " ." `ba BREAK
+		[ litcomp ' $71+ ] lit CASE " "  `ba BREAK
+		[ litcomp ' $78+ ] lit CASE " ." `ba BREAK
 		[ catch  ' $28+  ] lit CASE " !" `ba BREAK
 		drop ;; END c@+ 2dup "^b" `ba `ba "^b" `ba + 1+ ;op
 $e9 : `jmpE9	`5b "jmp    " `ba over+ `jba ;op
