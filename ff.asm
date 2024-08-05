@@ -695,8 +695,22 @@ litquote:                       ; @ # -- ; embed a string literal
         POSTPN dotstr
         jmp strcomma
 @@:     cmp byte[edx],"!"       ; initial exclamation mark
-        jnz notfnd
+        jnz @f
         POSTPN _error
+        jmp strcomma
+@@:     cmp byte[edx],"s"       ; mimic s" and S" from standard forth
+        jz @f
+        cmp byte[edx],"S"
+        jnz notfnd
+@@:     inc edx
+        dec ebx
+        cmp byte[edx],""""
+        jnz notfnd
+        cmp byte[edx+1],$20     ; discard first space
+        jnz @f
+        inc edx
+        dec ebx
+@@:     POSTPN litstr
 ;;;     jmp _strcomma
 strcomma:                       ; @ # -- ; embed a literal string
         mov edi,ebp             ; edi points on dst string byte count
