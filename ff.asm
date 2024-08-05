@@ -961,24 +961,66 @@ drop2:  xchg eax,esp            ; x y --
         xchg eax,esp
         ret
 
+macro REPZCMPSBIC {             ; repz cmpsb ignore-case
+.rc:    repz cmpsb              ; loop, stop at mismatch(nz) or match(ecx=0,z)
+        movzx ebx,byte[esi-1]   ; last char compared from @1
+        movzx edx,byte[edi-1]   ; last char compared from @2
+        jz .se                  ; if z:match break
+        cmp dl,'A'              ; non-matching, is char within A..z?
+        jl .se                  ; if <'A' break
+        cmp dl,'z'
+        jg .se                  ; if >'z' break
+        xor dl,$20              ; flip case
+        cmp ebx,edx             ; match?
+        jnz .me                 ; if nz:no_match break
+        cmp dl,'A'              ; match, is flipped char in A..z? catch [\]^_`
+        jl .me                  ; if <'A' break
+        cmp dl,'z'
+        jg .me                  ; if >'z' break
+        jecxz .se               ; if ecx==0 break
+        jmp .rc                 ; resume loop with next char
+.me:    movzx edx,byte[edi-1]   ; restore unflipped char
+.se:    sub ebx,edx             ; n for $-.
+}
+
 DATA "which",which,0            ; holds last found hfa
-CODE "find",_find               ; @ # -- @ # | xt 0
+macro FIND ic {                 ; @ # -- @ # | xt 0
+        push eax
+        push ebp
+        mov eax,edx             ; use eax for @, since ic needs ebx and edx
+        mov ebp,ebx             ; use ebp for #
         mov esi,[H]             ; esi = headers pointer
 .b:     lea esi,[esi+6]         ; skip over xt[4],ct[1],sz[1]
         movzx ecx,byte[esi-1]   ; ecx = string length
-        jecxz .e                ; null length = headers end: stack unchanged
-        cmp ecx,ebx             ; if string length differs,
+        jecxz .nf               ; 0 length = headers end, jump to "not found"
+        cmp ecx,ebp             ; if string length differs,
         jnz @f                  ; skip string comparison:
-        mov edi,edx             ;   cmpsb modifies edi, not edx
+        mov edi,eax             ;   cmpsb modifies edi, not edx
+    if (ic eqtype 0) & (ic = 1)
+        REPZCMPSBIC             ;   compare strings, ignore case
+    else
         repz cmpsb              ;   compare strings
+    end if
 @@:     lea esi,[esi+ecx+1]     ; skip to initial of next string
         jnz .b                  ; until match:
-        sub esi,ebx             ; back to string initial +1(zero-terminator)
+        sub esi,ebp             ; back to string initial +1(zero-terminator)
         lea esi,[esi-7]         ; back over xt[4],ct[1],sz[1],zt,  esi = hfa
         mov [which],esi         ; save hfa
         mov edx,[esi]           ; edx = xt
         xor ebx,ebx             ; ebx = 0 = found
-.e:     ret                     ; z=found(esi=hfa) nz=notfound(ecx=0)
+        jmp .e                  ; jump over not found case
+.nf:    mov edx,eax             ; restore @ to edx
+        mov ebx,ebp             ; restore # to ebx
+.e:     pop ebp
+        pop eax
+        ret                     ; z=found(esi=hfa) nz=notfound(ecx=0)
+}
+
+VECT "find",_find               ; @ # -- @ # | xt 0
+        FIND 0
+
+CODE "findic",_findic           ; find ignore-case
+        FIND 1
 
 CSTE "tib",tib                  ; terminal input buffer
 CSTE "eob",eob                  ; end-of-buffer
@@ -1137,6 +1179,16 @@ CODE "$-",_stringsub            ; @1 @2 # -- n ; n=0:match
         movzx ebx,byte[esi-1]   ; 0FB65EFF/0FB656FF
         movzx edx,byte[edi-1]   ; 0FB657FF/0FB65FFF
         sub ebx,edx             ; 29D3/29DA -- n
+        pop edx                 ; 5A/5B restore NOS
+        xchg eax,esp            ; 94
+        ret
+
+CODE "$-.",_stringsubdot        ; @1 @2 # -- n ; n=0:match
+        xchg eax,esp            ; 94
+        pop esi                 ; 5E esi = @1
+        mov edi,edx             ; 89D7/89DF edi = @2
+        mov ecx,ebx             ; 89D9/89D1 ecx = #
+        REPZCMPSBIC
         pop edx                 ; 5A/5B restore NOS
         xchg eax,esp            ; 94
         ret
