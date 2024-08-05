@@ -530,6 +530,7 @@ CODE "throw",_throw             ; message --
 ;;; -------------------------------------------------------
 ;;; number input
 
+DATA "ibase",ibase,10           ; input base
 accu dd 0
 CODE "number",_number           ; @ # -- @ # | n 0
         push ebp                ; ebp use as current base
@@ -538,7 +539,7 @@ CODE "number",_number           ; @ # -- @ # | n 0
         lea edi,[edx+ebx]       ; edi = string limit address
         xor ecx,ecx             ; accu0 = 0
         mov [accu],ecx          ; accu1 = 0
-        mov ebp,10              ; default base = decimal
+        mov ebp,[ibase]         ; input base value
         lodsb                   ; al = initial
         push eax                ; save initial (maybe sign)
         cmp al,'-'              ; skip initial sign
@@ -554,7 +555,9 @@ CODE "number",_number           ; @ # -- @ # | n 0
         jmp .4
 .5:     mov ebp,16              ; hexadecimal
         jmp .4
-.8:     jecxz .0                ; #: initial=error
+.z:     mov ebp,10
+        jmp .4
+.8:     jecxz .z                ; #: initial=decimal
         mov ebp,ecx             ; #: base=accu
 .d:     xor ecx,ecx             ; ecx = accumulator
 .4:     lodsb                   ; al = next digit
