@@ -302,3 +302,9 @@ ending in `THEN` but none are preceded by a call.
 While the bug presents a hazard to a newcomer, I see no reason it would
 have impeded Mr. Lavarenne in his endeavors.  Nevertheless, I'm glad
 it's fixed in FreeForth2.
+
+## PS
+
+As I'm adding the fix to the `longconds` code, I see that the
+RetroForth/Reva/HelFORTH compatibility words already have it.
+I'll consider that posthumous approval.

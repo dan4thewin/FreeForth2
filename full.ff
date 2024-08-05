@@ -105,7 +105,7 @@ create ts 64 allot
 \ 72:bc/aenc 74:z/nz 76:be/a 78:s/ns 7C:l/ge 7E:le/g (long:+0F10)
 \ E0:loopnz/loopz E2:loop/jecxz(byte) E8:call/jmp(long) EB:jmp(byte)
 
-: `then here over- 4- swap ! ;
+: `then here over- 4- swap ! 0 callmark ! ;
 : IF' `cond $0F c, $10+ c, here SC c@ , ;
 : SKIP' $E9 c, here SC c@ , ;
 : ELSE' SKIP' swap dupc@ SC c!
