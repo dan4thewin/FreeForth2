@@ -1,9 +1,28 @@
+\ depends on H being the first word defined in ff.asm
+\ [binary code and data> heap <headers][source code> blocks][ ]  < stacks ]
+\ :                 ebp^      ^H    tib:  tin^>  tp^     eob: ;   eax^ esp^
+\ ^H-cell          H-hdr-then-null-hdr^
+
 \ loading this with needs/-f changes the values of H and here
-H@ @ \ old here value is xt of first header
-H@ 5+ dupc@ + 2+ \ old H value is next header
-: save  openw0 dup >r ?ior r write ?ior r close ?ior rdrop ;
-\ depends on H being first word, 15+ includes H header itself and final null header
-dup "H" find 2drop which@ 15+ swap - "dict" save
-\ xt of H is the beginning of the compiled area
-H swap H - "cmpl" save
+\ needs "creates a self-forgetting mark (see "marker") with the filename"
+\   $ ./ff
+\    0; 16 base!
+\    0; words
+\   xxr` r!` r0` >>rr` [...]
+\    0; here .l space H@ .l cr
+\   0804D91A 080CD0F6
+\    0; needs m2 ( first 2 lines below )
+\    2; words
+\   m2` xxr` r!` r0` >>rr` [...]
+\    2; swap .l space .l cr
+\   0804D91A 080CD0F6
+
+H@ @								\ fetch the xt of the newest header (the mark)
+								\ this is the value here had prior to loading this
+H@ 5+ dupc@ + 2+						\ fetch the address of next header
+								\ this is the value H had prior to loading this
+: save	openw0 dup >r ?ior r write ?ior r close ?ior rdrop ;	\ define new words after populating stack
+: eoh	H@ START + 2+ ENTER 5+ dupc@ 0- 0= UNTIL + 2+ ;
+eoh    over- "dict" save
+H swap over- "cmpl" save					\ address of H is the beginning of the compiled area
 0 exit ;
