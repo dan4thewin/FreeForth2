@@ -8,9 +8,6 @@ variable `prev `sob `prev!
 : `bba		`tow tuck `bbuf@ 0 overc! append `bbuf@ + 1+ `bbuf! ;
 : `concat	`prev@ dupc@ tuck over+ 1+ dupc@ swap $20 swap c! rot + 1+ swap c! ;
 
-: `ss		1- 0; swap >r `ss r .x r> ;
-: ss		depth cyan foreground ."^[[24G( " dup .\ ."; " 1+ 3 max `ss .")^J" normal ;
-
 \ use custom reset and call, for a fixed width that -call. can rewind
 : `xsa		SC@ 1& BEGIN 0 CASE $90, BREAK 1 CASE $94, BREAK END ,1 ;	\ 94(xchg esp,eax)
 : `call         $e8, ,1 here 4+ - , ;
@@ -22,7 +19,7 @@ variable `prev `sob `prev!
 \ obs/xobsx calls macros si>b and xbd since it executes at runtime
 : si>b`		$f389, ,2 ;
 : xbd`		$da87, ,2 ;
-: obs		ss dup si>b c@+ magenta foreground type normal ;
+: obs		24 atx ss dup si>b c@+ magenta foreground type normal ;
 : xobsx		xbd obs xbd ;
 : `sc?obs	SC@ 2& 0= drop IF obs ' ELSE xobsx ' THEN ;
 : `obs,		`xsa `pushf `sc?obs `call `popf `xsa ;

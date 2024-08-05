@@ -50,14 +50,13 @@ create `op	256 4* allot
 : `jba		dup `xa " " `ba				\ @ --		; show jump destination
 		findh swap 5+ c@+ `ba 0; "+" `ba `xa ;
 : `se		dup $80& 0; drop -$80| ;		\ n -- n	; sign extend a byte
-: `col41	."^[[41G" ;
 : `,a		"," `ba ;
 : `???		"???" `ba `unknown@ ++ ;
 : `.A?		`.A `.B drop `??? ;
 `.A? ' 256 TIMES dup `op r 4* + ! REPEAT drop ;
 
 : `callop	c@ 4* `op+ @ execute ;
-: `oneop	0 buf! `callop buf c@+ `col41 type cr ;
+: `oneop	0 buf! `callop buf c@+ 40 atx type cr ;
 : `see		0 `unknown! over+ swap
 		BEGIN dup `oneop 2dup - drop 0<= UNTIL
 		2drop `unknown@ 0; ."unknown bytes: " . cr ;

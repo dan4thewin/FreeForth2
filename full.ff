@@ -59,21 +59,6 @@ $20 equ MAP_ANON    $100 equ MAP_GROWSDOWN  $4000 equ MAP_NORESERVE
 : ;dump` ;` BEGIN 16 bounds under 2dump stopdump? 0<> UNTIL drop ;  \ @ --
 
 \ --------------------------------------------------------------------
-\ console display control (topleft=0,0)
-
-: cls` ( -- ) ."^[[2J"
-: home ( -- ) 0 dup
-: atxy ( xCol yRow -- ) ."^[[" 1+ .\ .";" 1+ .\ ."H" ;
-[1] [IF] "_normal" features append \ symbolic attributes and color names
-: `color ( n -- ) ."^[[" .\ ."m" ;
-: normal 0 `color ;     : bold 1 `color ;          : dim 2 `color ;
-: underline 4 `color ;  : blink 5 `color ;         : inverse 7 `color ;
-: concealed 8 `color ;  : foreground 30+ `color ;  : background 40+ `color ;
-0 constant black  1 constant red      2 constant green  3 constant yellow
-4 constant blue   5 constant magenta  6 constant cyan   7 constant white
-[THEN]
-
-\ --------------------------------------------------------------------
 [1] [IF] "_.now" features append \ Calendar date and time display
 : `leap .dec\ ."-2-29" drop ;
 : .d ( n -- ; display days since 0-0-0 as gregorian date )
