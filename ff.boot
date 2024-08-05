@@ -115,25 +115,25 @@ variable `noauto
 
 variable `?#
 : 0-` $DB09, s09 ;
-: 0=` $74 : `?1 `?# c! ;
-: 0<>` $75 `?1 ;
-: 0<` $7C `?1 ;
-: 0>=` $7D `?1 ;
-: 0<=` $7E `?1 ;
-: 0>` $7F `?1 ;
-: C1?` $72 `?1 ;
-: C0?` $73 `?1 ;
-: u<` $72 : `?2 `?1 $DA39, s09 ;
-: u>=` $73 `?2 ;
-: =` $74 `?2 ;
-: <>` $75 `?2 ;
-: u<=` $76 `?2 ;
-: u>` $77 `?2 ;
-: <` $7C `?2 ;
-: >=` $7D `?2 ;
-: <=` $7E `?2 ;
-: >` $7F `?2 ;
-: `?@ `?# c@ : 0?1 0 `?#! ;
+: `?1 `?# c! ;
+: `?1a. $C931, ,2 ;
+: `?1b. 1^ $20+ 8 << $49C1000F | , $CB89, ,1 s1 ;
+: `?1. `?1a. 0-` `?1b. ;
+: `?2 `?1 $DA39, s09 ;
+: `?2. `?1a. $DA39, s09 `?1b. nip` ;
+$74 dup : 0=`  lit `?1 ; dup : 0=.`  lit `?1. ; dup : =`  lit `?2 ; : =.`  lit `?2. ;
+$75 dup : 0<>` lit `?1 ; dup : 0<>.` lit `?1. ; dup : <>` lit `?2 ; : <>.` lit `?2. ;
+$7C dup : 0<`  lit `?1 ; dup : 0<.`  lit `?1. ; dup : <`  lit `?2 ; : <.`  lit `?2. ;
+$7D dup : 0>=` lit `?1 ; dup : 0>=.` lit `?1. ; dup : >=` lit `?2 ; : >=.` lit `?2. ;
+$7E dup : 0<=` lit `?1 ; dup : 0<=.` lit `?1. ; dup : <=` lit `?2 ; : <=.` lit `?2. ;
+$7F dup : 0>`  lit `?1 ; dup : 0>.`  lit `?1. ; dup : >`  lit `?2 ; : >.`  lit `?2. ;
+$72 dup : C1?` lit `?1 ; : C1?.` lit `?1. ;
+$73 dup : C0?` lit `?1 ; : C0?.` lit `?1. ;
+$72 dup : u<`  lit `?2 ; : u<.`  lit `?2. ;
+$73 dup : u>=` lit `?2 ; : u>=.` lit `?2. ;
+$76 dup : u<=` lit `?2 ; : u<=.` lit `?2. ;
+$77 dup : u>`  lit `?2 ; : u>.`  lit `?2. ;
+: `?@ `?# c@ 0 `?#! ;
 : `-c` here dup 4- @ + -5 allot 0 callmark! ;
 : `-js c, c, ;
 : `-jc $0F, ,1 $12+ swap 1- swap
@@ -156,14 +156,18 @@ variable `?#
 : `?off dup 2* over^ -$100& drop `off ? ;
 : `?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition"
 : `cond `?@ `?nn 1^ ;
-: IF` `cond c, here SC c@ c, ;
-: SKIP` $EB c, here SC c@ c, ;
+: `cond. 0-` drop` $74 ;
+: `SC, here SC c@ c, ;
+: IF` `cond c, `SC, ;
+: IF.` `cond. c, `SC, ;
+: SKIP` $EB c, `SC, ;
 : ELSE` SKIP` swap dupc@ SC c!
 : THEN` dupc@ >SC
 : `then here over- 1- `?off swap c! 0 callmark! ;
 : 0;` 0-` 0=` IF` drop`
 : ;THEN` ;;` dupc@ SC c! `then ;
 : 0<>;` 0-` 0<>` IF` drop` ;THEN` ;
+: ?dup` 0-` 0<>` IF` dup` THEN` ;
 : BOOL` 0 lit` IF` ~` THEN` ;
 : zFALSE 0 0- drop ;
 : nzTRUE 1 0- drop ;
@@ -176,16 +180,19 @@ create `mrk 0 , 0 ,
 : ENTER` `mrk@ dup 3& >SC -4& 1- `then ;
 : WHILE` `cond
 : `+jmp `mrk 2@ 3& >SC swap c, here dup `mrk 4+ ! swap - `?off c, ;
+: WHILE.` `cond. `+jmp ;
 : CASE` =` drop` IF` drop` ;
 : BREAK` $EB `+jmp THEN` ;
 : TILL` `cond
 : `-jmp `mrk@ dup 3& >SC -4& `-j ;
+: TILL.` `cond. `-jmp ;
 : AGAIN` $EB `-jmp THEN` ;
 : UNTIL` TILL`
 : END` `mrk 2@ dup 3& >SC -4& swap
   START dupc@ over `then - ENTER = TILL [ `mrk 2! ]
   @ $007808FF- 0= drop IF under 3+ `then rdrop` THEN
   drop `mrk 2! ;
+: UNTIL.` TILL.` END` ;
 : REPEAT` $EB `-jmp END` ;
 
 : `mov? here 6- c@ $8b- 0; !"is_not_preceded_by_a_mov" ;

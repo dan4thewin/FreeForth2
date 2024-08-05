@@ -1074,6 +1074,18 @@ C0?` ( -- ) carry-clear   : C0?` $72 `?1 ; \ jc.b
 `?1 ( c -- ) sets `?#     : `?1 `?# c! ;
 `?# ( -- @ ) compiler hidden state variable: stores the conditional-jump
   opcode to be compiled by the next "IF" or "WHILE" or "TILL" or "UNTIL"
+0>.`  ( n -- ? ) positive
+0<=.` ( n -- ? ) non-positive
+0>=.` ( n -- ? ) non-negative
+0<.`  ( n -- ? ) negative
+0<>.` ( n -- ? ) non-null
+0=.`  ( n -- ? ) null
+C1?.` ( n -- ? ) carry-set
+C0?.` ( n -- ? ) carry-clear
+  Versions with a dot replace the top of the stack with a boolean, and
+  do NOT affect the next conditional jump.  These inline SETcc.
+  For example, 0=. with ebx as TOS inlines the following:
+  31C9(xor ecx,ecx)09DB(or ebx,ebx)0F95C1(setnz cl)49(dec ecx)89CB(mov ebx,ecx)
   see also: 0> <> conditionals  ff.boot
 
 <>`  ( -- ) non-equal     : <>`  $75 `?2 ; \ jnz.b
@@ -1090,6 +1102,20 @@ u<`  ( -- ) below         : u<`  $72 `?2 ; \ jb.b  (unsigned less)
   condition for the next conditional jump (unsigned comparisons are u-prefixed)
 `?2 ( c -- ) inlines comparison NOS.versus.TOS to set i386 conditional-flags
   : `?2 `?1 $DA39, s09 ; \ cmp edx,ebx
+<>.`  ( x y -- ? ) non-equal
+=.`   ( x y -- ? ) equal
+>.`   ( x y -- ? ) greater
+<=.`  ( x y -- ? ) non-greater
+>=.`  ( x y -- ? ) non-less
+<.`   ( x y -- ? ) less
+u>.`  ( x y -- ? ) above
+u<=.` ( x y -- ? ) non-above
+u>=.` ( x y -- ? ) non-below
+u<.`  ( x y -- ? ) below
+  Versions with a dot replace TOS with a boolean and drop NOS.
+  These do NOT affect the next conditional jump.  These inline SETcc
+  like 0=. but with 39D3(cmp ebx,edx) instead of 0-, and a trailing nip.
+  NB. comparison respects SWAPbit.
   see also: <> 0> conditionals  ff.boot
 
 BOOL` ( -- ? ) converts the selected condition into a boolean pushed onto
@@ -1121,6 +1147,10 @@ IF` ( -- ) compiles a forward conditional jump, to be resolved by the
   into the space allocated for the jump offset, such that the balancing
   macro may restore the same state before resolving the jump offset
   : IF` `cond c, here SC c@ c, ;
+IF.` ( ? -- ) The dotted version of IF uses a Boolean in TOS.
+?dup ( 0 -- 0 | x -- x x ) if TOS is null keep TOS unchanged, otherwise
+  dup TOS. Use with IF. to avoid ELSE drop THEN.
+  : ?dup` 0-` 0<>` IF` dup` THEN` ;
   see also: conditionals IF ELSE SKIP THEN ;THEN BREAK AGAIN  ff.boot
 
 CASE` ( x y -- x | x x -- ) compiles an equal-test and a forward conditional
@@ -1198,11 +1228,13 @@ TILL` ( -- ) compiles a backward conditional jump to the entry of the
   Note: "TILL" may be used inside "IF ... THEN" (nested) control-structure(s)
   : TILL` `cond  \ fallthru
   : `-jmp `mrk@ dup 3& >SC -4& `-j ; \ for `-j see in ff.boot
+TILL.` ( ? -- ) The dotted version of TILL uses a Boolean in TOS.
 WHILE` ( -- ) compiles a forward conditional jump out of the looping
   control structure
   Note: "WHILE" may be used inside "IF ... THEN" (nested) control-structure(s)
   : WHILE` `cond  \ fallthru
   : `+jmp `mrk 2@ 3& >SC swap c, here dup `mrk 4+ ! swap - `?off c, ;
+WHILE.` ( ? -- ) The dotted version of WHILE uses a Boolean in TOS.
   see also: TILL conditionals flow-control BEGIN WHILE BREAK  ff.boot
 
 AGAIN` ( -- ) compiles a backward unconditional jump to the entry of
@@ -1233,6 +1265,7 @@ UNTIL` ( -- ) closes the looping control-structure by compiling a backward
   conditional jump to the loop entry, and calls "END`" to resolve all the
   forward references within the loop
   : UNTIL` TILL` END` ;
+UNTIL.` ( ? -- ) The dotted version of UNTIL uses a Boolean in TOS.
 REPEAT` ( -- ) closes the looping control-structure by compiling a backward
   unconditional jump to the loop entry, and calls "END" to resolve all the
   forward references within the loop
