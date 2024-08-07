@@ -133,8 +133,8 @@ r0!` ' alias r!`
 
 : cls` ( -- ) ."^[[2J"
 : home ( -- ) 0 dup
-: atx  ( xCol -- ) ."^[[" 1+ .\ ."G" ;
 : atxy ( xCol yRow -- ) ."^[[" 1+ .\ .";" 1+ .\ ."H" ;
+: atx  ( xCol -- ) ."^[[" 1+ .\ ."G" ;
 [1] [IF] "_normal" features append \ symbolic attributes and color names
 : `color ( n -- ) ."^[[" .\ ."m" ;
 : normal 0 `color ;     : bold 1 `color ;          : dim 2 `color ;

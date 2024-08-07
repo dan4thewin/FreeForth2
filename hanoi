@@ -38,12 +38,12 @@ create ds 8 allot  \ disk stack
     r ds+ c@ = drop IF r '1'+ emit swap 1- swap THEN
   REPEAT 2drop REPEAT
 [ELSE]  \ "graphical" display with horizontal lines ----------
-create -- 24 allot ; -- 24 32 fill -- 8+ 8 '-' fill
-: .-  -- 2dup+ 8 type ."|" swap - 16+ 8 type ;  \ w --
+create dd 24 allot ; dd 24 32 fill dd 8+ 8 '-' fill
+: .-  dd 2dup+ 8 type ."|" swap - 16+ 8 type ;  \ w --
 : ._  cls` 3 TIMES #d@ r over TIMES
     r ds+ c@ = drop IF 2dup 17* swap atxy r 1+ .- swap 1- swap THEN
   REPEAT 17* swap TIMES dup r 1+ atxy 0 .- REPEAT drop REPEAT
-  0 #d@ 1+ atxy 'a' 3 TIMES -- 8 type dup emit 1+ -- 8 type REPEAT drop
+  0 #d@ 1+ atxy 'a' 3 TIMES dd 8 type dup emit 1+ dd 8 type REPEAT drop
 [THEN]  \ ----------------------------------------------------
   cr #m@ .
   ."(a:b<->c__b:c<->a__c:a<->b__i(n--):init__s(n--):solution__h:help)^J" ;
@@ -68,9 +68,9 @@ create st 30 allot  \ 3 stacks
   50 ms cls` ."Hanoi_Tours"
   st 3 TIMES cr dup 9 type 10+ .":" 'c' r - emit REPEAT drop
 [ELSE]  \ "graphical" display with horizontal lines --------
-: -- "________--------________" drop ;
-: .-  \ w c --
-  swap -- 2dup+ 8 type swap - swap emit 16+ 8 type ;
+: dd "________--------________" drop ;
+: .-  \ w c dd
+  swap dd 2dup+ 8 type swap - swap emit 16+ 8 type ;
 : ._  \ --
   50 ms cls` 3 TIMES r >st  r 17*
   9 TIMES 2dup  r atxy  r + c@ $F&  r 0- 0<> 32_ IF '|'_ THEN  .- REPEAT
