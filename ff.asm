@@ -530,16 +530,20 @@ CODE "throw",_throw             ; message --
 ;;; -------------------------------------------------------
 ;;; number input
 
-DATA "ibase",ibase,10           ; input base
 accu dd 0
-CODE "number",_number           ; @ # -- @ # | n 0
+CODE "number.",_numberdot       ; @ # base -- @ # | n 0
         push ebp                ; ebp use as current base
-        push eax
+        mov ebp,ebx             ; base = TOS
+        DROP1
+        jmp @f
+VECT "number",_number           ; @ # -- @ # | n 0
+        push ebp                ; ebp use as current base
+        mov ebp,10              ; default base = decimal
+@@:     push eax
         mov esi,edx             ; esi = string base address
         lea edi,[edx+ebx]       ; edi = string limit address
         xor ecx,ecx             ; accu0 = 0
         mov [accu],ecx          ; accu1 = 0
-        mov ebp,[ibase]         ; input base value
         lodsb                   ; al = initial
         push eax                ; save initial (maybe sign)
         cmp al,'-'              ; skip initial sign
