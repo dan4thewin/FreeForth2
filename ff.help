@@ -1639,7 +1639,15 @@ hid'm` ( -- ) removes from the compiler symbol table all the headers with
     dup 1- c@+ + 1+ >r  START over 1- c@+ + 1+ swap 6-
       START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop
     ENTER H @ 1- = drop UNTIL drop r> H ! ;  \ nice algorithm, isn't it?
-  see also: loc: mark header  ff.boot
+hidmark ( -- ) experimental! Updates the most recent header so hid'm stops
+  at that point leaving earlier headers untouched. Use at the start of a
+  file to update the marker created when the file is loaded by needs.
+  Use hid'm at the end of the file to remove only the backquote headers
+  created within the file.
+  : hidmark H@ 4+ 16 swap c! ;
+  The 3rd line of hid'm is changed to:
+    ENTER 5+ c@+ 0- 0<> IF over 2- c@ 16- drop THEN 0= UNTIL 2drop
+  see also: loc: hid'm mark header  ff.boot
 
 mark` ( <name> -- ) creates a self-forgetting mark
   : mark` ;` wsparse marker ;

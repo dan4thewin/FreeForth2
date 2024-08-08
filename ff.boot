@@ -240,7 +240,7 @@ variable base 10 base!
 : words` H@ START 2dup+ 1+ -rot type space ENTER 5+ c@+ 0- 0= UNTIL 2drop cr ;
 : hid'm` H@ 0 over 2- c! dup 1- swap
   START over+ 1+ swap dupc@ '`'- 0<> drop swap IF nip THEN
-  ENTER 5+ c@+ 0- 0= UNTIL 2drop
+  ENTER 5+ c@+ 0- 0<> IF over 2- c@ 16- drop THEN 0= UNTIL 2drop
   dup 1- c@+ + 1+ >r  START over 1- c@+ + 1+ swap 6-
     START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop
   ENTER H@ 1- = drop UNTIL drop r> H! ;
@@ -249,6 +249,7 @@ variable base 10 base!
 : mark` ;` wsparse
 : marker 2dup+ dupc@ >r dup>r '`' swap c! 1+
   here 0 header 2r> c!  `mark ' call, anon:` ;
+: hidmark H@ 4+ 16 swap c! ;
 : eval >in@ tp@ 2>r over+ tp! >in! compiler 2r> tp! >in! ;
 
 : argc CS0@ @ ;
