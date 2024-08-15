@@ -55,6 +55,12 @@ full.ff has additional FreeForth kernel extensions for special uses.
   or to add your own startup code, such as:  needs mystartup.ff
 see.ff provides debugging tools: .hdrs, findnm, see, and more.
 debug.ff provides an alternate compiler that makes verbose words.
+compat.ff adapts FreeForth2 to more closely adhere to the
+  Forth 2012 standard.
+  An alternate find ignores case and a word as it is being defined.
+  An alternate number uses the value of base for input conversion.
+  New words include fm/mod do loop +loop >number and many aliases.
+  Please note! Normal conditionals are swapped for the dotted Boolean ones.
   see also: ff.asm ff.boot ff.help boot bed.ff hello needs
 
 fflin.asm is the Linux-port main assembler source file
@@ -233,6 +239,8 @@ pick` ( xn..x0 n -- xn..x0 xn ) compiles inline code to replace TOS=n with
     drop -3 allot  here 1+ c@ 1- 0= IF drop ;THEN  \ "52(push edx)"=over` C=1
     0< IF drop swap` nipdup` ;THEN  \ i.e. dup`
     $5C8B, s08 10 << $24+ w, ;  \ 8B5C24xx(mov ebx,[esp+4n])
+2over` ( a b c d -- a b c d a b ) copies a to NOS and b to TOS
+  : 2over` 3 lit` pick` 3 lit` pick` ;
   see also: dup over  ff.ff
 
 2drop` ( x y -- ) double-pop DATAstack
@@ -391,13 +399,35 @@ m/mod` ( xl xh y -- x%y x/y) divides the signed 64 bits dividend (xh<<32)+xl
   by signed divisor in TOS, TOS gets signed quotient, and NOS signed remainder
   with same sign as dividend (i.e. integer division rounding towards zero)
   \ 870424(xchg eax,[esp])F7FB(idiv ebx)89C3(mov ebx,eax)58(pop eax)
-  : m/mod >S0 >C1 $F7240487, ,4 $58C389FB, ,4 ;
+  : m/mod >S0 >C1 $F7240487, ,4 $58C389FB, ,4 ; \ old version
+  : `m/mod >S0 >C1 $240487, ,3 w, $58C389, ,3 ;
+  : m/mod`  $FBF7 `m/mod ;
+um/mod` ( xl xh y -- x%y x/y) unsigned version of m/mod
+  : um/mod` $F3F7 `m/mod ;
 /%` ( x y -- x%y x/y ) divides signed dividend in NOS by signed divisor in TOS,
   TOS gets signed quotient, and NOS signed remainder with same sign as dividend
   (Note: usual Forth name: /mod)
   \ 50(push eax)89D0(mov eax,edx)99(cdq)F7FB(idiv ebx)89C3(mov ebx,eax)pop eax
   : /%` >S0 $99D08950, ,4 $C389FBF7, ,4 $58, ,1 ;
-  see also: m/mod /% / %  ff.boot
+m* ( x y -- zl zh ) z is the double-cell product of x * y
+  \ 89C1(mov ecx,eax)89D0(mov eax,edx)
+  \ F7EB(imul ebx) or F7E3(mul ebx)
+  \ 89D3(mov ebx,edx)89C2(mov edx,eax)89C8(mov eax,ecx)
+  : `m* >S0 $D089C189, ,4 w, $D389, ,2 $C889C289, ,4 ;
+  : m*` $EBF7 `m* ;
+um* ( x y -- zl zh ) unsigned version of m*
+  : um*` $E3F7 `m* ;
+*/mod ( x y z -- r q ) intermediate double-cell d = x * y then r = d % z and
+  q = d / z.
+  : */mod` >r` m*` r>` m/mod` ;
+*/ ( x y z -- q ) intermediate double-cell d = x * y then q = d / z.
+  : */` */mod` nip` ;
+s>d ( x -- xx ) convert x to double-cell xx of the same value
+  : s>d` dup` 0<.` ;
+d+ ( xx yy -- zz ) zz = xx + yy, all double-cells
+  : adc` $D311, s09 nip` ;  \ 11D3(adc ebx,edx)
+  : d+` >r` rot` +` swap` r>` adc` ;
+  see also: m/mod /% m* um* */mod */ s>d d+ / %  ff.boot
 
 min` ( n2 n1 -- n ) returns the minimum of two signed numbers
   : min` <` IF` swap` THEN` nip` ;
@@ -412,7 +442,13 @@ within ( n x y -- ; nz? ) if x=<n<y or(y=<x and(n<y or x=<n)), returns nzTRUE
   from x upto and excluding y (giving an empty range if x=y):
   if n is in this range, "within" returns nzTRUE, otherwise zFALSE.
   : within over- -rot - u> 2drop nzTRUE ? zFALSE ;
-  see also: min max BOOL conditionals  ff.ff
+abs ( x -- |x| ) returns the absolute value of x
+  : abs`  0-` 0<` IF` negate` THEN` ;
+dnegate ( d -- -d ) double-cell version of negate
+  : dnegate` ~` swap` negate` swap` ;
+dabs ( d -- |d| ) double-cell version of abs
+  : dabs` 0-` 0<` IF` dnegate` THEN` ;
+  see also: min max within abs dnegate dabs BOOL conditionals  ff.ff
 
 bounds` ( @ # -- @+# @ ) converts start address "@" under count "#"
   into limit address "@+#" under start address
@@ -1578,6 +1614,9 @@ base ( -- @ ) system variable: output conversion base for "." and ".\"
 .ub ( u base -- ) displays unsigned u using the conversion base in TOS,
   using the minimum number of digits, and followed by a space
 .ub\ ( u base -- ) .ub without a space
+.u ( u -- ) .ub using base@
+  : .u\ base@ .ub\ ;
+.u\ ( u -- ) .u without a space
 .x ( n -- ) displays n in hexadecimal with a '$' if >9 or <-9
   : .x .x\ space ;
 .x\ ( n -- ) .x without a space
@@ -1587,7 +1626,7 @@ base ( -- @ ) system variable: output conversion base for "." and ".\"
   : .dec .dec\ space ;
 .dec\ ( n -- ) .dec without a space
   : .dec\ `.sign 10 .ub\ ;
-  see also: . .l .dec  ff.boot
+  see also: . .l .dec <# # #s #>  ff.boot
 
 .l ( u -- ) displays the unsigned long u using 8 hexadecimal digits
   : .l 8 .#s ;
@@ -1598,6 +1637,18 @@ base ( -- @ ) system variable: output conversion base for "." and ".\"
 .#s ( u c -- ) displays the unsigned number "u" using "c" hexadecimal digits
   : .#s TIMES dup r 4* >> $F& .digit REPEAT drop ;
   see also: .l .w .b .  ff.boot
+
+<# ( -- ) initialize the pictured numeric output buffer
+# ( xx -- yy ) use base@ to extract the least-significant digit of double-cell
+  xx leaving yy, concatenate digit to the head of the output buffer.
+#s ( xx -- 0 0 ) repeat # to extract all digits from xx
+hold ( c -- ) concatenate c to output buffer like a digit
+sign ( x -- ) if single-cell x is negative, hold a minus sign
+#> ( xx -- @ # ) drop double-cell xx, return the address and length of the
+  converted number from the pictured numeric output buffer
+x# ( xx -- yy ) # using base 16
+x#s ( xx -- 0 0 ) #s using base 16
+  see also: <# # #s #> . .l  ff.ff
 
   -----------
   MEMORY DUMP

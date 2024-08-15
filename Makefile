@@ -20,6 +20,8 @@ fftk: fftk.o
 clean:
 	rm -f ff fftk *.o
 
+test: ff
+	FFPATH=test ./ff -f test/core1.ff
 
 PREFIX=$$HOME/.local
 FFBIN=$(PREFIX)/bin
@@ -34,4 +36,4 @@ install-share: ff.ff full.ff ff.help see.ff debug.ff
 
 install: install-bin install-share
 
-.PHONY: clean install install-bin install-share
+.PHONY: clean test install install-bin install-share

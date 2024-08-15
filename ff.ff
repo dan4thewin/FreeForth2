@@ -21,12 +21,30 @@ variable features 76 allot
   drop -3 allot  here 1+ c@ 1- 0= IF drop ;THEN  \ "52(push edx)"=over` C=1
   0< IF drop swap` nipdup` ;THEN  \ i.e. dup`
   $5C8B, s08 10 << $24+ w, ;  \ 8B5C24xx(mov ebx,[esp+4n])
+: 2over` 3 lit` pick` 3 lit` pick` ;
 \ $89%11&sd(mov d,s) 0:eax 1:ecx 2:edx 3:ebx 4:esp 5:ebp 6:esi 7:edi
 : rp@` over` $C389, s01 ;  \ 89C3(mov ebx,eax) -> 89D8(mov eax,ebx)
 : sp@` over` $E389, s01 ;  \ 89E3(mov ebx,esp) -> 89DC(mov esp,ebx)
 \ : rsp!` >C1 $D089DC89, s08 s08 2drop` ;  \ rp sp -- ; for multitasking
 
 constant` ' alias equ` \ shorter, and more usual for assembly programmers
+
+\ --------------------------------------------------------------------
+\ pictured numeric output: <# # #s hold sign #>
+
+30 constant pnmaxlen
+create `pnbuf pnmaxlen 2+ allot
+: <#       pnmaxlen `pnbuf c! 0 `pnbuf pnmaxlen+ 1+ c! ; <#
+: #>       2drop `pnbuf c@+ swap over+ swap pnmaxlen swap - ;
+: `len1-   `pnbuf dupc@ 1- swap c! ;
+: hold     `pnbuf dupc@ + c! `len1- ;
+: `dh      9 u> drop IF 7+ THEN '0'+ 'z' u> drop IF '?'_ THEN hold ;
+: `#       um/mod swap `dh 0 ;
+: #        base@ `# ;
+: x#       $10 `# ;
+: #s       BEGIN  # over 0- drop 0= UNTIL ;
+: x#s      BEGIN x# over 0- drop 0= UNTIL ;
+: sign     0- drop 0< IF '-' hold THEN ;
 
 \ --------------------------------------------------------------------
 \ ?ior malloc/free lseek ioctl/select

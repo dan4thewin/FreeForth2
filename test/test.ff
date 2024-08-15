@@ -1,0 +1,22 @@
+variable plan
+variable okcnt
+variable skipcnt
+variable index
+: >plan		dup plan! ."1.." .dec cr ;
+: `tally	plan@ okcnt@ skipcnt@ + - 0= drop IF ."PASSED^J" 0 ELSE ."FAILED^J" 1 THEN ;
+: tally		`tally drop ;
+: tally-exit	`tally exit ;
+
+variable savedepth
+: `newtest	index@ ++ 0 savedepth! depth 0; !"stack must be empty" ;
+: T{`		;` `newtest ;
+: ->`		;` depth savedepth! ;
+: `dropall	depth TIMES drop REPEAT ;
+: `chkdepth	depth savedepth@ 2* - 0; ."wrong number of results^J" ;
+: `chkvals	savedepth@ >>rr BEGIN depth 0; dropr> <> 2drop IF depth +r BREAK REPEAT ."incorrect result^J" ;
+: `chk		`chkdepth `chkvals 0= ? ;
+: `ok?		`chk 0= IF okcnt@ ++ ."ok " ELSE ."not ok " `dropall THEN index@ .dec cr ;
+: }T`		;` `ok? ;
+: skip`		skipcnt@ ++ \` ;
+
+: TESTING` ;` 8 >in -! lnparse type cr ;

@@ -1,5 +1,5 @@
 # Criticism of FreeForth
-***Dan Good, 30 June 2024***
+***Dan Good, 30 June 2024 (updated 14 August 2024)***
 
 I encountered this criticism of FreeForth long after it was written.
 As pointed out in a response, conditionals in FreeForth don't follow the
@@ -140,6 +140,20 @@ and the changes I decided to make in FreeForth2 as a result.
 > is none of these.
 >
 > By Leon P Smith at Mon, 2008-07-14 23:16
+
+# Update!
+
+FreeForth2 now provides alternate versions of conditionals that
+follow normal Forth conventions, i.e., produce or consume a Boolean
+value from the stack.  These versions append a dot to the usual name.
+The Forth 2012 Core words test suite validates their correctness.
+
+    : show IF. ."T" ELSE ."F" THEN cr ;
+    0 0=.  show ;     \ T
+    1 0=.  show ;     \ F
+    : display IF. 42 . ELSE 63 . THEN cr ;
+    0 0 =. display ;  \ 42
+    1 0 =. display ;  \ 63
 
 # A Word About Conditionals
 

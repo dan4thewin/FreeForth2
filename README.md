@@ -9,6 +9,9 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
 * simple approach to arguments
 * library search path
 * debug compiler makes verbose words
+* alternate versions of conditionals use Booleans on the stack
+* unit tests
+  * with optional `compat.ff`, passes 90% of the core words tests from the Forth 2012 test suite
 
 ## Changes
 * interactive input automatically terminated

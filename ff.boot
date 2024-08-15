@@ -35,7 +35,14 @@
 : over-` $D329, s09 ;
 : over*` $DAAF0F, ,1 s09 ;
 : /%` >S0 $99D08950, ,4 $C389FBF7, ,4 $58, ,1 ;
-: m/mod` >S0 >C1 $F7240487, ,4 $58C389FB, ,4 ;
+: `m/mod >S0 >C1 $240487, ,3 w, $58C389, ,3 ;
+: m/mod`  $FBF7 `m/mod ;
+: um/mod` $F3F7 `m/mod ;
+: `m* >S0 $D089C189, ,4 w, $D389, ,2 $C889C289, ,4 ;
+: m*`  $EBF7 `m* ;
+: um*` $E3F7 `m* ;
+: */mod` >r` m*` r>` m/mod` ;
+: */` */mod` nip` ;
 : 1-` $4B, s1 ;
 : 1+` $43, s1 ;
 : 2+` 1+` 1+` ;
@@ -195,6 +202,13 @@ create `mrk 0 , 0 ,
 : UNTIL.` TILL.` END` ;
 : REPEAT` $EB `-jmp END` ;
 
+: s>d` dup` 0<.` ;
+: abs`  0-` 0<` IF` negate` THEN` ;
+: dnegate` ~` swap` negate` swap` ;
+: dabs` 0-` 0<` IF` dnegate` THEN` ;
+: adc` $D311, s09 nip` ;
+: d+` >r` rot` +` swap` r>` adc` ;
+
 : `mov? here 6- c@ $8b- 0; !"is_not_preceded_by_a_mov" ;
 : `dst? here 5- c@ $15- 0; $8- 0; !"destination_is_not_edx_or_ebx" ;
 :^ >mov `mov? `dst? $90 here 7- c! here 6- w! ;
@@ -227,6 +241,8 @@ variable base 10 base!
 : . .\ space ;
 : .dec\ `.sign 10 .ub\ ;
 : .dec .dec\ space ;
+: .u\ base@ .ub\ ;
+: .u .u\ space ;
 : .x\ `.sign 9 > drop IF '$' putc THEN $10 .ub\ ;
 : .x .x\ space ;
 : .b 2
