@@ -22,6 +22,7 @@ clean:
 
 test: ff
 	FFPATH=test ./ff -f test/core1.ff
+	FFPATH=test ./ff -f test/core2.ff
 
 PREFIX=$$HOME/.local
 FFBIN=$(PREFIX)/bin

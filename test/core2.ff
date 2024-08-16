@@ -1,0 +1,837 @@
+needs test.ff
+526 >plan
+
+testing core words adapted for FreeForth2
+
+\ ------------------------------------------------------------------------
+testing basic assumptions
+
+t{ -> }t               \ start with clean slate
+( test if any bits are set; answer in base 1 )
+t{ : bitsset? 0- drop 0<> IF 0 0 ELSE 0 THEN ; -> }t
+t{  0 bitsset? -> 0 }t      ( zero is all bits clear )
+t{  1 bitsset? -> 0 0 }t      ( other number have at least one bit )
+t{ -1 bitsset? -> 0 0 }t
+
+\ ------------------------------------------------------------------------
+testing & | ^
+
+t{ 0 0 & -> 0 }t
+t{ 0 1 & -> 0 }t
+t{ 1 0 & -> 0 }t
+t{ 1 1 & -> 1 }t
+
+t{ 0 ~ 1 & -> 1 }t
+t{ 1 ~ 1 & -> 0 }t
+
+0   constant 0s
+0 ~ constant 1s
+
+t{ 0s ~ -> 1s }t
+t{ 1s ~ -> 0s }t
+
+t{ 0s 0s & -> 0s }t
+t{ 0s 1s & -> 0s }t
+t{ 1s 0s & -> 0s }t
+t{ 1s 1s & -> 1s }t
+
+t{ 0s 0s | -> 0s }t
+t{ 0s 1s | -> 1s }t
+t{ 1s 0s | -> 1s }t
+t{ 1s 1s | -> 1s }t
+
+t{ 0s 0s ^ -> 0s }t
+t{ 0s 1s ^ -> 1s }t
+t{ 1s 0s ^ -> 1s }t
+t{ 1s 1s ^ -> 0s }t
+
+\ ------------------------------------------------------------------------
+testing 2* 2/ << >>
+
+( we trust 1s, ~, and bitsset?; we will confirm >> later )
+1s 1 >> ~ constant msb
+t{ msb bitsset? -> 0 0 }t
+
+t{ 0s 2* -> 0s }t
+t{ 1 2* -> 2 }t
+t{ 4000 2* -> 8000 }t
+t{ 1s 2* 1 ^ -> 1s }t
+t{ msb 2* -> 0s }t
+
+t{ 0s 2/ -> 0s }t
+t{ 1 2/ -> 0 }t
+t{ 4000 2/ -> 2000 }t
+t{ 1s 2/ -> 1s }t            \ msb propogated
+t{ 1s 1 ^ 2/ -> 1s }t
+t{ msb 2/ msb & -> msb }t
+
+t{ 1 0 << -> 1 }t
+t{ 1 1 << -> 2 }t
+t{ 1 2 << -> 4 }t
+t{ 1 $f << -> $8000 }t         \ biggest guaranteed shift
+t{ 1s 1 << 1 ^ -> 1s }t
+t{ msb 1 << -> 0 }t
+
+t{ 1 0 >> -> 1 }t
+t{ 1 1 >> -> 0 }t
+t{ 2 1 >> -> 1 }t
+t{ 4 2 >> -> 1 }t
+t{ $8000 $f >> -> 1 }t         \ biggest
+t{ msb 1 >> msb & -> 0 }t      \ >> zero fills msbs
+t{ msb 1 >> 2* -> msb }t
+
+\ ------------------------------------------------------------------------
+testing comparisons: 0= = 0< < > u< min max
+0 ~          constant max-uint
+0 ~ 1 >>     constant max-int
+0 ~ 1 >> ~   constant min-int
+0 ~ 1 >>     constant mid-uint
+0 ~ 1 >> ~   constant mid-uint+1
+
+0s constant <false>
+1s constant <true>
+
+: t0= 0- drop 0= IF <true> ELSE <false> THEN ;
+t{ 0 t0= -> <true> }t
+t{ 1 t0= -> <false> }t
+t{ 2 t0= -> <false> }t
+t{ -1 t0= -> <false> }t
+t{ max-uint t0= -> <false> }t
+t{ min-int t0= -> <false> }t
+t{ max-int t0= -> <false> }t
+
+: t= = 2drop IF <true> ELSE <false> THEN ;
+t{ 0 0 t= -> <true> }t
+t{ 1 1 t= -> <true> }t
+t{ -1 -1 t= -> <true> }t
+t{ 1 0 t= -> <false> }t
+t{ -1 0 t= -> <false> }t
+t{ 0 1 t= -> <false> }t
+t{ 0 -1 t= -> <false> }t
+
+: t0< 0- drop 0< IF <true> ELSE <false> THEN ;
+t{ 0 t0< -> <false> }t
+t{ -1 t0< -> <true> }t
+t{ min-int t0< -> <true> }t
+t{ 1 t0< -> <false> }t
+t{ max-int t0< -> <false> }t
+
+: t< < 2drop IF <true> ELSE <false> THEN ;
+t{ 0 1 t< -> <true> }t
+t{ 1 2 t< -> <true> }t
+t{ -1 0 t< -> <true> }t
+t{ -1 1 t< -> <true> }t
+t{ min-int 0 t< -> <true> }t
+t{ min-int max-int t< -> <true> }t
+t{ 0 max-int t< -> <true> }t
+t{ 0 0 t< -> <false> }t
+t{ 1 1 t< -> <false> }t
+t{ 1 0 t< -> <false> }t
+t{ 2 1 t< -> <false> }t
+t{ 0 -1 t< -> <false> }t
+t{ 1 -1 t< -> <false> }t
+t{ 0 min-int t< -> <false> }t
+t{ max-int min-int t< -> <false> }t
+t{ max-int 0 t< -> <false> }t
+
+: t> > 2drop IF <true> ELSE <false> THEN ;
+t{ 0 1 t> -> <false> }t
+t{ 1 2 t> -> <false> }t
+t{ -1 0 t> -> <false> }t
+t{ -1 1 t> -> <false> }t
+t{ min-int 0 t> -> <false> }t
+t{ min-int max-int t> -> <false> }t
+t{ 0 max-int t> -> <false> }t
+t{ 0 0 t> -> <false> }t
+t{ 1 1 t> -> <false> }t
+t{ 1 0 t> -> <true> }t
+t{ 2 1 t> -> <true> }t
+t{ 0 -1 t> -> <true> }t
+t{ 1 -1 t> -> <true> }t
+t{ 0 min-int t> -> <true> }t
+t{ max-int min-int t> -> <true> }t
+t{ max-int 0 t> -> <true> }t
+
+: tu< u< 2drop IF <true> ELSE <false> THEN ;
+t{ 0 1 tu< -> <true> }t
+t{ 1 2 tu< -> <true> }t
+t{ 0 mid-uint tu< -> <true> }t
+t{ 0 max-uint tu< -> <true> }t
+t{ mid-uint max-uint tu< -> <true> }t
+t{ 0 0 tu< -> <false> }t
+t{ 1 1 tu< -> <false> }t
+t{ 1 0 tu< -> <false> }t
+t{ 2 1 tu< -> <false> }t
+t{ mid-uint 0 tu< -> <false> }t
+t{ max-uint 0 tu< -> <false> }t
+t{ max-uint mid-uint tu< -> <false> }t
+
+t{ 0 1 min -> 0 }t
+t{ 1 2 min -> 1 }t
+t{ -1 0 min -> -1 }t
+t{ -1 1 min -> -1 }t
+t{ min-int 0 min -> min-int }t
+t{ min-int max-int min -> min-int }t
+t{ 0 max-int min -> 0 }t
+t{ 0 0 min -> 0 }t
+t{ 1 1 min -> 1 }t
+t{ 1 0 min -> 0 }t
+t{ 2 1 min -> 1 }t
+t{ 0 -1 min -> -1 }t
+t{ 1 -1 min -> -1 }t
+t{ 0 min-int min -> min-int }t
+t{ max-int min-int min -> min-int }t
+t{ max-int 0 min -> 0 }t
+
+t{ 0 1 max -> 1 }t
+t{ 1 2 max -> 2 }t
+t{ -1 0 max -> 0 }t
+t{ -1 1 max -> 1 }t
+t{ min-int 0 max -> 0 }t
+t{ min-int max-int max -> max-int }t
+t{ 0 max-int max -> max-int }t
+t{ 0 0 max -> 0 }t
+t{ 1 1 max -> 1 }t
+t{ 1 0 max -> 1 }t
+t{ 2 1 max -> 2 }t
+t{ 0 -1 max -> 0 }t
+t{ 1 -1 max -> 1 }t
+t{ 0 min-int max -> 0 }t
+t{ max-int min-int max -> max-int }t
+t{ max-int 0 max -> max-int }t
+
+\ ------------------------------------------------------------------------
+testing stack ops: 2drop 2dup 2over 2swap ?dup depth drop dup over rot swap
+
+t{ 1 2 2drop -> }t
+t{ 1 2 2dup -> 1 2 1 2 }t
+t{ 1 2 3 4 2over -> 1 2 3 4 1 2 }t
+t{ 1 2 3 4 2swap -> 3 4 1 2 }t
+t{ 0 ?dup -> 0 }t
+t{ 1 ?dup -> 1 1 }t
+t{ -1 ?dup -> -1 -1 }t
+t{ depth -> 0 }t
+t{ 0 depth -> 0 1 }t
+t{ 0 1 depth -> 0 1 2 }t
+t{ 0 drop -> }t
+t{ 1 2 drop -> 1 }t
+t{ 1 dup -> 1 1 }t
+t{ 1 2 over -> 1 2 1 }t
+t{ 1 2 3 rot -> 2 3 1 }t
+t{ 1 2 swap -> 2 1 }t
+
+\ ------------------------------------------------------------------------
+testing >r r> r
+
+t{ : gr1 >r r> ; -> }t
+t{ : gr2 >r r r> drop ; -> }t
+t{ 123 gr1 -> 123 }t
+t{ 123 gr2 -> 123 }t
+t{ 1s gr1 -> 1s }t   ( return stack holds cells )
+
+\ ------------------------------------------------------------------------
+testing add/subtract: + - 1+ 1- abs negate
+
+t{ 0 5 + -> 5 }t
+t{ 5 0 + -> 5 }t
+t{ 0 -5 + -> -5 }t
+t{ -5 0 + -> -5 }t
+t{ 1 2 + -> 3 }t
+t{ 1 -2 + -> -1 }t
+t{ -1 2 + -> 1 }t
+t{ -1 -2 + -> -3 }t
+t{ -1 1 + -> 0 }t
+t{ mid-uint 1 + -> mid-uint+1 }t
+
+t{ 0 5 - -> -5 }t
+t{ 5 0 - -> 5 }t
+t{ 0 -5 - -> 5 }t
+t{ -5 0 - -> -5 }t
+t{ 1 2 - -> -1 }t
+t{ 1 -2 - -> 3 }t
+t{ -1 2 - -> -3 }t
+t{ -1 -2 - -> 1 }t
+t{ 0 1 - -> -1 }t
+t{ mid-uint+1 1 - -> mid-uint }t
+
+t{ 0 1+ -> 1 }t
+t{ -1 1+ -> 0 }t
+t{ 1 1+ -> 2 }t
+t{ mid-uint 1+ -> mid-uint+1 }t
+
+t{ 2 1- -> 1 }t
+t{ 1 1- -> 0 }t
+t{ 0 1- -> -1 }t
+t{ mid-uint+1 1- -> mid-uint }t
+
+t{ 0 negate -> 0 }t
+t{ 1 negate -> -1 }t
+t{ -1 negate -> 1 }t
+t{ 2 negate -> -2 }t
+t{ -2 negate -> 2 }t
+
+t{ 0 abs -> 0 }t
+t{ 1 abs -> 1 }t
+t{ -1 abs -> 1 }t
+t{ min-int abs -> mid-uint+1 }t
+
+\ ------------------------------------------------------------------------
+testing multiply: s>d * m* um*
+
+t{ 0 s>d -> 0 0 }t
+t{ 1 s>d -> 1 0 }t
+t{ 2 s>d -> 2 0 }t
+t{ -1 s>d -> -1 -1 }t
+t{ -2 s>d -> -2 -1 }t
+t{ min-int s>d -> min-int -1 }t
+t{ max-int s>d -> max-int 0 }t
+
+t{ 0 0 m* -> 0 s>d }t
+t{ 0 1 m* -> 0 s>d }t
+t{ 1 0 m* -> 0 s>d }t
+t{ 1 2 m* -> 2 s>d }t
+t{ 2 1 m* -> 2 s>d }t
+t{ 3 3 m* -> 9 s>d }t
+t{ -3 3 m* -> -9 s>d }t
+t{ 3 -3 m* -> -9 s>d }t
+t{ -3 -3 m* -> 9 s>d }t
+t{ 0 min-int m* -> 0 s>d }t
+t{ 1 min-int m* -> min-int s>d }t
+t{ 2 min-int m* -> 0 1s }t
+t{ 0 max-int m* -> 0 s>d }t
+t{ 1 max-int m* -> max-int s>d }t
+t{ 2 max-int m* -> max-int 1 << 0 }t
+t{ min-int min-int m* -> 0 msb 1 >> }t
+t{ max-int min-int m* -> msb msb 2/ }t
+t{ max-int max-int m* -> 1 msb 2/ ~ }t
+
+t{ 0 0 * -> 0 }t            \ test identities
+t{ 0 1 * -> 0 }t
+t{ 1 0 * -> 0 }t
+t{ 1 2 * -> 2 }t
+t{ 2 1 * -> 2 }t
+t{ 3 3 * -> 9 }t
+t{ -3 3 * -> -9 }t
+t{ 3 -3 * -> -9 }t
+t{ -3 -3 * -> 9 }t
+
+t{ mid-uint+1 1 >> 2 * -> mid-uint+1 }t
+t{ mid-uint+1 2 >> 4 * -> mid-uint+1 }t
+t{ mid-uint+1 1 >> mid-uint+1 | 2 * -> mid-uint+1 }t
+
+t{ 0 0 um* -> 0 0 }t
+t{ 0 1 um* -> 0 0 }t
+t{ 1 0 um* -> 0 0 }t
+t{ 1 2 um* -> 2 0 }t
+t{ 2 1 um* -> 2 0 }t
+t{ 3 3 um* -> 9 0 }t
+
+t{ mid-uint+1 1 >> 2 um* -> mid-uint+1 0 }t
+t{ mid-uint+1 2 um* -> 0 1 }t
+t{ mid-uint+1 4 um* -> 0 2 }t
+t{ 1s 2 um* -> 1s 1 << 1 }t
+t{ max-uint max-uint um* -> 1 1 ~ }t
+
+\ ------------------------------------------------------------------------
+testing divide: m/mod um/mod */ */mod / /% %
+
+t{ 0 s>d 1 m/mod -> 0 0 }t
+t{ 1 s>d 1 m/mod -> 0 1 }t
+t{ 2 s>d 1 m/mod -> 0 2 }t
+t{ -1 s>d 1 m/mod -> 0 -1 }t
+t{ -2 s>d 1 m/mod -> 0 -2 }t
+t{ 0 s>d -1 m/mod -> 0 0 }t
+t{ 1 s>d -1 m/mod -> 0 -1 }t
+t{ 2 s>d -1 m/mod -> 0 -2 }t
+t{ -1 s>d -1 m/mod -> 0 1 }t
+t{ -2 s>d -1 m/mod -> 0 2 }t
+t{ 2 s>d 2 m/mod -> 0 1 }t
+t{ -1 s>d -1 m/mod -> 0 1 }t
+t{ -2 s>d -2 m/mod -> 0 1 }t
+t{  7 s>d  3 m/mod -> 1 2 }t
+t{  7 s>d -3 m/mod -> 1 -2 }t
+t{ -7 s>d  3 m/mod -> -1 -2 }t
+t{ -7 s>d -3 m/mod -> -1 2 }t
+t{ max-int s>d 1 m/mod -> 0 max-int }t
+t{ min-int s>d 1 m/mod -> 0 min-int }t
+t{ max-int s>d max-int m/mod -> 0 1 }t
+t{ min-int s>d min-int m/mod -> 0 1 }t
+t{ 1s 1 4 m/mod -> 3 max-int }t
+t{ 2 min-int m* 2 m/mod -> 0 min-int }t
+t{ 2 min-int m* min-int m/mod -> 0 2 }t
+t{ 2 max-int m* 2 m/mod -> 0 max-int }t
+t{ 2 max-int m* max-int m/mod -> 0 2 }t
+t{ min-int min-int m* min-int m/mod -> 0 min-int }t
+t{ min-int max-int m* min-int m/mod -> 0 max-int }t
+t{ min-int max-int m* max-int m/mod -> 0 min-int }t
+t{ max-int max-int m* max-int m/mod -> 0 max-int }t
+
+t{ 0 0 1 um/mod -> 0 0 }t
+t{ 1 0 1 um/mod -> 0 1 }t
+t{ 1 0 2 um/mod -> 1 0 }t
+t{ 3 0 2 um/mod -> 1 1 }t
+t{ max-uint 2 um* 2 um/mod -> 0 max-uint }t
+t{ max-uint 2 um* max-uint um/mod -> 0 2 }t
+t{ max-uint max-uint um* max-uint um/mod -> 0 max-uint }t
+
+
+: t/mod  >r s>d r> m/mod ;
+: t/     t/mod swap drop ;
+: tmod   t/mod drop ;
+: t*/mod >r m* r> m/mod ;
+: t*/    t*/mod swap drop ;
+
+t{ 0 1 /% -> 0 1 t/mod }t
+t{ 1 1 /% -> 1 1 t/mod }t
+t{ 2 1 /% -> 2 1 t/mod }t
+t{ -1 1 /% -> -1 1 t/mod }t
+t{ -2 1 /% -> -2 1 t/mod }t
+t{ 0 -1 /% -> 0 -1 t/mod }t
+t{ 1 -1 /% -> 1 -1 t/mod }t
+t{ 2 -1 /% -> 2 -1 t/mod }t
+t{ -1 -1 /% -> -1 -1 t/mod }t
+t{ -2 -1 /% -> -2 -1 t/mod }t
+t{ 2 2 /% -> 2 2 t/mod }t
+t{ -1 -1 /% -> -1 -1 t/mod }t
+t{ -2 -2 /% -> -2 -2 t/mod }t
+t{ 7 3 /% -> 7 3 t/mod }t
+t{ 7 -3 /% -> 7 -3 t/mod }t
+t{ -7 3 /% -> -7 3 t/mod }t
+t{ -7 -3 /% -> -7 -3 t/mod }t
+t{ max-int 1 /% -> max-int 1 t/mod }t
+t{ min-int 1 /% -> min-int 1 t/mod }t
+t{ max-int max-int /% -> max-int max-int t/mod }t
+t{ min-int min-int /% -> min-int min-int t/mod }t
+
+t{ 0 1 / -> 0 1 t/ }t
+t{ 1 1 / -> 1 1 t/ }t
+t{ 2 1 / -> 2 1 t/ }t
+t{ -1 1 / -> -1 1 t/ }t
+t{ -2 1 / -> -2 1 t/ }t
+t{ 0 -1 / -> 0 -1 t/ }t
+t{ 1 -1 / -> 1 -1 t/ }t
+t{ 2 -1 / -> 2 -1 t/ }t
+t{ -1 -1 / -> -1 -1 t/ }t
+t{ -2 -1 / -> -2 -1 t/ }t
+t{ 2 2 / -> 2 2 t/ }t
+t{ -1 -1 / -> -1 -1 t/ }t
+t{ -2 -2 / -> -2 -2 t/ }t
+t{ 7 3 / -> 7 3 t/ }t
+t{ 7 -3 / -> 7 -3 t/ }t
+t{ -7 3 / -> -7 3 t/ }t
+t{ -7 -3 / -> -7 -3 t/ }t
+t{ max-int 1 / -> max-int 1 t/ }t
+t{ min-int 1 / -> min-int 1 t/ }t
+t{ max-int max-int / -> max-int max-int t/ }t
+t{ min-int min-int / -> min-int min-int t/ }t
+
+t{ 0 1 % -> 0 1 tmod }t
+t{ 1 1 % -> 1 1 tmod }t
+t{ 2 1 % -> 2 1 tmod }t
+t{ -1 1 % -> -1 1 tmod }t
+t{ -2 1 % -> -2 1 tmod }t
+t{ 0 -1 % -> 0 -1 tmod }t
+t{ 1 -1 % -> 1 -1 tmod }t
+t{ 2 -1 % -> 2 -1 tmod }t
+t{ -1 -1 % -> -1 -1 tmod }t
+t{ -2 -1 % -> -2 -1 tmod }t
+t{ 2 2 % -> 2 2 tmod }t
+t{ -1 -1 % -> -1 -1 tmod }t
+t{ -2 -2 % -> -2 -2 tmod }t
+t{ 7 3 % -> 7 3 tmod }t
+t{ 7 -3 % -> 7 -3 tmod }t
+t{ -7 3 % -> -7 3 tmod }t
+t{ -7 -3 % -> -7 -3 tmod }t
+t{ max-int 1 % -> max-int 1 tmod }t
+t{ min-int 1 % -> min-int 1 tmod }t
+t{ max-int max-int % -> max-int max-int tmod }t
+t{ min-int min-int % -> min-int min-int tmod }t
+
+t{ 0 2 1 */ -> 0 2 1 t*/ }t
+t{ 1 2 1 */ -> 1 2 1 t*/ }t
+t{ 2 2 1 */ -> 2 2 1 t*/ }t
+t{ -1 2 1 */ -> -1 2 1 t*/ }t
+t{ -2 2 1 */ -> -2 2 1 t*/ }t
+t{ 0 2 -1 */ -> 0 2 -1 t*/ }t
+t{ 1 2 -1 */ -> 1 2 -1 t*/ }t
+t{ 2 2 -1 */ -> 2 2 -1 t*/ }t
+t{ -1 2 -1 */ -> -1 2 -1 t*/ }t
+t{ -2 2 -1 */ -> -2 2 -1 t*/ }t
+t{ 2 2 2 */ -> 2 2 2 t*/ }t
+t{ -1 2 -1 */ -> -1 2 -1 t*/ }t
+t{ -2 2 -2 */ -> -2 2 -2 t*/ }t
+t{ 7 2 3 */ -> 7 2 3 t*/ }t
+t{ 7 2 -3 */ -> 7 2 -3 t*/ }t
+t{ -7 2 3 */ -> -7 2 3 t*/ }t
+t{ -7 2 -3 */ -> -7 2 -3 t*/ }t
+t{ max-int 2 max-int */ -> max-int 2 max-int t*/ }t
+t{ min-int 2 min-int */ -> min-int 2 min-int t*/ }t
+
+t{ 0 2 1 */mod -> 0 2 1 t*/mod }t
+t{ 1 2 1 */mod -> 1 2 1 t*/mod }t
+t{ 2 2 1 */mod -> 2 2 1 t*/mod }t
+t{ -1 2 1 */mod -> -1 2 1 t*/mod }t
+t{ -2 2 1 */mod -> -2 2 1 t*/mod }t
+t{ 0 2 -1 */mod -> 0 2 -1 t*/mod }t
+t{ 1 2 -1 */mod -> 1 2 -1 t*/mod }t
+t{ 2 2 -1 */mod -> 2 2 -1 t*/mod }t
+t{ -1 2 -1 */mod -> -1 2 -1 t*/mod }t
+t{ -2 2 -1 */mod -> -2 2 -1 t*/mod }t
+t{ 2 2 2 */mod -> 2 2 2 t*/mod }t
+t{ -1 2 -1 */mod -> -1 2 -1 t*/mod }t
+t{ -2 2 -2 */mod -> -2 2 -2 t*/mod }t
+t{ 7 2 3 */mod -> 7 2 3 t*/mod }t
+t{ 7 2 -3 */mod -> 7 2 -3 t*/mod }t
+t{ -7 2 3 */mod -> -7 2 3 t*/mod }t
+t{ -7 2 -3 */mod -> -7 2 -3 t*/mod }t
+t{ max-int 2 max-int */mod -> max-int 2 max-int t*/mod }t
+t{ min-int 2 min-int */mod -> min-int 2 min-int t*/mod }t
+
+\ ------------------------------------------------------------------------
+testing here , @ ! cell+ cells c, c@ c! chars 2@ 2! align aligned +! allot
+
+: cell+ 4+ ;
+: cells 4* ;
+: char+ 1+ ;
+: chars ;
+: aligned dup 3& 0; - 4+ ;
+
+here 1 allot
+here
+constant 2nda
+constant 1sta
+t{ 1sta 2nda tu< -> <true> }t      \ here must grow with allot
+t{ 1sta 1+ -> 2nda }t         \ ... by one address unit
+( missing test: negative allot )
+
+\ added by GWJ so that align can be used before , (comma) is tested
+1 aligned constant almnt   \ -- 1|2|4|8 for 8|16|32|64 bit alignment
+align`
+t{ here 1 allot align` here swap - almnt t= -> <true> }t
+\ end of extra test
+
+here 1 ,
+here 2 ,
+constant 2nd
+constant 1st
+t{ 1st 2nd tu< -> <true> }t         \ here must grow with allot
+t{ 1st cell+ -> 2nd }t         \ ... by one cell
+t{ 1st 1 cells + -> 2nd }t
+t{ 1st @ 2nd @ -> 1 2 }t
+t{ 5 1st ! -> }t
+t{ 1st @ 2nd @ -> 5 2 }t
+t{ 6 2nd ! -> }t
+t{ 1st @ 2nd @ -> 5 6 }t
+t{ 1st 2@ -> 6 5 }t
+t{ 2 1 1st 2! -> }t
+t{ 1st 2@ -> 2 1 }t
+t{ 1s 1st !  1st @ -> 1s }t      \ can store cell-wide value
+
+here 1 c,
+here 2 c,
+constant 2ndc
+constant 1stc
+t{ 1stc 2ndc tu< -> <true> }t      \ here must grow with allot
+t{ 1stc char+ -> 2ndc }t         \ ... by one char
+t{ 1stc 1 chars + -> 2ndc }t
+t{ 1stc c@ 2ndc c@ -> 1 2 }t
+t{ 3 1stc c! -> }t
+t{ 1stc c@ 2ndc c@ -> 3 2 }t
+t{ 4 2ndc c! -> }t
+t{ 1stc c@ 2ndc c@ -> 3 4 }t
+
+align` 1 allot here align` here 3 cells allot
+constant a-addr  constant ua-addr
+t{ ua-addr aligned -> a-addr }t
+t{    1 a-addr c!  a-addr c@ ->    1 }t
+t{ 1234 a-addr  !  a-addr  @ -> 1234 }t
+t{ 123 456 a-addr 2!  a-addr 2@ -> 123 456 }t
+t{ 2 a-addr char+ c!  a-addr char+ c@ -> 2 }t
+t{ 3 a-addr cell+ c!  a-addr cell+ c@ -> 3 }t
+t{ 1234 a-addr cell+ !  a-addr cell+ @ -> 1234 }t
+t{ 123 456 a-addr cell+ 2!  a-addr cell+ 2@ -> 123 456 }t
+
+: bits ( x -- u )
+   0 swap BEGIN 0- 0<> WHILE dup msb & 0- drop 0<> IF >r 1+ r> THEN 2* REPEAT drop ;
+( characters >= 1 au, <= size of cell, >= 8 bits )
+t{ 1 chars 1 t< -> <false> }t
+t{ 1 chars 1 cells t> -> <false> }t
+( tbd: how to find number of bits? )
+
+( cells >= 1 au, integral multiple of char size, >= 16 bits )
+t{ 1 cells 1 t< -> <false> }t
+t{ 1 cells 1 chars % -> 0 }t
+t{ 1s bits 10 t< -> <false> }t
+
+t{ 0 1st ! -> }t
+t{ 1 1st +! -> }t
+t{ 1st @ -> 1 }t
+t{ -1 1st +! 1st @ -> 0 }t
+
+\ ------------------------------------------------------------------------
+testing [ ] '' ""
+
+t{ 'X' -> $58 }t
+t{ 'HELLO' -> $48 }t
+t{ : gc1 'X' ; -> }t
+t{ : gc2 'HELLO' ; -> }t
+t{ gc1 -> $58 }t
+t{ gc2 -> $48 }t
+t{ : gc3 [ gc1 ] lit ; -> }t
+t{ gc3 -> $58 }t
+t{ : gc4 "XY" ; -> }t
+t{ gc4 swap drop -> 2 }t
+t{ gc4 drop dup c@ swap char+ c@ -> $58 $59 }t
+
+\ ------------------------------------------------------------------------
+testing ' find execute immediate count literal postpone state
+
+t{ : gt1 123 ; -> }t
+t{ gt1 ' execute -> 123 }t
+t{ : gt2` gt1 ' lit` ; -> }t
+t{ gt2 execute -> 123 }t
+
+here 3 c, 'g' c, 't' c, '1' c, constant gt1string
+t{ gt1string c@+ find -> gt1 ' 0 }t
+t{ "gt2`" find -> gt2` ' 0 }t
+( how to search for non-existent word? )
+t{ : gt3 gt2 ; -> }t
+t{ gt3 -> gt1 ' }t
+t{ gt1string c@+ -> gt1string char+ 3 }t
+
+\ ------------------------------------------------------------------------
+testing IF ELSE THEN BEGIN WHILE REPEAT UNTIL
+
+t{ : gi1 0- drop 0<> IF 123 THEN ; -> }t
+t{ : gi2 0- drop 0<> IF 123 ELSE 234 THEN ; -> }t
+t{ 0 gi1 -> }t
+t{ 1 gi1 -> 123 }t
+t{ -1 gi1 -> 123 }t
+t{ 0 gi2 -> 234 }t
+t{ 1 gi2 -> 123 }t
+t{ -1 gi1 -> 123 }t
+
+t{ : gi3 BEGIN 5 < drop WHILE dup 1+ REPEAT ; -> }t
+t{ 0 gi3 -> 0 1 2 3 4 5 }t
+t{ 4 gi3 -> 4 5 }t
+t{ 5 gi3 -> 5 }t
+t{ 6 gi3 -> 6 }t
+
+t{ : gi4 BEGIN dup 1+ 5 > drop UNTIL ; -> }t
+t{ 3 gi4 -> 3 4 5 6 }t
+t{ 5 gi4 -> 5 6 }t
+t{ 6 gi4 -> 6 7 }t
+
+: gi5 2 > drop IF BEGIN 5 < drop WHILE dup 1+ REPEAT 123 ELSE 345 THEN ;
+t{ 1 gi5 -> 1 345 }t
+t{ 2 gi5 -> 2 345 }t
+t{ 3 gi5 -> 3 4 5 123 }t
+t{ 4 gi5 -> 4 5 123 }t
+t{ 5 gi5 -> 5 123 }t
+
+t{ : gi6 ( n -- 0,1,..n ) 0- 0<> IF dup >r 1- gi6 r> THEN ; -> }t
+t{ 0 gi6 -> 0 }t
+t{ 1 gi6 -> 0 1 }t
+t{ 2 gi6 -> 0 1 2 }t
+t{ 3 gi6 -> 0 1 2 3 }t
+t{ 4 gi6 -> 0 1 2 3 4 }t
+
+\ ------------------------------------------------------------------------
+testing defining words: constant variable create
+
+t{ 123 constant x123 -> }t
+t{ x123 -> 123 }t
+t{ x123 equ y123 -> }t
+t{ y123 -> 123 }t
+
+t{ variable v1 -> }t
+t{ 123 v1 ! -> }t
+t{ v1 @ -> 123 }t
+
+t{ create cr1 -> }t
+t{ cr1 -> here }t
+t{ 1 , -> }t
+t{ cr1 @ -> 1 }t
+
+\ ------------------------------------------------------------------------
+testing eval
+
+: ge1 "123 ;" ;
+: ge2 "123 1+ ;" ;
+: ge3 ": ge4 345 ;" ;
+: ge5 eval ;
+
+t{ ge1 eval -> 123 }t
+t{ ge2 eval -> 124 }t
+t{ ge3 eval -> }t
+t{ ge4 -> 345 }t
+
+t{ : ge6 ge1 ge5 ; -> }t
+t{ ge6 -> 123 }t
+t{ : ge7 ge2 ge5 ; -> }t
+t{ ge7 -> 124 }t
+
+\ ------------------------------------------------------------------------
+\ testing >in parse
+
+variable scans
+variable save
+: savein`   ;` >in@ save! ;
+: rescan?`  -1 scans +! scans @ 0- drop 0<> IF save@ >in! THEN ;
+
+t{ 2 scans ! savein
+345 rescan?
+-> 345 345 }t
+
+: gs2  5 scans ! s"savein 123 rescan? ;" eval ;
+t{ gs2 -> 123 123 123 123 123 }t
+
+: gs3` ;` parse swap c@ ;
+t{ $20 gs3 hello -> 5 'h' }t
+t{ $22 gs3 goodbye" -> 7 'g' }t
+
+\ ------------------------------------------------------------------------
+testing <# # #s #> hold sign base
+
+\    ( addr1 c1 addr2 c2 -- t/f ) compare two strings.
+: s= >r swap r> <> drop IF 2drop drop <false> ;THEN
+     $- drop 0= IF <true> ELSE <false> THEN ;
+
+: gp1  <# $41 hold $42 hold 0 0 #> s" BA" s= ;
+t{ gp1 -> <true> }t
+
+: gp2  <# -1 sign 0 sign -1 sign 0 0 #> s" --" s= ;
+t{ gp2 -> <true> }t
+
+: gp3  <# 1 0 # # #> s" 01" s= ;
+t{ gp3 -> <true> }t
+
+: gp4  <# 1 0 #s #> s" 1" s= ;
+t{ gp4 -> <true> }t
+
+$24 constant max-base         \ base 2 .. 36
+: count-bits
+   0 0 ~ BEGIN 0- 0<> WHILE >r 1+ r> 2* REPEAT drop ;
+count-bits 2* constant #bits-ud      \ number of bits in ud
+
+: gp5
+   base @ <true>
+   max-base 1- TIMES r ~ 37+  \ for each possible base
+      dup base!               \ tbd: assumes base works
+      0 <# #s #> s" 10" s= &
+   REPEAT
+   swap base ! ;
+t{ gp5 -> <true> }t
+
+\ DG The original test used max-uint max-uint as input
+\ to <# #s #> and wanted a length of #bits-ud.
+\ Sadly, that's out of range for div.  DG \
+: gp6
+   base @ >r  2 base !
+   max-uint 1 <# #s #>           \ maximum ud to binary
+   r> base !                     \ s: c-addr u
+   dup $21 =. swap
+   TIMES                         \ s: c-addr flag
+      over c@ '1' =. &      \ all ones
+      >r char+ r>
+   REPEAT swap drop ;
+t{ gp6 -> <true> }t
+
+: gp7
+   base @ >r    max-base base !
+   <true>
+   $a TIMES
+      r 0 <# #s #>
+      1 =. swap c@ r $30 + =. & &
+   REPEAT
+   max-base $a- TIMES
+      r $a+ 0 <# #s #>
+      1 =. swap c@ $41 r + =. & &
+   REPEAT
+   r> base ! ;
+
+t{ gp7 -> <true> }t
+
+\ ------------------------------------------------------------------------
+testing fill move
+
+create fbuf 00 c, 00 c, 00 c,
+create sbuf 12 c, 34 c, 56 c,
+: seebuf fbuf c@  fbuf char+ c@  fbuf char+ char+ c@ ;
+
+t{ fbuf 0 20 fill -> }t
+t{ seebuf -> 00 00 00 }t
+
+t{ fbuf 1 20 fill -> }t
+t{ seebuf -> 20 00 00 }t
+
+t{ fbuf 3 20 fill -> }t
+t{ seebuf -> 20 20 20 }t
+
+t{ fbuf fbuf 3 chars move -> }t      \ bizarre special case
+t{ seebuf -> 20 20 20 }t
+
+t{ sbuf fbuf 0 chars move -> }t
+t{ seebuf -> 20 20 20 }t
+
+t{ sbuf fbuf 1 chars move -> }t
+t{ seebuf -> 12 20 20 }t
+
+t{ sbuf fbuf 3 chars move -> }t
+t{ seebuf -> 12 34 56 }t
+
+t{ fbuf fbuf char+ 2 chars move -> }t
+t{ seebuf -> 12 12 34 }t
+
+t{ fbuf char+ fbuf 2 chars move -> }t
+t{ seebuf -> 12 34 34 }t
+
+\ ------------------------------------------------------------------------
+testing output: . ." cr emit space type .u
+
+: do` under` -` TIMES` ;
+: i` r` ~` over+` ;
+: loop` REPEAT` drop` ;
+
+: output-test
+   ." you should see the standard graphic characters:" cr
+
+   $41 $20 do i emit loop cr
+   $61 $41 do i emit loop cr
+   $7f $61 do i emit loop cr
+   ." you should see 0-9 separated by a space:" cr
+   9 1+ 0 do i . loop cr
+   ." you should see 0-9 (with no spaces):" cr
+   '9' 1+ '0' do i emit loop cr
+   ." you should see a-g separated by a space:" cr
+   'g' 1+ 'a' do i emit space loop cr
+   ." you should see two separate lines:" cr
+   ."line 1" cr ."line 2" cr
+   ." you should see the number ranges of signed and unsigned numbers:" cr
+   ."   signed: " min-int . max-int . cr
+   ." unsigned: " 0 .u max-uint .u cr
+   ."   signed: " min-int .x max-int .x cr
+   ." unsigned: " 0 $10 .ub max-uint $10 .ub cr
+;
+
+t{ output-test -> }t
+
+
+\ ------------------------------------------------------------------------
+\ testing input: accept
+
+create abuf 50 chars allot
+
+: accept-test
+   cr ." please type up to 80 characters:" cr
+   abuf 50 accept
+   cr ." received: " 22 emit
+   abuf swap type 22 emit cr
+;
+
+\ this passes, but I prefer a non-interactive test run.
+\ t{ accept-test -> }t
+
+cr ."End of adapted core word set tests" cr ;
+
+."skipped: " skipcnt@ .dec cr tally-exit ;

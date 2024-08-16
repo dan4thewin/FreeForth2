@@ -47,7 +47,7 @@ create dd 24 allot ; dd 24 32 fill dd 8+ 8 '-' fill
 [THEN]  \ ----------------------------------------------------
   cr #m@ .
   ."(a:b<->c__b:c<->a__c:a<->b__i(n--):init__s(n--):solution__h:help)^J" ;
-: top  ds #d@ TIMES tuck c@ <> drop swap WHILE 1+ REPEAT nip ;  \ s -- @
+: top  ds #d@ TIMES tuck c@ <> drop swap 0<> WHILE 1+ REPEAT nip ;  \ s -- @
 : i` ;` 1- 7& 1+  dup #d! ds swap erase  0 #m!  \ n -- ; init
 : a` 1 2      SKIP
 : b` 2 0 SKIP
@@ -56,7 +56,7 @@ create dd 24 allot ; dd 24 32 fill dd 8+ 8 '-' fill
 : d 333 ms ;
 : s`  \ -- ; solution
   ;` i`  500 ms
-  1 #d@ << BEGIN 1- WHILE d b` 1- WHILE d c` 1- WHILE d a` REPEAT drop ;
+  1 #d@ << BEGIN 1- 0<> WHILE d b` 1- 0<> WHILE d c` 1- 0<> WHILE d a` REPEAT drop ;
 
 [ELSE]  \ variant with animations =======================================
 

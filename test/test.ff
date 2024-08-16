@@ -2,21 +2,25 @@ variable plan
 variable okcnt
 variable skipcnt
 variable index
+variable verbose
 : >plan		dup plan! ."1.." .dec cr ;
 : `tally	plan@ okcnt@ skipcnt@ + - 0= drop IF ."PASSED^J" 0 ELSE ."FAILED^J" 1 THEN ;
 : tally		`tally drop ;
 : tally-exit	`tally exit ;
 
 variable savedepth
+foreground ' alias fg
 : `newtest	index@ ++ 0 savedepth! depth 0; !"stack must be empty" ;
-: T{`		;` `newtest ;
+: t{`		;` verbose@ IF. 2 >in -! lnparse tuck type space >in -! THEN `newtest ;
 : ->`		;` depth savedepth! ;
 : `dropall	depth TIMES drop REPEAT ;
-: `chkdepth	depth savedepth@ 2* - 0; ."wrong number of results^J" ;
-: `chkvals	savedepth@ >>rr BEGIN depth 0; dropr> <> 2drop IF depth +r BREAK REPEAT ."incorrect result^J" ;
+: `chkdepth	depth savedepth@ 2* - 0; yellow fg ."wrong number of results^J" ss ;
+: `chkvals	savedepth@ >>rr BEGIN depth 0; dropr> <> 2drop IF depth +r BREAK REPEAT
+		yellow fg ."incorrect result^J" ;
 : `chk		`chkdepth `chkvals 0= ? ;
-: `ok?		`chk 0= IF okcnt@ ++ ."ok " ELSE ."not ok " `dropall THEN index@ .dec cr ;
-: }T`		;` `ok? ;
+: `ok?		`chk 0= IF okcnt@ ++ dim green fg ."ok " ELSE red fg ."not ok " `dropall THEN
+		index@ .dec normal cr ;
+: }t`		;` `ok? ;
 : skip`		skipcnt@ ++ \` ;
 
-: TESTING` ;` 8 >in -! lnparse type cr ;
+: testing` ;` 8 >in -! lnparse cyan fg type normal cr ;
