@@ -1,0 +1,19 @@
+needs test.ff
+13 >plan
+testing :^ @^ !^ ^^ x^ n^
+
+t{ :^ t1 123 ; -> }t
+t{ :  t2 234 ; -> }t
+t{ t1 -> 123 }t
+t{ t2 -> 234 }t
+t{ t1 @^ -> t1 ' 6+ }t
+t{ t2 ' t1 !^ }t
+t{ t1 @^ -> t2 ' }t
+t{ t1 -> 234 }t
+t{ t1 x^ -> 123 }t
+t{ t1 ^^ -> }t
+t{ t1 -> 123 }t
+t{ t1 n^ -> }t
+t{ t1 -> }t
+
+tally-exit ;

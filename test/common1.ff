@@ -1,0 +1,181 @@
+needs test.ff
+122 >plan
+
+\ follow the order established in ff.help
+
+testing swap` 2swap`
+t{ 1 2 swap -> 2 1 }t
+t{ 1 2 3 4 2swap -> 3 4 1 2 }t
+
+testing dup` 2dup` 3dup` nipdup` tuck` over` under`
+t{ 1 dup -> 1 1 }t
+t{ 1 2 2dup -> 1 2 1 2 }t
+t{ 1 2 3 3dup -> 1 2 3 1 2 3 }t
+t{ 5 7 nipdup -> 7 7 }t
+t{ 5 7 tuck -> 7 5 7 }t
+t{ 1 2 over -> 1 2 1 }t
+t{ 5 7 under -> 5 5 7 }t
+
+testing pick` 2over`
+t{ 1 2 3 4 5  4 pick -> 1 2 3 4 5 1 }t
+t{ 1 2 3 4 2over -> 1 2 3 4 1 2 }t
+
+testing 2drop` drop` nip`
+t{ 1 2 2drop -> }t
+t{ 0 drop -> }t
+t{ 1 2 drop -> 1 }t
+t{ 1 2 nip -> 2 }t
+
+testing rot` -rot` >rswapr>` 2xchg`
+t{ 1 2 3 rot -> 2 3 1 }t
+t{ 1 2 3 -rot -> 3 1 2 }t
+t{ 1 2 3 4 >rswapr> -> 1 3 2 4 }t
+t{ 1 2 3 4 2xchg -> 1 4 3 2 }t
+
+testing depth
+t{ depth -> 0 }t
+t{ 5 depth -> 5 1 }t
+t{ 5 7 depth -> 5 7 2 }t
+
+testing >r` 2>r` dup>r` r>` 2r>` dropr>` r` rr`
+t{ -1 >r depth rdrop -> 0 }t
+t{ -1 >r 1 r> -> 1 -1 }t
+t{ -1 -2 2>r depth 2rdrop -> 0 }t
+t{ -1 -2 2>r 3 r> 5 r> -> 3 -2 5 -1 }t
+t{ -1 dup>r rdrop -> -1 }t
+t{ -1 dup>r r> -> -1 -1 }t
+t{ -1 -2 2>r depth 2r> -> 0 -1 -2 }t
+t{ -1 -2 >r depth swap dropr> -> 1 -2 }t
+t{ -1 -2 -3 3 >>r  depth r> r> r> -> 0 -1 -2 -3 }t
+t{ -1 -2 -3 3 >>rr depth r> r> r> -> 0 -3 -2 -1 }t
+
+testing r` 2r` rdrop` 2rdrop`
+t{ -1 >r depth r rdrop -> 0 -1 }t
+t{ -1 >r 3 r 5 r> -> 3 -1 5 -1 }t
+t{ -1 -2 2>r depth 2rdrop -> 0 }t
+t{ -1 -2 2>r depth 2r 2rdrop -> 0 -1 -2 }t
+
+testing +r` -r` xxr` r0` r1` r2` r3` r4` r5` r0!` r1!` r2!` r3!` r4!` r5!` r!`
+t{ $a $b $c $d $e $f 6 -r r5! r4! r3! r2! r1! r0!
+   depth r0 r2 r4 r1 r3 r5 6 +r -> 0 $a $c $e $b $d $f }t
+t{ xxr` ' -> +r`  ' }t
+t{ r!`  ' -> r0!` ' }t
+
+testing rp@` sp@`
+t{ rp@ @ -> anon:` ' }t
+t{ $ff >r depth rp@ @ rdrop -> 0 $ff }t
+t{ $aa $bb sp@ @ -> $aa $bb $aa }t
+
+testing over&` over|` over^` 2dup+` over+` over-` over*`
+t{ 0 1 over& -> 0 0 }t
+t{ 1 1 over& -> 1 1 }t
+t{ 1 2 over| -> 1 3 }t
+t{ 0 0 over^ -> 0 0 }t
+t{ 1 0 over^ -> 1 1 }t
+t{ 2 3 2dup+ -> 2 3 5 }t
+t{ 2 3 over+ -> 2 5 }t
+t{ 2 3 over- -> 2 1 }t
+t{ 2 3 over* -> 2 6 }t
+
+testing bswap` flip`
+t{ $11223344 bswap -> $44332211 }t
+t{ $11223344 flip  -> $11224433 }t
+
+testing 1-` 1+` 2+` 4+` 2*` 2/` 4*` 4/` 8*` 8/`
+t{  11 1- ->  10 }t
+t{ -11 1- -> -12 }t
+t{  11 1+ ->  12 }t
+t{ -11 1+ -> -10 }t
+t{  11 2+ ->  13 }t
+t{ -11 2+ ->  -9 }t
+t{  11 4+ ->  15 }t
+t{ -11 4+ ->  -7 }t
+t{  11 2* ->  22 }t
+t{ -11 2* -> -22 }t
+t{  22 2/ ->  11 }t
+t{ -22 2/ -> -11 }t
+t{  11 4* ->  44 }t
+t{ -11 4* -> -44 }t
+t{  44 4/ ->  11 }t
+t{ -44 4/ -> -11 }t
+t{  11 8* ->  88 }t
+t{ -11 8* -> -88 }t
+t{  88 8/ ->  11 }t
+t{ -88 8/ -> -11 }t
+
+testing ++` --`
+variable x
+t{ x@ -> 0 }t
+t{ x@ ++ -> }t
+t{ x@ -> 1 }t
+t{ x@ -- -> }t
+t{ x@ -> 0 }t
+t{ x@ -- -> }t
+t{ x@ -> -1 }t
+
+testing @` c@` cs@` w@` ws@`
+variable x $50515253 x!
+t{ x @ -> $50515253 }t
+t{ x c@ -> 'S' }t
+t{ x w@ -> 'R' 8 << 'S' | }t
+t{ x cs@ -> 'S' }t
+t{ x ws@ -> $5253 }t
+t{ $ff x! x cs@ -> -1 }t
+t{ x ws@ -> $ff }t
+t{ $ffff x! x ws@ -> -1 }t
+
+testing 2@` dup@` dupc@` dupw@`
+$50515253 x!
+create aa 8 allot
+-1 aa! -2 aa 4+ !
+t{ aa    2@ -> -2 -1 }t
+t{ aa  dup@ -> aa -1 }t
+t{ aa dupc@ -> aa $ff }t
+t{ x  dupc@ ->  x 'S' }t
+t{ aa dupw@ -> aa $ffff }t
+t{ x  dupw@ ->  x $5253 }t
+
+testing @+` c@+` w@+`
+t{ x  @+ -> x 4+ $50515253 }t
+t{ x c@+ -> x 1+ 'S' }t
+t{ x w@+ -> x 2+ 'R' 8 << 'S' | }t
+
+testing !` c!` w!` 2!` +!` -!`
+t{ $40414243 x ! depth x@ -> 0 $40414243 }t
+t{ $30 x c! depth x c@ -> 0 '0' }t
+t{ $2021 x w! depth x w@ -> 0 $2021 }t
+t{ $f 1 aa 2! -> }t
+t{ aa @ aa 4+ @ -> 1 $f }t
+t{ aa 2@ -> $f 1 }t
+$70 x c!
+t{ 3 x +! depth x c@ -> 0 's' }t
+t{ 3 x -! depth x c@ -> 0 'p' }t
+
+testing over!` overc!` overw!` over+!` over-!`
+t{ x $61626364 over! depth x@ -> x 1 $61626364 }t
+t{ x $41 overc! depth x c@ -> x 1 'A' }t
+t{ x $6d6e overw! depth x w@ -> x 1 'm' 8 << 'n' | }t
+t{ x 1 over+! depth x c@ -> x 1 'o' }t
+t{ x 1 over-! depth x c@ -> x 1 'n' }t
+
+testing tuck!` tuckc!` tuckw!` tuck+!` tuck-!`
+t{ $21222324 x tuck! depth x@ -> x 1 $21222324 }t
+t{ $41 x tuckc! depth x c@ -> x 1 'A' }t
+t{ $6d6e x tuckw! depth x w@ -> x 1 'm' 8 << 'n' | }t
+t{ 1 x tuck+! depth x c@ -> x 1 'o' }t
+t{ 1 x tuck-! depth x c@ -> x 1 'n' }t
+
+testing 2dup!` 2dupc!` 2dupw!` 2dup+!` 2dup-!`
+t{ $31323334 x 2dup! depth x@ -> $31323334 x 2 2 pick }t
+t{ $41 x 2dupc! depth x c@ -> 'A' x 2 'A' }t
+t{ $6d6e x 2dupw! depth x w@ -> $6d6e x 2 $6d6e }t
+$71720000 x!
+t{ $7374 x 2dup+! depth x@ -> $7374 x 2 $71727374 }t
+t{ $7374 x 2dup-! depth x@ -> $7374 x 2 $71720000 }t
+
+testing on` off`
+$01020304 x!
+t{ x on  depth x@ -> 0 -1 }t
+t{ x off depth x@ -> 0  0 }t
+
+tally-exit ;

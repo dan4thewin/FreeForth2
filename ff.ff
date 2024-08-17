@@ -163,4 +163,5 @@ r0!` ' alias r!`
 
 : `ss 1- 0; swap >r `ss r .x r> ;
 : ss  depth cyan foreground ."( " dup .dec\ ."; " 1+ 3 max `ss .")^J" normal ;
+: dd  depth TIMES drop REPEAT ;
 [THEN]

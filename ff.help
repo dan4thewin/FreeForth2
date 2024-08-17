@@ -213,6 +213,8 @@ swap` ( x y -- y x ) exchanges the top two DATAstack cells TOS and NOS
   restore the default registers allocation, and generate an "xchg ebx,edx"
   instruction (only if the registers names are not already the default).
   : swap` [ $8035 w, SC , 2 c, ] ; \ xorb[SC],2
+2swap` ( w x y z -- y z w x ) exchanges the top two pairs of cells
+  : 2swap` rot` >r` rot` r>` ;
   see also: >S1 dup rot  ff.asm
 
 dup` ( x -- x x ) duplicates TOS contents on top of DATAstack
@@ -278,8 +280,8 @@ r>` ( -- x | x == ) pops x from CALLstack and pushes it onto DATAstack
   : 2r>` 2dup` dropr>` swap` dropr>` swap` ;
 dropr>` ( x -- y | y == ) pops y from CALLstack and overwrites TOS with it
   : dropr>` >C0 $5B, s1 ; \ pop ebx
->>r`  ( xn..x1 n -- | == x1..xn ) repeatedly pop DATAstack, push to CALLstack
->>rr` ( xn..x1 n -- | == xn..x1 ) repeatedly pop DATAstack, push to CALLstack
+>>r`  ( xn..x1 n -- | == xn..x1 ) repeatedly pop DATAstack, push to CALLstack
+>>rr` ( xn..x1 n -- | == x1..xn ) repeatedly pop DATAstack, push to CALLstack
   see also: >r 2>r dup>r r> 2r> dropr> r 2r rdrop 2rdrop
             >>r >>rr +r -r xxr r0 r1 r2 r0! r1! r2!  ff.boot
 
@@ -577,7 +579,8 @@ $- ( @1 @2 # -- n ) compares the string starting at address "@1" with
   byte per byte by increasing addresses while the bytes are equal, or
   until "#" bytes are compared; returns the difference between the
   last two compared bytes (i.e. null means that the two string are equal)
-  see also: move place fill search  ff.asm
+$-. ( @1 @2 # -- n ) case-insensitive version of $-
+  see also: $- move place fill search  ff.asm
 
 search ( @ # @' #' -- @r #r ; z:match ) in the string starting at address "@"
   for "#" bytes, search the first occurrence of string starting at address "@'"
