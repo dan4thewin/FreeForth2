@@ -47,10 +47,11 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
 ## Library Search Path
 * Interactive `ff` uses files like `ff.ff` and `ff.help` at runtime
 * by default it searches:
+  * `.`
+  * `lib`
   * `$HOME/.local/share/ff`
   * `/usr/local/share/ff`
-  * `.`
-* prepend directories to the search path with the environment variable `FFPATH`
+* insert directories into the search path with the environment variable `FFPATH`
   * e.g., `export FFPATH=/opt/local/ff:/opt/ff`
 
 ## Building a turnkey binary
