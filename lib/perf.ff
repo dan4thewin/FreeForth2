@@ -1,0 +1,8 @@
+" {{{" features append \ Performance measurement: {{{ sample code }}}
+\ First try "{{{  }}}" to measure the measurement overhead
+\ 50(push eax)0F31(rdtsc)89C2(mov edx,eax)58(pop eax)
+: rdtsc` over` >S1 $89310F50, ,4 $58C2, ,2 ;  \ read i386 time-stamp counter
+create ts 64 allot
+: {{{` ( -- ) "ts_16_TIMES_dup>r_rdtsc_swap_!" eval ;
+: }}}` ( -- ) "rdtsc_r>_tuck-!_4+_REPEAT_drop_;" eval
+  ts 16 TIMES @+ negate . REPEAT drop cr ;

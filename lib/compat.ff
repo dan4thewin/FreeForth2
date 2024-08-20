@@ -1,19 +1,23 @@
+\ shim aimed at passing most of the Forth 2012 Core word set tests
+" compat" features append
+
+pvtmargin
 \ swap find for one that ignores case and won't return a word being defined
-: `sz-		2dup 5+ c@ - drop ;
-: `nm-		3dup 6+ swap $-. drop ;
-: `hdr-		`sz- `nm- 0= ? ;
-: `more?	dup 5+ c@ 0- drop ;
-: `nexth	5+ c@+ + 1+ ;
-: `tos>si`	$de89, s08 ;	\ 89DE(mov esi,ebx)
-: `findic	H@ anon@ 0- drop 0= IF `nexth THEN BEGIN
-		`more? 0<> WHILE
-		`hdr- 0= IF `tos>si dup which! @ swap 0_ rot BREAK
-		`nexth REPEAT drop 0- ;
-`findic ' find !^
+:. sz-		2dup 5+ c@ - drop ;
+:. nm-		3dup 6+ swap $-. drop ;
+:. hdr-		sz- nm- 0= ? ;
+:. more?	dup 5+ c@ 0- drop ;
+:. nexth	5+ c@+ + 1+ ;
+:. tos>si`	$de89, s08 ;	\ 89DE(mov esi,ebx)
+:. findic	H@ anon@ 0- drop 0= IF nexth THEN BEGIN
+		more? 0<> WHILE
+		hdr- 0= IF tos>si dup which! @ swap 0_ rot BREAK
+		nexth REPEAT drop 0- ;
+findic ' find !^
 
 \ use base for number input as well as number output
-: `number	base@ number. ;
-`number		' number !^
+:. _number	base@ number. ;
+_number		' number !^
 : hex		$10 base! ;
 : decimal	$A base! ;
 
@@ -54,23 +58,23 @@ r`		' alias i` ;
 r2`		' alias j` ;
 2r>`		' alias unloop`
 exit		' alias osexit ;
-: exit`		$eb `+jmp ;
+: exit`		$eb +jmp ;
 : do`		2>r` BEGIN` ;
 : loop`		2r>` 1+` >` WHILE` 2>r` REPEAT` 2drop` ;
 : +loop`	r>` +` r>` swap` <=` WHILE` 2>r` REPEAT` 2drop` ;
 : leave`	unloop` exit` ;
 
-: `acc		swap base@ um* drop rot base@ um* d+ ;
+:. acc		swap base@ um* drop rot base@ um* d+ ;
 : toupper	dup 'a' >=. 0; drop dup 'z' <=. 0; drop -$21& ;
 : digit?	toupper $30- 9 u> drop IF 7- $a u< drop IF zFALSE ;THEN THEN
 		base@ u>= drop IF zFALSE ;THEN nzTRUE ;
-: >number	2dup+ >r TIMES dupc@ digit? 0= IF drop BREAK swap >r `acc r> 1+
+: >number	2dup+ >r TIMES dupc@ digit? 0= IF drop BREAK swap >r acc r> 1+
 		REPEAT r> over- ;
 
-: `findok	find 0; !"not_found" ;
-: `xt_h		`findok which@ ;
-: `hdrswap	`xt_h 2swap `xt_h 2xchg ! ! ;
-: hdrswap`	;` wsparse wsparse `hdrswap ;
+:. findok	find 0; !"not_found" ;
+:. xt_h		findok which@ ;
+: _hdrswap	xt_h 2swap xt_h 2xchg ! ! ;
+: hdrswap`	;` wsparse wsparse _hdrswap ;
 
 hdrswap 0=`	0=.`
 hdrswap =`	=.`
@@ -97,9 +101,11 @@ hdrswap UNTIL`	UNTIL.`
 
 \ standard wants align to be non-immediate
 \ rename align` to align' - provide both macro and non-macro aliases
-"align`" `xt_h 11+ $27 swap c! dup alias align,` alias align ;
+"align`" xt_h 11+ $27 swap c! dup alias align,` alias align ;
 : aligned dup 3& 0; - 4+ ;
 
-: '.`	wsparse `findok lit` ;
+: '.`	wsparse findok lit` ;
 '.`	' alias [']` ;
 hdrswap '`	'.`
+
+hidepvt ;

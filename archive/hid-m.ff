@@ -1,0 +1,31 @@
+: hid'm` H@ 0 over 2- c! dup 1- swap
+  START over+ 1+ swap dupc@ '`'- 0<> drop swap IF nip THEN
+  ENTER 5+ c@+ 0- 0= UNTIL 2drop
+  dup 1- c@+ + 1+ >r  START over 1- c@+ + 1+ swap 6-
+    START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop
+  ENTER H@ 1- = drop UNTIL drop r> H! ;
+
+EOF
+
+` i.e. the backquote character (ASCII 96)
+backquote "`" is used a lot in FreeForth. [...]
+  As an initial character of a word name, backquote identifies this word
+  as hidable: when "hid'm" is later executed, it removes from the compiler
+  symbol table all the headers with a backquote initial; this is much
+  easier to use than vocabularies, or even RetroForth's "loc:".
+  see also: compiler ' hid'm
+
+  --------------
+  HIDING HEADERS
+
+hid'm` ( -- ) removes from the compiler symbol table all the headers with
+  a name-string beginning with a "`" backquote; the memory space of the
+  removed headers is recovered by packing up all the other headers, thus
+  freeing heap space, and also speeding up future symbol table searches.
+  source code in ff.boot:
+  : hid'm` H @ 0 over 2- c! dup 1- swap  \ first push all backquotes addresses
+    START over+ 1+ swap dupc@ '`'- 0<> drop swap IF nip THEN
+    ENTER 5+ c@+ 0- 0= UNTIL 2drop       \ then pop addresses and pack headers
+    dup 1- c@+ + 1+ >r  START over 1- c@+ + 1+ swap 6-
+      START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop
+    ENTER H @ 1- = drop UNTIL drop r> H ! ;  \ nice algorithm, isn't it?

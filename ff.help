@@ -29,7 +29,7 @@ help` ( <name> -- ) displays name's related help (try: help bye)
 hanoi is an example source file animating the Hanoi Tours problem/game
 hello is an example auto-executable source file explaining how to make
   auto-executable "FreeForth-script" files for Linux, such as hanoi and bed
-bed.ff is the auto-executable source code of a minimalist Blocks-EDitor
+archive/bed.ff is the auto-executable source code of a minimalist Blocks-EDitor
   inspired from RetroForth
   see also: ff.asm ff.boot ff.ff ff.help hello hanoi
 
@@ -48,11 +48,11 @@ ff.boot is the FreeForth kernel extensions inlined source file
 ff.ff is the FreeForth kernel extensions separate source file
   automatically compiled at boot time after ff.boot if it is found.
   The environment variable FFPATH specifies a colon-separated list of
-  directories that are searched, followed by "/usr/local/share/ff" and ".".
-full.ff has additional FreeForth kernel extensions for special uses.
-  Load it as desired (i.e. needs full.ff).
-  Edit full.ff to enable([1]) or disable([0]) its optional sections,
+  directories that are searched (see ffpath for default).
+  Edit ff.ff to enable([1]) or disable([0]) its optional sections,
   or to add your own startup code, such as:  needs mystartup.ff
+lib directory has additional FreeForth kernel extensions for special uses.
+  Load as desired (i.e. needs fpu.ff).
 see.ff provides debugging tools: .hdrs, findnm, see, and more.
 debug.ff provides an alternate compiler that makes verbose words.
 compat.ff adapts FreeForth2 to more closely adhere to the
@@ -280,10 +280,8 @@ r>` ( -- x | x == ) pops x from CALLstack and pushes it onto DATAstack
   : 2r>` 2dup` dropr>` swap` dropr>` swap` ;
 dropr>` ( x -- y | y == ) pops y from CALLstack and overwrites TOS with it
   : dropr>` >C0 $5B, s1 ; \ pop ebx
->>r`  ( xn..x1 n -- | == xn..x1 ) repeatedly pop DATAstack, push to CALLstack
->>rr` ( xn..x1 n -- | == x1..xn ) repeatedly pop DATAstack, push to CALLstack
   see also: >r 2>r dup>r r> 2r> dropr> r 2r rdrop 2rdrop
-            >>r >>rr +r -r xxr r0 r1 r2 r0! r1! r2!  ff.boot
+            locals >>r >>rr +r -r xxr r0 r1 r2 r0! r1! r2!  ff.boot
 
 r` ( -- x | x == x ) pushes the CALLstack top cell onto the DATAstack
   : r` over` $188B, s08 ; \ mov ebx,[eax]
@@ -294,8 +292,15 @@ rdrop` ( -- | x == ) pops the CALLstack top cell, which is lost
   : rdrop` $04C483, c04 ,1 ; \ add esp/eax,4
 2rdrop` ( -- | x y == ) pops the CALLstack top two cells, which are lost
   : 2rdrop` $08C483, c04 ,1 ; \ add esp/eax,8
-+r` ( n -- | xn..x1 == ) pops the CALLstack top n cells, which are lost
+  see also: r 2r rdrop 2rdrop >r 2>r dup>r r> 2>r dropr>
+            locals >>r >>rr +r -r xxr r0 r1 r2 r0! r1! r2!  ff.boot
+
+locals are a set of words allowing direct access to the top 6 cells of the
+  CALLstack and two ways to shift values from the DATAstack to the Callstack.
+>>r`  ( xn..x1 n -- | == xn..x1 ) repeatedly pop DATAstack, push to CALLstack
+>>rr` ( xn..x1 n -- | == x1..xn ) repeatedly pop DATAstack, push to CALLstack
 -r` ( n -- | == ?n..?1 ) reserves n uninitialized cells on CALLstack
++r` ( n -- | xn..x1 == ) pops the CALLstack top n cells, which are lost
 xxr` ( n -- | xn..x1 == ) alias for +r`
 r0` ( -- x | x == x ) pushes the CALLstack top cell onto the DATAstack
 r1` ( -- y | y x == y x ) pushes the CALLstack 2nd cell onto the DATAstack
@@ -311,7 +316,7 @@ r4!`  ... 5th cell
 r5!`  ... 6th cell
 r!` alias for r0!`
   see also: r 2r rdrop 2rdrop >r 2>r dup>r r> 2>r dropr>
-            >>r >>rr +r -r xxr r0 r1 r2 r0! r1! r2!  ff.boot
+            locals >>r >>rr +r -r xxr r0 r1 r2 r0! r1! r2!  ff.boot
 
 rp@` ( -- @ ) push on DATAstack the current CALLstack pointer
   : rp@` over` $C389, s01 ;  \ mov ebx,eax
@@ -402,10 +407,10 @@ m/mod` ( xl xh y -- x%y x/y) divides the signed 64 bits dividend (xh<<32)+xl
   with same sign as dividend (i.e. integer division rounding towards zero)
   \ 870424(xchg eax,[esp])F7FB(idiv ebx)89C3(mov ebx,eax)58(pop eax)
   : m/mod >S0 >C1 $F7240487, ,4 $58C389FB, ,4 ; \ old version
-  : `m/mod >S0 >C1 $240487, ,3 w, $58C389, ,3 ;
-  : m/mod`  $FBF7 `m/mod ;
+  : _m/mod >S0 >C1 $240487, ,3 w, $58C389, ,3 ;
+  : m/mod`  $FBF7 _m/mod ;
 um/mod` ( xl xh y -- x%y x/y) unsigned version of m/mod
-  : um/mod` $F3F7 `m/mod ;
+  : um/mod` $F3F7 _m/mod ;
 /%` ( x y -- x%y x/y ) divides signed dividend in NOS by signed divisor in TOS,
   TOS gets signed quotient, and NOS signed remainder with same sign as dividend
   (Note: usual Forth name: /mod)
@@ -415,10 +420,10 @@ m* ( x y -- zl zh ) z is the double-cell product of x * y
   \ 89C1(mov ecx,eax)89D0(mov eax,edx)
   \ F7EB(imul ebx) or F7E3(mul ebx)
   \ 89D3(mov ebx,edx)89C2(mov edx,eax)89C8(mov eax,ecx)
-  : `m* >S0 $D089C189, ,4 w, $D389, ,2 $C889C289, ,4 ;
-  : m*` $EBF7 `m* ;
+  : _m* >S0 $D089C189, ,4 w, $D389, ,2 $C889C289, ,4 ;
+  : m*` $EBF7 _m* ;
 um* ( x y -- zl zh ) unsigned version of m*
-  : um*` $E3F7 `m* ;
+  : um*` $E3F7 _m* ;
 */mod ( x y z -- r q ) intermediate double-cell d = x * y then r = d % z and
   q = d / z.
   : */mod` >r` m*` r>` m/mod` ;
@@ -751,11 +756,7 @@ backquote "`" is used a lot in FreeForth.
   definitions very easy, in particular when in terms of other macros,
   which happens a lot in FreeForth compiler (other Forth systems require
   the heavy use of "[POSTPONE]" to do the same thing).
-  As an initial character of a word name, backquote identifies this word
-  as hidable: when "hid'm" is later executed, it removes from the compiler
-  symbol table all the headers with a backquote initial; this is much
-  easier to use than vocabularies, or even RetroForth's "loc:".
-  see also: compiler ' hid'm
+  see also: compiler '
 
 compiler ( -- ) this is the (vectorized) compiler loop:
   . calls "wsparse" to get the next word from the input source;
@@ -919,7 +920,9 @@ classes ( -- @ ) base address of the compiler's classes table, indexed by
   some entry points may also be used as target for "tail recursion"
   source code in ff.asm, functionally equivalent to:
   : :` anon@ 0- 0<> drop IF ;` 0 anon! THEN rst wsparse here 0 header ;
-  see also: :` ;; ; anon anonymous  ff.asm
+:.` ( <name> -- ) calls : and then marks the new word as private
+  : :.` :` pvt` ;  \ abridged
+  see also: :` pvt` ;; ; anon anonymous  ff.asm
 
 alias` ( @ <name> -- ) creates a synonym for a header of "code" type:
   calls ":" and changes the header pointer to "@".
@@ -1083,6 +1086,7 @@ conditionals  Usual Forth systems compute boolean values as integers
   use "BOOL" to convert it to an integer pushed onto DATAstack.
   see also: flow-control +longconds
 
+longconds see +longconds
 +longconds` ( -- ) ff.boot default conditionals are limited to byte offsets
   for forward jumps (backward jumps use byte offsets when possible, otherwise
   long offsets): this is efficient and encourages programmers to write small
@@ -1099,19 +1103,19 @@ conditionals  Usual Forth systems compute boolean values as integers
   !"not_preceded_by_a_call"
   see also: flow-control -call  ff.boot
 
-0>`  ( -- ) positive      : 0>=` $7F `?1 ; \ jg.b
-0<=` ( -- ) non-positive  : 0>=` $7E `?1 ; \ jle.b
-0>=` ( -- ) non-negative  : 0>=` $7D `?1 ; \ jge.b
-0<`  ( -- ) negative      : 0<`  $7C `?1 ; \ jl.b
-0<>` ( -- ) non-null      : 0<>` $75 `?1 ; \ jnz.b
-0=`  ( -- ) null          : 0=`  $74 `?1 ; \ jz.b
-C1?` ( -- ) carry-set     : C1?` $73 `?1 ; \ jnc.b
-C0?` ( -- ) carry-clear   : C0?` $72 `?1 ; \ jc.b
+0>`  ( -- ) positive      : 0>`  $7F _?1 ; \ jg.b
+0<=` ( -- ) non-positive  : 0<=` $7E _?1 ; \ jle.b
+0>=` ( -- ) non-negative  : 0>=` $7D _?1 ; \ jge.b
+0<`  ( -- ) negative      : 0<`  $7C _?1 ; \ jl.b
+0<>` ( -- ) non-null      : 0<>` $75 _?1 ; \ jnz.b
+0=`  ( -- ) null          : 0=`  $74 _?1 ; \ jz.b
+C1?` ( -- ) carry-set     : C1?` $73 _?1 ; \ jnc.b
+C0?` ( -- ) carry-clear   : C0?` $72 _?1 ; \ jc.b
   The above words select one condition for the next conditional jump
 0-` ( -- ) inlines comparison TOS.versus.zero to set the i386 conditional-flags
   : 0-` $DB09, s09 ; \ or ebx,ebx
-`?1 ( c -- ) sets `?#     : `?1 `?# c! ;
-`?# ( -- @ ) compiler hidden state variable: stores the conditional-jump
+_?1 ( c -- ) sets ?#     : _?1 ?# c! ;
+?# ( -- @ ) compiler state variable: stores the conditional-jump
   opcode to be compiled by the next "IF" or "WHILE" or "TILL" or "UNTIL"
 0>.`  ( n -- ? ) positive
 0<=.` ( n -- ? ) non-positive
@@ -1127,20 +1131,20 @@ C0?.` ( n -- ? ) carry-clear
   31C9(xor ecx,ecx)09DB(or ebx,ebx)0F95C1(setnz cl)49(dec ecx)89CB(mov ebx,ecx)
   see also: 0> <> conditionals  ff.boot
 
-<>`  ( -- ) non-equal     : <>`  $75 `?2 ; \ jnz.b
-=`   ( -- ) equal         : =`   $74 `?2 ; \ jz.b
->`   ( -- ) greater       : >`   $7F `?2 ; \ jg.b
-<=`  ( -- ) non-greater   : <=`  $7E `?2 ; \ jng.b
->=`  ( -- ) non-less      : >=`  $7D `?2 ; \ jnl.b
-<`   ( -- ) less          : <`   $7C `?2 ; \ jl.b
-u>`  ( -- ) above         : u>`  $77 `?2 ; \ ja.b  (unsigned greater)
-u<=` ( -- ) non-above     : u<=` $76 `?2 ; \ jna.b (unsigned non-greater)
-u>=` ( -- ) non-below     : u>=` $73 `?2 ; \ jnb.b (unsigned non-less)
-u<`  ( -- ) below         : u<`  $72 `?2 ; \ jb.b  (unsigned less)
+<>`  ( -- ) non-equal     : <>`  $75 _?2 ; \ jnz.b
+=`   ( -- ) equal         : =`   $74 _?2 ; \ jz.b
+>`   ( -- ) greater       : >`   $7F _?2 ; \ jg.b
+<=`  ( -- ) non-greater   : <=`  $7E _?2 ; \ jng.b
+>=`  ( -- ) non-less      : >=`  $7D _?2 ; \ jnl.b
+<`   ( -- ) less          : <`   $7C _?2 ; \ jl.b
+u>`  ( -- ) above         : u>`  $77 _?2 ; \ ja.b  (unsigned greater)
+u<=` ( -- ) non-above     : u<=` $76 _?2 ; \ jna.b (unsigned non-greater)
+u>=` ( -- ) non-below     : u>=` $73 _?2 ; \ jnb.b (unsigned non-less)
+u<`  ( -- ) below         : u<`  $72 _?2 ; \ jb.b  (unsigned less)
   The above words inline code to compare NOS.versus.TOS, and select one
   condition for the next conditional jump (unsigned comparisons are u-prefixed)
-`?2 ( c -- ) inlines comparison NOS.versus.TOS to set i386 conditional-flags
-  : `?2 `?1 $DA39, s09 ; \ cmp edx,ebx
+_?2 ( c -- ) inlines comparison NOS.versus.TOS to set i386 conditional-flags
+  : _?2 _?1 $DA39, s09 ; \ cmp edx,ebx
 <>.`  ( x y -- ? ) non-equal
 =.`   ( x y -- ? ) equal
 >.`   ( x y -- ? ) greater
@@ -1169,13 +1173,13 @@ zFALSE ( -- ; z ) sets the i386 z condition (i.e. sets the i386 Z flag)
   : zFALSE 0 0- drop ;
   see also: BOOL nzTRUE conditionals  ff.boot
 
-`?off ( n -- n ) hidden compiler word, checks n within signed-byte range
-  : `?off dup 2* over^ -$100& drop IF !"jump_off_range" THEN ;
-`cond ( -- c ) hidden compiler word, inverts condition for IF/TILL/WHILE
+?off ( n -- n ) hidden compiler word, checks n within signed-byte range
+  : ?off dup 2* over^ -$100& drop IF !"jump_off_range" THEN ;
+cond ( -- c ) compiler word, inverts condition for IF/TILL/WHILE
   if condition is not null, otherwise throws an error
-  : `?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition" \ t=$74 ^A=$01 C~=$C3
-  : `cond `?@ `?nn 1^ ;                                \ jz over ret
-  see also: `?off ff.boot
+  : ?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition" \ t=$74 ^A=$01 C~=$C3
+  : cond ?@ ?nn 1^ ;                                  \ jz over ret
+  see also: ?off ff.boot
 
 IF` ( -- ) compiles a forward conditional jump, to be resolved by the
   right-balancing "ELSE" or "THEN" or ";THEN" or "BREAK" or "AGAIN" macro.
@@ -1185,7 +1189,7 @@ IF` ( -- ) compiles a forward conditional jump, to be resolved by the
   Implementation note: the current registers allocation state is stored
   into the space allocated for the jump offset, such that the balancing
   macro may restore the same state before resolving the jump offset
-  : IF` `cond c, here SC c@ c, ;
+  : IF` cond c, here SC c@ c, ;
 IF.` ( ? -- ) The dotted version of IF uses a Boolean in TOS.
 ?dup ( 0 -- 0 | x -- x x ) if TOS is null keep TOS unchanged, otherwise
   dup TOS. Use with IF. to avoid ELSE drop THEN.
@@ -1211,7 +1215,7 @@ SKIP` ( -- ) compiles a forward unconditional jump, to be resolved by the
   see also: ELSE conditionals IF THEN ;THEN  ff.boot
 
 THEN` ( -- ) resolves the jump offset of the left-balancing "IF" or "ELSE"
-  : THEN` dupc@ >SC : `then here over- 1- `?off swap c! ;
+  : THEN` dupc@ >SC : _then here over- 1- ?off swap c! 0 callmark! ;
 ;THEN` ( -- ) executes ";;" to compile a "ret" instruction or convert
   into a "jmp" the "call" compiled just before (tail-recursion), then
   resolves the jump offset of the left-balancing "IF" or "ELSE"
@@ -1219,8 +1223,8 @@ THEN` ( -- ) resolves the jump offset of the left-balancing "IF" or "ELSE"
   see also: THEN conditionals IF ELSE ;THEN  ff.boot
 
 BEGIN` ( -- ) opens a looping control-structure, marking its entry address
-  : BEGIN` `mrk 2@ align` here SC c@ over+ `mrk 2! ;
-`mrk ( -- @ ) compiler hidden state variable (8 bytes):
+  : BEGIN` mrk 2@ align` here SC c@ over+ mrk 2! ;
+mrk ( -- @ ) compiler state variable (8 bytes):
   stores first the looping control-structure top target address (for "AGAIN"
   "TILL" "REPEAT" and "UNTIL" macros to compute their backward jump offset),
   which is aligned (i.e. multiple of 4) and stores in its 2 least significant
@@ -1250,7 +1254,7 @@ START` ( -- ) opens a looping control-structure with a forward unconditional
 ENTER` ( -- ) resolves the forward jump compiled by "START" at looping
   control-structure entry
   Note: "ENTER" may be used inside "IF ... THEN" (nested) control-structure(s)
-  : ENTER` `mrk@ dup 3& >SC -4& 1- `then ; \ for `then see "THEN"
+  : ENTER` mrk@ dup 3& >SC -4& 1- _then ; \ for _then see "THEN"
   see also: START flow-control  ff.boot
 
 0;` ( 0 -- | ? -- ? ) if TOS is null, pops TOS and returns,
@@ -1265,14 +1269,14 @@ ENTER` ( -- ) resolves the forward jump compiled by "START" at looping
 TILL` ( -- ) compiles a backward conditional jump to the entry of the
   looping control-structure
   Note: "TILL" may be used inside "IF ... THEN" (nested) control-structure(s)
-  : TILL` `cond  \ fallthru
-  : `-jmp `mrk@ dup 3& >SC -4& `-j ; \ for `-j see in ff.boot
+  : TILL` cond  \ fallthru
+  : -jmp mrk@ dup 3& >SC -4& -j ; \ for -j see in ff.boot
 TILL.` ( ? -- ) The dotted version of TILL uses a Boolean in TOS.
 WHILE` ( -- ) compiles a forward conditional jump out of the looping
   control structure
   Note: "WHILE" may be used inside "IF ... THEN" (nested) control-structure(s)
-  : WHILE` `cond  \ fallthru
-  : `+jmp `mrk 2@ 3& >SC swap c, here dup `mrk 4+ ! swap - `?off c, ;
+  : WHILE` cond  \ fallthru
+  : +jmp mrk 2@ 3& >SC swap c, here dup mrk 4+ ! swap - ?off c, ;
 WHILE.` ( ? -- ) The dotted version of WHILE uses a Boolean in TOS.
   see also: TILL conditionals flow-control BEGIN WHILE BREAK  ff.boot
 
@@ -1280,12 +1284,12 @@ AGAIN` ( -- ) compiles a backward unconditional jump to the entry of
   the looping control-structure, and resolves the jump offset of the
   left-balancing "IF" (pattern: "IF ... AGAIN")
   Note: "AGAIN" may be used inside "IF ... THEN" (nested) control-structure(s)
-  : AGAIN` $EB `-jmp THEN` ;  \ for `-jmp see TILL`
+  : AGAIN` $EB -jmp THEN` ;  \ for -jmp see TILL`
 BREAK` ( -- ) compiles a forward unconditional jump out of the looping
   control-structure, and resolves the jump offset of the left-balancing "IF"
   (pattern: "IF ... BREAK")
   Note: "BREAK" may be used inside "IF ... THEN" (nested) control-structure(s)
-  : BREAK` $EB `+jmp THEN` ; \ for `+jmp see WHILE`
+  : BREAK` $EB +jmp THEN` ; \ for +jmp see WHILE`
   see also: AGAIN flow-control BEGIN IF WHILE  ff.boot
 
 END` ( -- ) closes the looping control-structure by resolving the jump
@@ -1294,10 +1298,10 @@ END` ( -- ) closes the looping control-structure by resolving the jump
   jump compiled by "TIMES" or "RTIMES" at the loop entry is found, it is
   also resolved, and an "rdrop" is also compiled to cleanup the CALLstack
   on exit of the counted loop.
-  : END` `mrk 2@ dup 3& >SC -4& swap  \ -- -mrk +mrk
-    START dupc@ over `then - ENTER = UNTIL  \ -- -mrk -mrk ; resolve fwdRefs
+  : END` mrk 2@ dup 3& >SC -4& swap  \ -- -mrk +mrk
+    START dupc@ over _then - ENTER = UNTIL  \ -- -mrk -mrk ; resolve fwdRefs
     @ $007808FF- 0= drop IF 3+ here over- 1- swap tuckc! rdrop` THEN
-    drop `mrk 2! ;
+    drop mrk 2! ;
   see also: flow-control BEGIN TIMES  ff.boot
 
 UNTIL` ( -- ) closes the looping control-structure by compiling a backward
@@ -1308,84 +1312,8 @@ UNTIL.` ( ? -- ) The dotted version of UNTIL uses a Boolean in TOS.
 REPEAT` ( -- ) closes the looping control-structure by compiling a backward
   unconditional jump to the loop entry, and calls "END" to resolve all the
   forward references within the loop
-  : REPEAT` $EB `-jmp END` ; \ jmp  for `-jmp see "TILL"
+  : REPEAT` $EB -jmp END` ; \ jmp  for -jmp see "TILL"
   see also: UNTIL flow-control BEGIN TILL AGAIN  ff.boot
-
-  -------------------
-  RETRO/REVA/HELFORTH compatibility control-structures
-
-if`    ( ? -- ) non-null  : if`    $840F if1\ ; \ jz.long
-0=if`  ( ? -- ) null      : 0=if`  $850F if1\ ; \ jnz.long
-0<if`  ( ? -- ) negative  : 0<if`  $890F if1\ ; \ jns.long
-0>=if` ( ? -- ) non-neg   : 0>=if` $880F if1\ ; \ js.long
-  These words pop TOS and compare it to zero, and if condition is true,
-  then continue execution after "if", otherwise jump forward after balancing
-  "else" or "then" or ";then"
-if1\ : if1\ $DB09, s09  drop` w, here SC @ , ; \ or ebx,ebx
-  see also: if =if  full.ff \ Retro/Reva/HelFORTH compat
-
-=if`   ( x y -- ) equal        : =if`   $850F if2\ ; \ jnz.long
-<>if`  ( x y -- ) non-equal    : <>if`  $840F if2\ ; \ jz.long
-<if`   ( x y -- ) less         : <if`   $8D0F if2\ ; \ jge.long
-<=if`  ( x y -- ) non-greater  : <=if`  $8F0F if2\ ; \ jg.long
-u<if`  ( x y -- ) below        : u<if`  $830F if2\ ; \ jae.long
-u<=if` ( x y -- ) non-above    : u<=if` $870F if2\ ; \ ja.long
-  These words pop x and y and compare x.versus.y (UNSIGNED with u-prefix),
-  and if condition is true, then continue execution after "if", otherwise
-  jump forward after balancing "else" or "then" or ";then"
-if2\ : if2\ $DA39, s09 2drop` w, here SC @ , ; \ cmp edx,ebx
-  see also: =if if  full.ff \ Retro/Reva/HelFORTH compat
-
-then` ( -- ) resolves the target address of the balancing forward jump
-  (i.e. either "else" or any kind of "if")
-  : then` dup@ >SC here over- 4- swap ! 0 callmark ! ;
-;then` ( -- ) compiles a return-from-subroutine, unless the previous
-  compiled word was a call, which is then changed to a jump (see ";;"),
-  then resolves the target address of the balancing forward jump
-  (i.e. either "else" or any kind of "if")
-  : then;` ;;` dup@ SC ! then` ;
-  see also: then if else  full.ff \ Retro/Reva/HelFORTH compat
-
-else` ( -- ) jumps forward after balancing "then" or ";then", and also
-  resolves the target address of the balancing forward conditional jump
-  (i.e. any kind of "if")
-  : else` $E9 c, here SC @ , swap then` ; \ jmp.long
-  see also: if else then ;then  full.ff \ Retro/Reva/HelFORTH compat
-
-again` ( -- ) closes a non-counted loop by compiling an unconditional jump
-  to the address noted by "repeat"; to exit the loop, use any number of
-  ";then" (balanced by any kind of "if"), and/or any number of "0;"
-  : again` >SC 0 SC !
-    here - dup -$7E <if $E9 c, 5- , ;then \ jmp.long
-    $EB c, 2- c, ; \ jmp.b
-  see also: repeat 0; again while  full.ff \ Retro/Reva/HelFORTH compat
-
-while` ( ? -- ) closes a non-counted loop by compiling a conditional jump
-  (which will pop TOS and jump if null) back to the address noted by
-  "repeat"; you may also exit the loop by using any number of ";then"
-  (balanced by any kind of "if"), and/or any number of "0;"
-  : while` $DB09, s09 drop` >SC \ or ebx,ebx
-    here - dup -$7E <if $850F w, 6- , ;then \ jnz.long
-    $75 c, 2- c, ; \ jnz.b
-  see also: repeat 0; again while  full.ff \ Retro/Reva/HelFORTH compat
-
-repeat` ( -- ) opens a non-counted loop by noting the current compilation
-  address for later resolution by either "again" or "while"
-  : repeat` here SC @ ;
-  see also: repeat 0; again while  for next  full.ff \ Retro/Reva/HelFORTH compat
-
-for` ( n -- | == n ) opens a counted loop by compiling a ">r" and noting the
-  following compilation address for later resolution by the balancing "next"
-  : for` >r` repeat` ;
-next` ( -- | n == n-1 | 1 == ) closes a counted loop by compiling code
-  which at runtime will decrement the CALLstack top cell, and if positive
-  will branch back after the ">r" compiled by the balancing "for", and
-  otherwise will pop the CALLstack top item.
-  The loop will then be executed at least once, n times if n>0, from n
-  downto 1; to push on the DATAstack a copy of the loop index, use "r"
-  : next` >SC here - dup -$7C <if $8F0F08FF , 8- , rdrop` ;then \ dec[eax] jg.l
-    $FC7F08FF , here 1- +! rdrop` ; \ dec[eax] jg.b
-  see also: for r next  full.ff \ Retro/Reva/HelFORTH compatibility
 
   -----------------------
   CONDITIONAL COMPILATION control-structures
@@ -1395,11 +1323,11 @@ next` ( -- | n == n-1 | 1 == ) closes a counted loop by compiling code
   : [THEN]` ;
 [ELSE]` ( -- ) conditional compilation: skips the following source
   until the balancing next "[THEN]"
-  : `[] '[' parse 2drop wsparse  \ -- @ # ; parse next word with "[" initial
+  : _[] '[' parse 2drop wsparse  \ -- @ # ; parse next word with "[" initial
     0- 0= drop IF drop >in! !"unbalanced" ;THEN  \ -- @ ; #=0:sourceEnd
-    1 >in -! dup "ELSE]" $- 0<> drop IF dup "THEN]" $- 0<> drop IF "IF]" $- drop `[] ?
-    BEGIN `[] 0<> UNTIL `[] ;THEN 1+ THEN drop ;
-  : [ELSE]` >in@ `[] drop ;
+    1 >in -! dup "ELSE]" $- 0<> drop IF dup "THEN]" $- 0<> drop IF "IF]" $- drop _[] ?
+    BEGIN _[] 0<> UNTIL _[] ;THEN 1+ THEN drop ;
+  : [ELSE]` >in@ _[] drop ;
 [IF]` ( ? -- ) conditional compilation: pops TOS and if null skips the
   following source until the next balancing "[ELSE]" or "[THEN]"
   : [IF]` 0- 0= drop IF [ELSE]` THEN ;
@@ -1439,15 +1367,16 @@ stdout ( -- n ) constant: returns the console output file-descriptor/handle
   see also: stdin accept type  fflinio.asm/ffwinio.asm
 
 ffpath ( -- @ ) variable holding the library search path populated at boot
-  from the environment variable FFPATH and the defaults ("/usr/local/share/ff"
-  and "."). Each directory is preceded by its length stored as a byte.
-open' ( -- @ ) 80-bytes variable: used by openlib to concatenate a directory
+  from the environment variable FFPATH and the defaults:
+  ".:lib:$FFPATH:$HOME/.local/share/ff:/usr/local/share/ff"
+  Each directory is preceded by its length stored as a byte.
+openbuf ( -- @ ) 80-bytes variable: used by openlib to concatenate a directory
   from ffpath with the filename to be opened when searching.
 openlib ( @ # -- fd ) If the filename starts with "/", "./", or "../"
   then openr is called; otherwise, each directory from ffpath is concatenated
   with the filename and openr is attempted until one succeeds or all the
   directories from ffpath have been tried. This is used by needs and needed.
-  see also: openr needs needed  fflinio.asm
+  see also: openr needs needed  fflin.boot
 
 openr ( @ # -- fd ) requests the operating system to open the _existing_ file,
   which pathname starts at address "@" for "#" bytes, for read-only access;
@@ -1505,11 +1434,13 @@ write ( @ # fd -- n ) request the operating system to write into (i.e.
   Win: see ffwinio.asm
   see also: openr openw read close syscall  fflinio.asm/ffwinio.asm
 
-stat ( @ # -- 0 | -n ) requests the operating system to stat a file;
-  returns 0 on success and -n if an error occurred; populates st_buf
-  with a stat structure. st_buf is overwritten with each stat call.
-  see also: openr openw read write "man stat"  full.ff
+mkst ( <name> -- ) allocate space for a stat structure
+stat ( @ # st -- 0 | -n ) requests the operating system to stat a file;
+  returns 0 on success and -n if an error occurred; populates st
+  with a stat structure.
+  see also: mkst openr openw read write "man stat"  full.ff
 
+mmap see mkmm mmapr mmapw mmapwt
 mkmm ( <name> -- ) allocate mm structure to describe an mmap'd file and
   populate with default values. The first cell holds the map address.
   Subsequent cells hold the size (sz), file descriptor (fd),
@@ -1579,7 +1510,7 @@ emit ( c -- ) requests the operating system to write one byte into the
   standard-output file-descriptor (stdout)
   Note: in a literal string, you may easily encode any byte by using
   special characters interpreted by the literalcompiler (see stringcodes)
-  : emit `io 2dupc! swap 1_ type ;  \ variable `io
+  : emit io 2dupc! swap 1_ type ;  \ variable io
 space ( -- ) prints a space
   Note: in a literal string, you must substitute every space with a "_"
   to allow "wsparse" to parse the string all at once
@@ -1593,7 +1524,7 @@ key ( -- c ) requests the operating system to read one byte from the
   standard-input file-descriptor (stdin); returns the read byte
   Note: current FreeForth user input is line-oriented, therefore the
   user must enter a full line and hit Enter before "key" may return
-  : key `io 1 under accept drop c@ ;  \ variable `io
+  : key io 1 under accept drop c@ ;  \ variable io
   see also: accept  ff.boot
 
   ----------------
@@ -1604,8 +1535,8 @@ key ( -- c ) requests the operating system to read one byte from the
   : . .\ space ;
 .\ ( n -- ) displays n using the conversion base stored in "base",
   using the minimum number of digits
-  : `.d base@ /% 0; `.d .digit ;  \ recursive decomposition and display
-  : .\ 0- 0< IF ."-" negate THEN `.d .digit ;
+  : _d base@ /% 0; _d .digit ;  \ recursive decomposition and display
+  : .\ 0- 0< IF ."-" negate THEN _d .digit ;
 .digit ( c -- ) displays the digit c using the characters 0..9 for
   the digit values 0..9, or a..z for the digit values 10..35, or ?
   for the digit values above 35.
@@ -1623,12 +1554,12 @@ base ( -- @ ) system variable: output conversion base for "." and ".\"
 .x ( n -- ) displays n in hexadecimal with a '$' if >9 or <-9
   : .x .x\ space ;
 .x\ ( n -- ) .x without a space
-  : `.sign 0- 0< IF '-' putc negate THEN ;
-  : .x\ `.sign 9 > drop IF '$' putc THEN $10 .ub\ ;
+  : .sign 0- 0< IF '-' putc negate THEN ;
+  : .x\ .sign 9 > drop IF '$' putc THEN $10 .ub\ ;
 .dec ( n -- ) display n in decimal
   : .dec .dec\ space ;
 .dec\ ( n -- ) .dec without a space
-  : .dec\ `.sign 10 .ub\ ;
+  : .dec\ .sign 10 .ub\ ;
   see also: . .l .dec <# # #s #>  ff.boot
 
 .l ( u -- ) displays the unsigned long u using 8 hexadecimal digits
@@ -1692,8 +1623,8 @@ prompt ( -- ) displays the FreeForth prompt, composed of the "depth", either
   by 8 DATAstack cells, the DATAstack top being displayed last (rightmost),
   and with an extra space between the two DATAstack cells above and under
   the DATAstack base address.
-  : `.s  1- 0; swap >r `.s depth 0= drop IF space THEN r . r> ;
-  : .s` prompt 9 `.s cr ;
+  : _s  1- 0; swap >r _s depth 0= drop IF space THEN r . r> ;
+  : .s` prompt 9 _s cr ;
   see also: . .h  ff.boot
 
 .h` ( -- ) dumps the compilation buffer and the DATAstack:
@@ -1710,31 +1641,38 @@ prompt ( -- ) displays the FreeForth prompt, composed of the "depth", either
 words` ( -- ) displays the symbol table headers, last defined first displayed
   : words` H@ START 2dup+ 1+ -rot type space  \ display one header string
               ENTER 5+ c@+ 0- 0= UNTIL 2drop cr ;  \ check for end marker
-  see also: H header find  ff.boot
+.hdr ( @ -- ) displays the header at address in TOS - outputs header address,
+  xt, type, and name.
+.hdr+ ( @ -- @next ) displays the header replacing TOS with the address
+  of the next header.
+.hdrs ( -- ) like "words", displays the symbol table headers in full,
+  one per line (last defined first displayed)
+  see also: words .hdr .hdr+ .hdrs H header find  ff.boot
 
   --------------
   HIDING HEADERS
 
-hid'm` ( -- ) removes from the compiler symbol table all the headers with
-  a name-string beginning with a "`" backquote; the memory space of the
+pvt` ( -- ) marks the most recent header as private by setting ct bit 8
+  : ct|! H@ 4+ dupc@ rot | swap c! ;
+  : pvt` 8 ct|! ;
+hidepvt` ( -- ) removes from the compiler symbol table all the headers with
+  a ct having bit 8 set (either by :. or pvt); the memory space of the
   removed headers is recovered by packing up all the other headers, thus
   freeing heap space, and also speeding up future symbol table searches.
   source code in ff.boot:
-  : hid'm` H @ 0 over 2- c! dup 1- swap  \ first push all backquotes addresses
-    START over+ 1+ swap dupc@ '`'- 0<> drop swap IF nip THEN
-    ENTER 5+ c@+ 0- 0= UNTIL 2drop       \ then pop addresses and pack headers
-    dup 1- c@+ + 1+ >r  START over 1- c@+ + 1+ swap 6-
-      START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop
-    ENTER H @ 1- = drop UNTIL drop r> H ! ;  \ nice algorithm, isn't it?
-hidmark ( -- ) experimental! Updates the most recent header so hid'm stops
+  : hidepvt` H@ 0 over 2- c! dup 7- swap       \ push all pvt-marked addresses
+    START over 5+ c@+ + 1+ -rot 8& 0= drop swap IF nip THEN
+    ENTER dup 4+ c@ dup $ff- drop 0<> IF dup $10- drop THEN 0= UNTIL 2drop
+    dup 5+ c@+ + 1+ >r START over 5+ c@+ + 1+ swap        \ then pop addresses
+      START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop   \ and pack headers
+    ENTER H@ 7- = drop UNTIL drop r> H! ;      \ based on hid'm from FreeForth
+pvtmargin ( -- ) updates the most recent header so hidepvt stops
   at that point leaving earlier headers untouched. Use at the start of a
   file to update the marker created when the file is loaded by needs.
-  Use hid'm at the end of the file to remove only the backquote headers
-  created within the file.
-  : hidmark H@ 4+ 16 swap c! ;
-  The 3rd line of hid'm is changed to:
-    ENTER 5+ c@+ 0- 0<> IF over 2- c@ 16- drop THEN 0= UNTIL 2drop
-  see also: loc: hid'm mark header  ff.boot
+  Use hidepvt at the end of the file to remove headers marked pvt created
+  within the file.
+  : pvtmargin $10 ct|! ;
+  see also: pvt hidepvt :. mark header  ff.boot
 
 mark` ( <name> -- ) creates a self-forgetting mark
   : mark` ;` wsparse marker ;
@@ -1743,24 +1681,12 @@ marker ( @ # -- ) creates a self-forgetting mark as a macro (i.e. with
   long, plus an appended backquote) which, when executed, restores the
   compilation pointer and the symbol table allocation pointer "H" in their
   state just before the mark was created
-  : `mark ;` r> 5- here - allot anon:`  \ restore compilation pointer
+  : _mark ;` r> 5- here - allot anon:`  \ restore compilation pointer
     H@ BEGIN dup@ swap 5+ c@+ + 1+ swap here = 2drop UNTIL H! ;  \ restore H
   : marker 2dup+ dupc@ >r dup>r '`' swap c! 1+  \ -- @ #+1 ; append backquote
     here 0 header 2r> c!  \ -- ; create CODE header, restore overwritten char
-    `mark ' call, anon:` ;
-  see also: mark marker needs hid'm loc:  ff.boot
-
-loc:` ( -- ) appends to the symbol table a ";loc`" macro header, which,
-  when later executed, will restore the symbol table allocation pointer
-  "H" in its state just before creating the ";loc`" macro. Nestable.
-  This may be used instead of "hid'm" to remove several temporary ("local")
-  headers at once; however, some of the definitions should be aliased to
-  new headers after removing the local ones, typically as follows:
-    loc:  : tmp1 ;  : tmp2 ;  : tmp3 tmp1 tmp2 ;  tmp3 ' ;loc alias new3
-  this will alias new3 to tmp3 and remove tmp1,tmp2,tmp3 from symbol table
-  : `;loc which@ 5+ c@+ + 1+ H! ;  \ -- ; restore H after last found header
-  : loc:` ";loc`" `;loc ' 0 header ;
-  see also: ' alias hid'm  ff.ff \ Retro/Reva/HelFORTH compat
+    _mark ' call, anon:` ;
+  see also: mark marker needs hidepvt  ff.boot
 
   ---------------
   INCLUDING FILES
@@ -1824,12 +1750,6 @@ appendc ( c @dst -- ) appends 8-bits "c" to the end of @dst and increments the
   initial 8-bits of @dst
   see also: append
 
-.hdr ( @ -- ) displays the header at address in TOS - outputs header address,
-  xt, type, and name.
-.hdr+ ( @ -- @next ) displays the header replacing TOS with the address
-  of the next header.
-.hdrs ( -- ) like "words", displays the symbol table headers in full,
-  one per line (last defined first displayed)
 dis ( <name> -- ) calls gdb to display the disassembly of name or throws an
   exception with error message "not found".
   NB. If name is not found, you may want to try name`
@@ -1842,7 +1762,14 @@ debug` ( -- ) swaps the normal compiler for a debug compiler.
 -d` ( -- ) loads debug.ff and runs debug`.
 nodebug` ( -- ) swaps compiler and other words back to their normal versions.
   debug and nodebug can be used repeatedly.
-  see also: .hdr .hdrs dis header words  see.ff debug.ff
+findxt ( @ # -- xt len ) looks for name starting at address "@" for "#" bytes
+  in headers, skipping constants and aliases. Returns the xt and length or
+  throws the error "not found".
+findh ( @ -- hfa offset ) finds the header with xt closest to @ and returns
+  the header field address and offset from the xt or throws "not found".
+findnm ( @ -- ) calls findh and types the name of the header with xt closest
+  to @ and the offset
+  see also: dis see` debug -d` nodebug` findxt findnm .hdr see.ff debug.ff
 
 bye` ( -- ) requests the operating system to terminate the FreeForth session
   with a null return value
@@ -2002,10 +1929,26 @@ ms@ ( -- u ) returns the system current milliseconds count
   Example:  {{{ ."hello" }}}  \ measures processor cycles to display "hello"
   see also: }}} ms@ now  ff.ff
 
+test the file test.ff provides a test harness akin to the one from John Hayes
+  and borrowing from TAP (test anything protocol).  Run "make test" from the
+  shell in the source directory to run all unit tests.
+plan a variable to hold the number of tests
+okcnt a variable to hold the number of tests that pass
+skipcnt a variable to hold the number of tests skipped
+verbose a variable - if nonzero, test cases are echoed
+t{ ( -- ) starts a new test: stack must be empty
+-> ( -- ) records stack depth
+}t ( -- ) checks that the stack contents before and after -> match
+skip ( <line> -- ) skips the rest of the line and increments skipcnt
+>plan ( n -- ) set and display plan "1..n"
+tally ( -- ) compare plan with okcnt and display "PASSED" or "FAILED"
+tally-exit ( -- ) tally then exit 0 for PASSED or exit 1 for FAILED
+
   --------------
   FLOATING-POINT
 
-floats
+fpu see FPU fcell fsw@ f>df f:` finit` fpi` fdup` f2drop` fmax` f+` ...
+floats see FPU
 FPU  means Floating-Point Unit (use finit to initialize it)
 FPstack  FreeForth uses a separate stack for floats, the 386-associated FPU
   hardware LIFO stack, composed of eight 80-bits cells: 10 bytes LSByte1st,
@@ -2015,11 +1958,11 @@ FPstack  FreeForth uses a separate stack for floats, the 386-associated FPU
   floats are represented in DATAstack diagrams for simplicity, prefixed by f:
   example: f! ( f:x @ -- ) the usual relative stack-diagram order of "f:x"
   and "@" doesn't matter in fact, "f!" pops once both FPstack and DATAstack.
-  see also: DATAstack CALLstack  ff.ff
+  see also: DATAstack CALLstack  fpu.ff
 
 fcell ( -- 10 ) constant: byte-size of a float
   Typically used with arithmetic suffix: fcell+ fcell- fcell* fcell/
-  see also: f, literalcompiler  ff.ff
+  see also: f, literalcompiler  fpu.ff
 
 fsw@ ( -- w ) returns FPU status word
   \ 8D40FC(lea eax-=4)DD38(fnstsw[eax])871087DA(xchg edx,[eax] xchg ebx,edx)
@@ -2034,7 +1977,7 @@ floor ( f:i.f -- f:i.0 ) returns integer part (rounding towards -infinity)
   \ C740FC.7F07'7F03(mov[eax-4],$037F'077F) roundTOnearest'roundTO-infinity
   \ D968FC(fldcw[eax-4])D9FC(frndint)D968FE(fldcw[eax-2])
   : floor ,"G~@|~^?^G^?^CY~h|~Y~|~Y~h\~~" ; \ f:i.f -- f:i.0 ; integer part
-  see also: fsw@ fcw@ fcw!  ff.ff
+  see also: fsw@ fcw@ fcw!  fpu.ff
 
 f>df ( f:df -- df ) converts float to C-double (64-bits float on DATAstack)
   \ 8D40F8(eax-=8)DD18(fstp qw[eax])8718875004(xchg ebx,[eax] xch edx,[eax-4])
@@ -2048,93 +1991,90 @@ f>s ( f:n -- n ) converts float to 32-bits integer (rounding towards nearest)
 s>f ( n -- f:n ) converts 32-bits integer to float
   \ 87DA8710(xchg ebx,edx xchg edx,[eax])DB00(fild dw[eax])8D4004(lea eax+=4)
   : s>f ,"^G~Z~^G~^P[~^@^M~@^D" ;
-  see also: f>df df>f f>s  ff.ff
+  see also: f>df df>f f>s  fpu.ff
 
-`f:` ( FPUinstr <name> -- ) defines words with header-type=2 (see classes),
+f:` ( FPUinstr <name> -- ) defines words with header-type=2 (see classes),
   which will inline one or two 16-bits FPU instruction opcodes
-  : `f, dup lit` $FFFF0000& 0<> drop IF ,` ;THEN w,` ; \ postpone-handler
-  : `f; dup      $FFFF0000& 0<> drop IF ,  ;THEN w,  ; \ immediate-handler
-  : `f:` ;` wsparse rot 2 header ;  `f, ' `f; ' classes &20+ 2! ;
+  : f, dup lit` $FFFF0000& 0<> drop IF ,` ;THEN w,` ; \ postpone-handler
+  : f; dup      $FFFF0000& 0<> drop IF ,  ;THEN w,  ; \ immediate-handler
+  : f:` ;` wsparse rot 2 header ;  f, ' f; ' classes &20+ 2! ;
 
 finit` ( -- ) initializes the FPU (ControlWord=$037F StatusWord=$0000)
-  $E3DB `f: finit` \ fninit
+  $E3DB f: finit` \ fninit
 
-fpi` ( -- f:pi ) pushes pi=3.14159.. on FPstack  $EBD9 `f: fpi` \ fldpi
-1.`  ( -- f:1 ) pushes a unity float on FPstack  $E8D9 `f: 1.`  \ fld1
-0.`  ( -- f:0 ) pushes a null float on FPstack   $EED9 `f: 0.`  \ fldz
-  see also: fpi 1.  ff.ff
+fpi` ( -- f:pi ) pushes pi=3.14159.. on FPstack  $EBD9 f: fpi` \ fldpi
+1.`  ( -- f:1 ) pushes a unity float on FPstack  $E8D9 f: 1.`  \ fld1
+0.`  ( -- f:0 ) pushes a null float on FPstack   $EED9 f: 0.`  \ fldz
+  see also: fpi 1.  fpu.ff
 
-fdup`  ( f:x -- f:x f:x )              $C0D9 `f: fdup`  \ fld st0
-fover` ( f:y f:x -- f:y f:x f:y )      $C1D9 `f: fover` \ fld st1
-fdrop` ( f:x -- )                      $D8DD `f: fdrop` \ fstp st0
-fnip`  ( f:y f:x -- f:x )              $D9DD `f: fnip`  \ fstp st1
-fswap` ( f:y f:x -- f:x f:y )          $C9D9 `f: fswap` \ fxch st1
-  see also: fdup fover fdrop fnip fswap frot f2dup  ff.ff
+fdup`  ( f:x -- f:x f:x )              $C0D9 f: fdup`  \ fld st0
+fover` ( f:y f:x -- f:y f:x f:y )      $C1D9 f: fover` \ fld st1
+fdrop` ( f:x -- )                      $D8DD f: fdrop` \ fstp st0
+fnip`  ( f:y f:x -- f:x )              $D9DD f: fnip`  \ fstp st1
+fswap` ( f:y f:x -- f:x f:y )          $C9D9 f: fswap` \ fxch st1
+  see also: fdup fover fdrop fnip fswap frot f2dup  fpu.ff
 
-f2drop` ( f:y f:x -- )                 $D8DDD8DD `f: f2drop` \ fdrop` fdrop`
-f2dup`  ( f:y f:x -- f:y f:x f:y f:x ) $C1D9C1D9 `f: f2dup`  \ fover` fover`
-ftuck`  ( f:y f:x -- f:x f:y f:x)      $C1D9C9D9 `f: ftuck`  \ fswap` fover`
-funder` ( f:y f:x -- f:y f:y f:x )     $C9D9C1D9 `f: funder` \ fover` fswap`
-frot`   ( f:z f:y f:x -- f:y f:x f:z ) $CAD9C9D9 `f: frot`   \ fswap`  fxch st2
-f-rot`  ( f:z f:y f:x -- f:x f:z f:y ) $C9D9CAD9 `f: f-rot`  \ fxch st2  fswap`
-  see also: f2drop f2dup ftuck funder frot f-rot fdup  ff.ff
+f2drop` ( f:y f:x -- )                 $D8DDD8DD f: f2drop` \ fdrop` fdrop`
+f2dup`  ( f:y f:x -- f:y f:x f:y f:x ) $C1D9C1D9 f: f2dup`  \ fover` fover`
+ftuck`  ( f:y f:x -- f:x f:y f:x)      $C1D9C9D9 f: ftuck`  \ fswap` fover`
+funder` ( f:y f:x -- f:y f:y f:x )     $C9D9C1D9 f: funder` \ fover` fswap`
+frot`   ( f:z f:y f:x -- f:y f:x f:z ) $CAD9C9D9 f: frot`   \ fswap`  fxch st2
+f-rot`  ( f:z f:y f:x -- f:x f:z f:y ) $C9D9CAD9 f: f-rot`  \ fxch st2  fswap`
+  see also: f2drop f2dup ftuck funder frot f-rot fdup  fpu.ff
 
 fmax` ( f:y f:x -- f:max(x,y) ) maximum of two floats
-  $C1DAF1DB `f: `fmax` \ fcomi  fcmovb st1
-  : fmax` `fmax` fnip` ;
+  $C1DAF1DB f: _fmax` \ fcomi  fcmovb st1
+  : fmax` _fmax` fnip` ;
 fmin` ( f:y f:x -- f:min(x,y) ) minimum of two floats
-  $D1DBF1DB `f: `fmin` \ fcomi  fcmovnbe st1
-  : fmin` `fmin` fnip` ;
-fabs` ( f:x -- f:|x| ) absolute value      $E1D9 `f: fabs` \ fabs
-fnegate` ( f:x -- f:-x ) opposite value    $E0D9 `f: fnegate` \ fchs
-  see also: fmax fmin fabs fnegate f+  ff.ff
+  $D1DBF1DB f: _fmin` \ fcomi  fcmovnbe st1
+  : fmin` _fmin` fnip` ;
+fabs` ( f:x -- f:|x| ) absolute value      $E1D9 f: fabs` \ fabs
+fnegate` ( f:x -- f:-x ) opposite value    $E0D9 f: fnegate` \ fchs
+  see also: fmax fmin fabs fnegate f+  fpu.ff
 
-f+`     ( f:y f:x -- f:x+y )           $C1DE `f: f+`     \ faddp
-fover+` ( f:y f:x -- f:y f:x+y )       $C1D8 `f: fover+` \ fadd st0,st1
-f-`     ( f:y f:x -- f:y-x )           $E9DE `f: f-`     \ fsubp
-fover-` ( f:y f:x -- f:y f:x-y )       $E1D8 `f: fover-` \ fsub st0,st1
-fswap-` ( f:y f:x -- f:x-y )           $E1DE `f: fswap-` \ fsubrp
-  see also: f+ fover+ f- fover- fswap- fabs f*  ff.ff
+f+`     ( f:y f:x -- f:x+y )           $C1DE f: f+`     \ faddp
+fover+` ( f:y f:x -- f:y f:x+y )       $C1D8 f: fover+` \ fadd st0,st1
+f-`     ( f:y f:x -- f:y-x )           $E9DE f: f-`     \ fsubp
+fover-` ( f:y f:x -- f:y f:x-y )       $E1D8 f: fover-` \ fsub st0,st1
+fswap-` ( f:y f:x -- f:x-y )           $E1DE f: fswap-` \ fsubrp
+  see also: f+ fover+ f- fover- fswap- fabs f*  fpu.ff
 
-f*`     ( f:y f:x -- f:x*y )           $C9DE `f: f*`     \ fmulp
-fover*` ( f:y f:x -- f:y f:x*y )       $C9D8 `f: fover*` \ fmul st0,st1
-f/`     ( f:y f:x -- f:y/x )           $F9DE `f: f/`     \ fdivp
-fover/` ( f:y f:x -- f:y f:x/y )       $F1D8 `f: fover/` \ fdiv st0,st1
-fswap/` ( f:y f:x -- f:x/y )           $F1DE `f: fswap/` \ fdivrp
+f*`     ( f:y f:x -- f:x*y )           $C9DE f: f*`     \ fmulp
+fover*` ( f:y f:x -- f:y f:x*y )       $C9D8 f: fover*` \ fmul st0,st1
+f/`     ( f:y f:x -- f:y/x )           $F9DE f: f/`     \ fdivp
+fover/` ( f:y f:x -- f:y f:x/y )       $F1D8 f: fover/` \ fdiv st0,st1
+fswap/` ( f:y f:x -- f:x/y )           $F1DE f: fswap/` \ fdivrp
 f1/`    ( f:x -- f:1/x ) inverse       : f1/` 1.` fswap/` ;
-  see also: f* fover* f/ fover/ fswap/ f+  ff.ff
+  see also: f* fover* f/ fover/ fswap/ f+  fpu.ff
 
-`fscale` ( f:e f:m -- f:m*2^trunc(e) ) add e to m exponent (inverse of fxtract)
-  $D9DDFDD9 `f: `fscale` \ fscale fnip`
-`fxtract` ( f:x -- f:e=floor(lb(x)) f:x/2^e ) extract exponent and mantissa
-  $F4D9 `f: `fxtract` \ fxtract
-f2/ ( f:x -- f:x/2 )  : f2/ 1. fnegate fswap `fscale ;
-f2* ( f:x -- f:x*2 )  : f2* 1.         fswap `fscale ;
-  see also: `fscale f2/  ff.ff
+fscale` ( f:e f:m -- f:m*2^trunc(e) ) add e to m exponent (inverse of fxtract)
+  $D9DDFDD9 f: fscale` \ fscale fnip`
+fxtract` ( f:x -- f:e=floor(lb(x)) f:x/2^e ) extract exponent and mantissa
+  $F4D9 f: fxtract` \ fxtract
+f2/ ( f:x -- f:x/2 )  : f2/ 1. fnegate fswap fscale ;
+f2* ( f:x -- f:x*2 )  : f2* 1.         fswap fscale ;
+  see also: fscale f2/  fpu.ff
 
-`fldln2  ( -- f:ln(2) ) natural logarithm of 2  $EDD9 `f: `fldln2` \ fldln2
-`fldlg2  ( -- f:lg(2) ) decimal logarithm of 2  $ECD9 `f: `fldlg2` \ fldlg2
-`fldl2e  ( -- f:lb(e) ) binary logarithm of e   $EAD9 `f: `fldl2e` \ fldl2e
-`fldl2t  ( -- f:lb(10)) binary logarithm of 10  $E9D9 `f: `fldl2t` \ fldl2t
-`fxl2y   ( f:y f:x -- f:x*lb(y)   )  $F1D9C9D9 `f: `fxl2y`   \ fxch fyl2x
-`fxl2yp1 ( f:y f:x -- f:x*lb(y+1) )  $F9D9C9D9 `f: `fxl2yp1` \ fxch fyl2xp1
-`f2xm1   ( f:x -- f:2^x-1 ) |x|<=1       $F0D9 `f: `f2xm1`   \ f2xm1
+fldln2  ( -- f:ln(2) ) natural logarithm of 2  $EDD9 f: fldln2` \ fldln2
+fldlg2  ( -- f:lg(2) ) decimal logarithm of 2  $ECD9 f: fldlg2` \ fldlg2
+fldl2e  ( -- f:lb(e) ) binary logarithm of e   $EAD9 f: fldl2e` \ fldl2e
+fldl2t  ( -- f:lb(10)) binary logarithm of 10  $E9D9 f: fldl2t` \ fldl2t
+fxl2y   ( f:y f:x -- f:x*lb(y)   )  $F1D9C9D9 f: fxl2y`   \ fxch fyl2x
+fxl2yp1 ( f:y f:x -- f:x*lb(y+1) )  $F9D9C9D9 f: fxl2yp1` \ fxch fyl2xp1
+f2xm1   ( f:x -- f:2^x-1 ) |x|<=1       $F0D9 f: f2xm1`   \ f2xm1
   These are basic FPU instructions for logarithm and power functions.
-  see also: `fldnl2`
+  see also: fldnl2`
 
-fln`  ( f:x -- f:ln(x) ) natural logarithm  : fln`  `fldln2` `fxl2y` ;
-flog` ( f:x -- f:lg(x) ) decimal logarithm  : flog` `fldlg2` `fxl2y` ;
+fln`  ( f:x -- f:ln(x) ) natural logarithm  : fln`  fldln2` fxl2y` ;
+flog` ( f:x -- f:lg(x) ) decimal logarithm  : flog` fldlg2` fxl2y` ;
 f**   ( f:y f:x -- y^x ) power
-  : f** `fxl2y  : `f** fdup floor fswap fover-  `f2xm1 1. f+ `fscale ;
+  : f** fxl2y  : _f** fdup floor fswap fover-  f2xm1 1. f+ fscale ;
 faln  ( f:x -- f:e^x ) exponential (inverse natural logarithm)
-  : faln  `fldl2e f* `f** ;
+  : faln  fldl2e f* _f** ;
 falog ( f:x -- f:10^x ) 10's power (inverse decimal logarithm)
-  : falog `fldl2t f* `f** ;
-fsqrt` ( f:x -- f:x^0.5 ) square root    $FAD9 `f: fsqrt`
-  see also: fln flog f** faln falog `fldln2 sqrt  ff.ff
-
-sqrt ( u -- sqrt(u) ) integer square root (rounded or truncated, see ff.ff)
-  see also: fsqrt  ff.ff
+  : falog fldl2t f* _f** ;
+fsqrt` ( f:x -- f:x^0.5 ) square root    $FAD9 f: fsqrt`
+  see also: fln flog f** faln falog fldln2 sqrt  fpu.ff
 
 fsinh  ( f:x -- f:sinh(x) ) hyperbolic sine    = (e(x)-e(-x))/2
   : fsinh faln 1. fover/ f- f2/ ;
@@ -2147,48 +2087,48 @@ fasinh ( f:x -- f:asinh(x) ) inverse hyperbolic sine    = ln(x+sqrt(x*x+1))
 facosh ( f:x -- f:acosh(x) ) inverse hyperbolic cosine  = ln(x+sqrt(x*x-1))
   : facosh fdup fover* 1. f- fsqrt f+ fln ;
 fatanh ( f:x -- f:atanh(x) ) inverse hyperbolic tangent = (ln(1+x)-ln(1-x))/2
-  : fatanh 1. fover- fln fswap `fldln2 `fxl2yp1 fswap- f2/ ;
-  see also: fsinh fcosh ftanh fasinh facosh fatanh  ff.ff
+  : fatanh 1. fover- fln fswap fldln2 fxl2yp1 fswap- f2/ ;
+  see also: fsinh fcosh ftanh fasinh facosh fatanh  fpu.ff
 
-fsin`  ( f:x -- f:sin(x) ) sine        $FED9 `f: fsin` \ fsin
-fcos`  ( f:x -- f:cox(x) ) cosine      $FFD9 `f: fcos` \ fcos
-ftan`  ( f:x -- f:tan(x) ) tangent $D8DDF2D9 `f: ftan` \ fptan(-- tan 1) fdrop`
-fsincos` ( f:x -- f:sin(x) f:cos(x) )  $FBD9 `f: fsincos` \ fsincos
+fsin`  ( f:x -- f:sin(x) ) sine        $FED9 f: fsin` \ fsin
+fcos`  ( f:x -- f:cox(x) ) cosine      $FFD9 f: fcos` \ fcos
+ftan`  ( f:x -- f:tan(x) ) tangent $D8DDF2D9 f: ftan` \ fptan(-- tan 1) fdrop`
+fsincos` ( f:x -- f:sin(x) f:cos(x) )  $FBD9 f: fsincos` \ fsincos
   All trignometric functions arguments are in radians: pi radians = 180 degrees
-  see also: fsin fcos ftan fsincos fasin  ff.ff
+  see also: fsin fcos ftan fsincos fasin  fpu.ff
 
 fasin ( f:x -- f:asin(x) ) arc-sine   = fatan(x/sqrt(1-x*x))
   : fasin fdup fover* 1. fswap- fsqrt       fatan2 ;
 facos ( f:x -- f:acos(x) ) arc-cosine = fatan(sqrt(1-x*x)/x)
   : facos fdup fover* 1. fswap- fsqrt fswap fatan2 ;
-fatan` ( f:x -- f:atan(x) ) arc-tangent  $F3D9E8D9 `f: fatan`  \ fld1 fpatan
-fatan2` ( f:y f:x -- f:atan(y/x) )           $F3D9 `f: fatan2` \ fpatan
+fatan` ( f:x -- f:atan(x) ) arc-tangent  $F3D9E8D9 f: fatan`  \ fld1 fpatan
+fatan2` ( f:y f:x -- f:atan(y/x) )           $F3D9 f: fatan2` \ fpatan
   All inverse trigonometric functions return values are in radians.
-  see also: fasin facos fatan fatan2 fsincos  ff.ff
+  see also: fasin facos fatan fatan2 fsincos  fpu.ff
 
-f0<`  ( f:x -- f:x ) : f0<`  $77 `f?1 ; \ `f?1  ja
-f0>=` ( f:x -- f:x ) : f0>=` $76 `f?1 ; \ `f?1  jbe
-f0<>` ( f:x -- f:x ) : f0<>` $75 `f?1 ; \ `f?1  jnz
-f0=`  ( f:x -- f:x ) : f0=`  $74 `f?1 ; \ `f?1  jz
-f0<=` ( f:x -- f:x ) : f0<=` $73 `f?1 ; \ `f?1  jae
-f0>`  ( f:x -- f:x ) : f0>`  $72 `f?1 ; \ `f?1  jb
-`f?1 ( c -- ) inlines code to compare ST0.versus.zero,
+f0<`  ( f:x -- f:x ) : f0<`  $77 _f?1 ; \ _f?1  ja
+f0>=` ( f:x -- f:x ) : f0>=` $76 _f?1 ; \ _f?1  jbe
+f0<>` ( f:x -- f:x ) : f0<>` $75 _f?1 ; \ _f?1  jnz
+f0=`  ( f:x -- f:x ) : f0=`  $74 _f?1 ; \ _f?1  jz
+f0<=` ( f:x -- f:x ) : f0<=` $73 _f?1 ; \ _f?1  jae
+f0>`  ( f:x -- f:x ) : f0>`  $72 _f?1 ; \ _f?1  jb
+f?1 ( c -- ) inlines code to compare ST0.versus.zero,
   and selects condition for the next conditional jump
-  : `f?1 $F1DFEED9 , `?1 ; \ fld0  fcomip st0,st1
-  see also: f0< f< f0>= f>= f0<> f<> f0= f= f~ f0<= f<= f0> f>  ff.ff
+  : _f?1 $F1DFEED9 , ?# c! ; \ fld0  fcomip st0,st1
+  see also: f0< f< f0>= f>= f0<> f<> f0= f= f~ f0<= f<= f0> f>  fpu.ff
 
-f<`  ( f:y f:x -- f:y f:x ) : f<`  $77 `f?2 ; \ `f?2  ja
-f>=` ( f:y f:x -- f:y f:x ) : f>=` $76 `f?2 ; \ `f?2  jbe
-f<>` ( f:y f:x -- f:y f:x ) : f<>` $75 `f?2 ; \ `f?2  jnz
-f=`  ( f:y f:x -- f:y f:x ) : f=`  $74 `f?2 ; \ `f?2  jz
-f<=` ( f:y f:x -- f:y f:x ) : f<=` $73 `f?2 ; \ `f?2  jae
-f>`  ( f:y f:x -- f:y f:x ) : f>`  $72 `f?2 ; \ `f?2  jb
+f<`  ( f:y f:x -- f:y f:x ) : f<`  $77 _f?2 ; \ _f?2  ja
+f>=` ( f:y f:x -- f:y f:x ) : f>=` $76 _f?2 ; \ _f?2  jbe
+f<>` ( f:y f:x -- f:y f:x ) : f<>` $75 _f?2 ; \ _f?2  jnz
+f=`  ( f:y f:x -- f:y f:x ) : f=`  $74 _f?2 ; \ _f?2  jz
+f<=` ( f:y f:x -- f:y f:x ) : f<=` $73 _f?2 ; \ _f?2  jae
+f>`  ( f:y f:x -- f:y f:x ) : f>`  $72 _f?2 ; \ _f?2  jb
   f= and f<> test for equality down to the least significant bit, which isn't
   appropriate for floats: see f~ for a better approximate comparison
-`f?2 ( c -- ) inlines code to compare ST1.versus.ST0,
+f?2 ( c -- ) inlines code to compare ST1.versus.ST0,
   and selects condition for the next conditional jump
-  : `f?2 $F1DB    w, `?1 ; \ fcomi st0,st1
-  see also: f< f0< f0>= f>= f0<> f<> f0= f= f~ f0<= f<= f0> f> `f?2  ff.ff
+  : _f?2 $F1DB    w, ?# c! ; \ fcomi st0,st1
+  see also: f< f0< f0>= f>= f0<> f<> f0= f= f~ f0<= f<= f0> f> _f?2  fpu.ff
 
 f~ ( f:y f:x f:t -- f:y f:x ; nz? ) when comparing two floats, round-off errors
   during previous computations may lead to different least significant bits,
@@ -2206,7 +2146,7 @@ dupf@` ( @ -- @ f:x )  : dupf@` $2BDB, s01 ; \ fld  tw[ebx]
 f+!`   ( f:x @ -- )    : f+!` dupf@` f+` f!` ;
 f!`    ( f:x @ -- )    : f!` dupf!` drop` ;
 dupf!` ( f:x @ -- @ )  : dupf!` $3BDB, s01 ; \ fstp tw[ebx]
-  see also: f@ dupf@ f! dupf! f+! f,  ff.ff
+  see also: f@ dupf@ f! dupf! f+! f,  fpu.ff
 
 f,` ( f:x -- ) appends one float (10 bytes) x to the code&data space
   : f,` $7DDB w, $0A6D8D00 , ; \ DB7D00(fstp[ebp])8D6D0A(lea ebp,[ebp+10])
@@ -2217,10 +2157,10 @@ flit` ( f:x -- ; -- f:x ) compiles a float literal, i.e. compiles code with x
   : flit` $0AEB w, here >r f, $2DDB w, r> , ; \ jmp+10  fliteral  fld tw[@]
 fconstant` ( f:x <name> -- ; -- f:x ) compiles a macro named name` (with the
   appended backquote), which will compile code to push the float x on FPstack.
-  : `fcst $2DDB w, r> , ; \ fld tw[@]
+  : fcst $2DDB w, r> , ; \ fld tw[@]
   : fconstant` ;` wsparse 2dup+ dupc@ >r dup>r '`' swap c! 1+ \ append `
-    here 0 header 2r> c!  `fcst ' call,  f, anon:` ;
-  see also: f, fvariable flit fconstant  ff.ff
+    here 0 header 2r> c!  fcst ' call,  f, anon:` ;
+  see also: f, fvariable flit fconstant  fpu.ff
 
 f# ( -- @ ) variable: holds the number of significant digits to display by f.
   variable f#  4 f#!  \ number of displayed digits < 20
@@ -2230,19 +2170,19 @@ f. ( f:x -- ) displays x in scientific notation with f# significant digits,
   the FPU returns the special value "Not-A-Number" displayed "NaN"; when a
   function result overflows the floats range (i.e. |f(x)|>=2^16384=10^4932),
   the FPU returns the special value "+/-infinity" displayed "INF" or "-INF".
-  $E5D9 `f: `fxam` \ sw&4500= 4000:ZERO 0500:INF 0100:NaN
-  : `fdigit fdup floor fdup f>s '0'+ emit f- fover* ; \ f:10 f:x -- f:10 f:x
+  $E5D9 f: _fxam` \ sw&4500= 4000:ZERO 0500:INF 0100:NaN
+  : fdigit fdup floor fdup f>s '0'+ emit f- fover* ; \ f:10 f:x -- f:10 f:x
   : f. \ f:n -- ; display float in scientific format with f# significant digits
-    f0< IF ."-" THEN fabs  `fxam fsw@ $4500&  $4000 CASE ."0._" fdrop ;THEN
+    f0< IF ."-" THEN fabs  _fxam fsw@ $4500&  $4000 CASE ."0._" fdrop ;THEN
     $500 CASE ."INF_" fdrop ;THEN  $100 CASE ."NaN_" fdrop ;THEN drop
     fdup flog floor f#@ 1- s>f f- falog f2/ f+ \ round LSdigit, may carry up
     fdup flog floor fdup f>s falog f/ \ -- exp f:mant
-    10 s>f fswap `fdigit ."." f#@ 1- TIMES `fdigit REPEAT f2drop \ -- exp
+    10 s>f fswap fdigit ."." f#@ 1- TIMES fdigit REPEAT f2drop \ -- exp
     ."e" .dec ; \ display exponent in decimal
-  see also: f# f. f.s  ff.ff
+  see also: f# f. f.s  fpu.ff
 
 f.s` ( -- ) displays the FPstack contents, either as .s with ST0 last on right,
-  or (change [1] to [0] in ff.ff) with binary dump and ST0 on top.
+  or (change [1] to [0] in fpu.ff) with binary dump and ST0 on top.
   : f.s`  [ $35DD w, eob , ]  \ fnsave[eob]  cw[4],sw[4],env[20],stack[8*10]
     eob 4+ w@ 11 >> negate 7& \ -- #items
   [1] [IF] \ minimum display, TOS last on right:
@@ -2251,7 +2191,7 @@ f.s` ( -- ) displays the FPstack contents, either as .s with ST0 last on right,
     eob 7 TIMES @+ .l space REPEAT cr \ FPU-environment: 7 dwords
     swap TIMES 10 TIMES r over+ c@ .b REPEAT space dupf@ f. cr 10+ REPEAT drop
   [THEN] [ $25DD w, eob , ] ; \ frstor[eob]
-  see also: f# f. f.s  ff.ff
+  see also: f# f. f.s  fpu.ff
 
 fnumber ( @ # -- f:x ) converts string (starting at address "@" for "#" bytes)
   into float, calling the vector "notfound" if the conversion fails. A float
@@ -2259,98 +2199,19 @@ fnumber ( @ # -- f:x ) converts string (starting at address "@" for "#" bytes)
   and a decimal point, or an "e" followed by an integer, maybe negative, power
   of ten; examples:  -1.  0.123  1.23e-1  123e-3  -1e6  0.5  .5
   fnumber is used to extend the literal-compiler for float literals input.
-  :^ `ferror !"???" \ vectorizable float-parsing-error handler
-  : fnumber  dup 2- 0< drop `ferror ?  10 s>f 0.
+  :^ ferror !"???" \ vectorizable float-parsing-error handler
+  : fnumber  dup 2- 0< drop ferror ?  10 s>f 0.
     bounds dupc@ '-'- >r 0= IF 1+ THEN  swap dup>r swap \ sign dpl@end
     BEGIN c@+ BEGIN \ -- @end @ c
-      '.' CASE r> u> drop `ferror ?  dup>r BREAK \ dpl@
+      '.' CASE r> u> drop ferror ?  dup>r BREAK \ dpl@
       'e' CASE r> 1+ over- 0> IF 0_ THEN -rot swap over- \ -- expn @ #
-          0= `ferror ? number 0- `ferror ? -rot + >r dup BREAK \ -- 0 0
-      '0'- 9 u> drop `ferror ?  fover* s>f f+
+          0= ferror ? number 0- ferror ? -rot + >r dup BREAK \ -- 0 0
+      '0'- 9 u> drop ferror ?  fover* s>f f+
     END u<= UNTIL drop fnip  r> swap - s>f falog f*
     r> 0- 0= drop IF fnegate THEN ;
   \ link float-literal-compiler to "notfound" and redefine "notfound":
-  : `f# fnumber flit` ;  `f# ' notfound !^  `ferror ' alias notfound
-  see also: literalcompiler notfound  ff.ff
-
-  -----------
-  SERIAL COMM
-
-uart! ( n -- ) selects the current serial context: up to 4 (n=0,1,2,3) serial
-  contexts may be maintained concurrently, all other serial commands operate
-  implicitly in the current serial context.
-  : uart! COM 2@ over 3& 1+ 8* COM+ 2!  3& 1+ 8* COM+ 2@ COM 2! ;
-port! ( n -- ) selects the port number of the current serial context:
-  Lin: n=0:/dev/ttyS0 .. 31:/dev/ttyS31, 32:/dev/ttyUSB0 .. n=63:/dev/ttyUSB31
-  Win: n=1:COM1 .. n=64:COM64  (Note: Windows"COM1" == Linux"/dev/ttyS0")
-.ports` ( -- ) displays a list of all available serial ports
-  Win: already open ports won't appear in this list
-  see also: uart! bps noParity RTS0 RX dumpterm COM  ff.ff
-
-COM ( -- @ ) constant: serial contexts base address; "COM@" returns the serial
-  file-descriptor(Linux) or handle(Windows) of the current serial context.
-  create COM -1 , 0 , \ current: file-desc/handle(-1=invalid), 4*port#+context#
-  -1 , 0 ,  -1 , 1 ,  -1 , 2 ,  -1 , 3 , \ 4 saved serial contexts
-  see also: uart!  ff.ff
-
-bps ( n -- ) opens the current serial port (selected by "port!" in the current
-  serial context) for read-write access, with speed = "n" Bits-Per-Second,
-  8 data-bits, no parity, 1 stop-bit. On failure, throws an exception,
-  otherwise the open file-descriptor(Linux) or handle(Windows) is stored in
-  the current serial context (and may be obtained with "COM@", as for example
-  to close the current serial port: "COM@ close ?ior").
-.bps` ( -- ) macro-executes the previous anonymous definition, then displays
-  the current UART context number, port, speed, data-bits, parity, stop-bit:
-  Lin: 0:ttyS0 9600 bps 8bits noParity 1stop \ after: "9600 bps .bps"
-  Win: 1:COM1 9600 bps 8bits oddParity 1stop \ after: "9600 bps oddParity .bps"
-  see also: bps uart! noParity RTS0  ff.ff
-
-noParity ( -- )
-oddParity ( -- )
-evenParity ( -- ) selects the parity of the current serial port, which must
-  already have been open (with "bps"); default is "noParity".
-  see also: noParity uart! bps RTS0  ff.ff
-
-DSR? ( -- ; nz? ) tests DSR input (DataSetReady)
-CTS? ( -- ; nz? ) tests CTS input (ClearToSend)
-RI? ( -- ; nz? ) tests RI input (RingIndicator)
-CD? ( -- ; nz? ) tests CD input (CarrierDetect)
-RTS0 ( -- ) clears RTS=0 (RequestToSend)
-RTS1 ( -- ) forces RTS=1
-DTR0 ( -- ) clears DTR=0 (DataTerminalReady)
-DTR1 ( -- ) forces DTR=1
-UBREAK ( -- ) clears during 100 ms the serial data line (i.e. generate a BREAK)
-  Clears or forces the modem-control-lines of the current serial port.
-  see also: RST0 uart!  ff.ff
-
-RX ( -- c ) returns next byte "c" from the current serial port; if none is
-  available, waits until one is received, or throws the exception "KBDirq/RX"
-  when "key?" becomes true
-RX? ( -- ; nz? ) returns zFALSE if "RX" would wait
-key? ( -- ; nz? ) returns zFALSE if "key" would wait
-TX ( c -- ) sends byte "c" into the current serial port
-XRECV ( @ # -- ) receives from the current serial port "#" bytes into "@"
-  : XRECV TIMES RX overc! 1+ REPEAT drop ;
-XSEND ( @ # -- ) sends to current serial port "#" bytes read from buffer "@"
-  : XSEND TIMES c@+ TX REPEAT drop ;
-  see also: RX utrace uart! bps  ff.ff
-
-dumpterm ( -- ) displays every byte received from the current serial port,
-  in reverse video, in hexadecimal (with ".b") preceded by an '\',
-  and sends every line typed at the keyboard, ending with a CR(ascii13=^M);
-  '^' and '\' are interpreted as prefixes:
-  . '^' toggles the next character.bit6 ("^@"="\00", "^A"="\01" etc)
-  . '\' followed by 2 hexadecimal digits generates the corresponding ASCII code
-  . '\' at end of line inhibits the transmission of the ending CR
-  . '\' followed by 'q' terminates dumpterm execution, ignoring end of line
-  . '\' is otherwise ignored (use "\\" resp. "\^" to generate a '\' resp. '^')
-dumbterm ( -- ) same as "dumpterm", except displayable received bytes, i.e.
-  CR=ascii13, LF=ascii10, and space=ascii32 upto ~=ascii126, are normally
-  displayed (as single characters, instead of hexadecimal).
-utrace ( -- @ ) variable: when non-null, the current serial port communicated
-  data bytes are traced in hexadecimal (with ".b") with RX (resp. TX) bytes
-  preceded by a "<" (resp. ">")
-  see also: dumpterm RX uart!  ff.ff
+  : _f# fnumber flit` ;  _f# ' notfound !^  ferror ' alias notfound
+  see also: literalcompiler notfound  fpu.ff
 
   -----------
   END-OF-FILE

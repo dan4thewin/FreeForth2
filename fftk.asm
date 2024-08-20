@@ -21,7 +21,7 @@ _start:
         add ecx,eax
         mov [cmpl+12],ecx        ; depth fix
         mov [cmpl+16],dword _bssend ; set immed in #call
-        mov ecx,[cmpl+20]       ; `boot
+        mov ecx,[cmpl+20]       ; _boot
         mov [cmpl+24],dword 0   ; zero libc value, must run dlopen
         xor ebx,ebx
         xor edx,edx

@@ -18,6 +18,8 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
 * quoted literals may contain spaces
 * abandoned windows support
 * require explicit conditions before IF
+* features separated into files in lib
+* leading backquote for hiding headers replaced with :. pvt and hidepvt
 
 ## Docs
 * Christophe Lavarenne's writings about the original FreeForth with some notes
@@ -66,7 +68,7 @@ mkmm m
 : ?ior  dup $FF | -1 = 2drop IF strerror rdrop ELSE drop THEN ;
 : cat   m mmapr ?ior m @ m mm.sz @ type m munmap 2drop ;
 : main  0 argc 1- TIMES 1+ dup argv cat REPEAT ;
-$ ./ff -f full.ff -f cat.ff -f mkimage
+$ ./ff -f mmap.ff -f cat.ff -f mkimage.ff
 $ make fftk
 fasm fftk.asm fftk.o
 flat assembler  version 1.73.27  (16384 kilobytes memory)

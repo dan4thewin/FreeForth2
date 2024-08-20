@@ -1,0 +1,120 @@
+"_retro" features append \ RetroForth/Reva/HelFORTH compatibility words
+\ RetroForth/Reva control structures (see also "help conditionals")
+\ 72:bc/aenc 74:z/nz 76:be/a 78:s/ns 7C:l/ge 7E:le/g (long:+0F10)
+\ E2:loop/jecxz(byte) E8:call/jmp(long) EB:jmp(byte)
+
+: if`    $840F  : `if1 $DB09, s09  : `ifx drop` w, here SC c@ , ;
+: 0=if`  $850F `if1 ;
+: 0<if`  $890F `if1 ;
+: 0>=if` $880F `if1 ;
+: =if`   $850F  : `if2 $DA39, s09 drop` `ifx ;
+: <>if`  $840F `if2 ;
+: <if`   $8D0F `if2 ;
+: <=if`  $8F0F `if2 ;
+: u<if`  $830F `if2 ;
+: u<=if` $870F `if2 ;
+: ;then` ;;` dupc@ SC c!
+: then` dupc@ >SC here over- 4- swap ! 0 callmark ! ;
+: else` $E9 c, here SC c@ , swap then` ;
+
+: for` >r`
+: repeat` here SC c@ ;
+: again` >SC 0 SC c! here - dup -$7E <if $E9 c, 5- , ;then
+  $EB c, 2- c, ;
+: while` $DB09, s09 drop` >SC here - dup -$7E <if $850F w, 6- , ;then
+  $75 c, 2- c, ;
+: next` >SC here - dup -$7C <if $8F0F08FF , 8- , rdrop` ;then
+  $FC7F08FF , here 1- +! rdrop` ;
+
+: `;loc which@ 5+ c@+ + 1+ H! ;  \ -- ; restore H after last found header
+: loc:`  ";loc`" `;loc ' 0 header ;  \ -- ; see also FreeForth hid'm
+
+EOF
+
+  -------------------
+  RETRO/REVA/HELFORTH compatibility control-structures
+
+if`    ( ? -- ) non-null  : if`    $840F if1\ ; \ jz.long
+0=if`  ( ? -- ) null      : 0=if`  $850F if1\ ; \ jnz.long
+0<if`  ( ? -- ) negative  : 0<if`  $890F if1\ ; \ jns.long
+0>=if` ( ? -- ) non-neg   : 0>=if` $880F if1\ ; \ js.long
+  These words pop TOS and compare it to zero, and if condition is true,
+  then continue execution after "if", otherwise jump forward after balancing
+  "else" or "then" or ";then"
+if1\ : if1\ $DB09, s09  drop` w, here SC @ , ; \ or ebx,ebx
+  see also: if =if  \ Retro/Reva/HelFORTH compat
+
+=if`   ( x y -- ) equal        : =if`   $850F if2\ ; \ jnz.long
+<>if`  ( x y -- ) non-equal    : <>if`  $840F if2\ ; \ jz.long
+<if`   ( x y -- ) less         : <if`   $8D0F if2\ ; \ jge.long
+<=if`  ( x y -- ) non-greater  : <=if`  $8F0F if2\ ; \ jg.long
+u<if`  ( x y -- ) below        : u<if`  $830F if2\ ; \ jae.long
+u<=if` ( x y -- ) non-above    : u<=if` $870F if2\ ; \ ja.long
+  These words pop x and y and compare x.versus.y (UNSIGNED with u-prefix),
+  and if condition is true, then continue execution after "if", otherwise
+  jump forward after balancing "else" or "then" or ";then"
+if2\ : if2\ $DA39, s09 2drop` w, here SC @ , ; \ cmp edx,ebx
+  see also: =if if  \ Retro/Reva/HelFORTH compat
+
+then` ( -- ) resolves the target address of the balancing forward jump
+  (i.e. either "else" or any kind of "if")
+  : then` dup@ >SC here over- 4- swap ! 0 callmark ! ;
+;then` ( -- ) compiles a return-from-subroutine, unless the previous
+  compiled word was a call, which is then changed to a jump (see ";;"),
+  then resolves the target address of the balancing forward jump
+  (i.e. either "else" or any kind of "if")
+  : then;` ;;` dup@ SC ! then` ;
+  see also: then if else  \ Retro/Reva/HelFORTH compat
+
+else` ( -- ) jumps forward after balancing "then" or ";then", and also
+  resolves the target address of the balancing forward conditional jump
+  (i.e. any kind of "if")
+  : else` $E9 c, here SC @ , swap then` ; \ jmp.long
+  see also: if else then ;then  \ Retro/Reva/HelFORTH compat
+
+again` ( -- ) closes a non-counted loop by compiling an unconditional jump
+  to the address noted by "repeat"; to exit the loop, use any number of
+  ";then" (balanced by any kind of "if"), and/or any number of "0;"
+  : again` >SC 0 SC !
+    here - dup -$7E <if $E9 c, 5- , ;then \ jmp.long
+    $EB c, 2- c, ; \ jmp.b
+  see also: repeat 0; again while  \ Retro/Reva/HelFORTH compat
+
+while` ( ? -- ) closes a non-counted loop by compiling a conditional jump
+  (which will pop TOS and jump if null) back to the address noted by
+  "repeat"; you may also exit the loop by using any number of ";then"
+  (balanced by any kind of "if"), and/or any number of "0;"
+  : while` $DB09, s09 drop` >SC \ or ebx,ebx
+    here - dup -$7E <if $850F w, 6- , ;then \ jnz.long
+    $75 c, 2- c, ; \ jnz.b
+  see also: repeat 0; again while  \ Retro/Reva/HelFORTH compat
+
+repeat` ( -- ) opens a non-counted loop by noting the current compilation
+  address for later resolution by either "again" or "while"
+  : repeat` here SC @ ;
+  see also: repeat 0; again while  for next  \ Retro/Reva/HelFORTH compat
+
+for` ( n -- | == n ) opens a counted loop by compiling a ">r" and noting the
+  following compilation address for later resolution by the balancing "next"
+  : for` >r` repeat` ;
+next` ( -- | n == n-1 | 1 == ) closes a counted loop by compiling code
+  which at runtime will decrement the CALLstack top cell, and if positive
+  will branch back after the ">r" compiled by the balancing "for", and
+  otherwise will pop the CALLstack top item.
+  The loop will then be executed at least once, n times if n>0, from n
+  downto 1; to push on the DATAstack a copy of the loop index, use "r"
+  : next` >SC here - dup -$7C <if $8F0F08FF , 8- , rdrop` ;then \ dec[eax] jg.l
+    $FC7F08FF , here 1- +! rdrop` ; \ dec[eax] jg.b
+  see also: for r next  \ Retro/Reva/HelFORTH compatibility
+
+loc:` ( -- ) appends to the symbol table a ";loc`" macro header, which,
+  when later executed, will restore the symbol table allocation pointer
+  "H" in its state just before creating the ";loc`" macro. Nestable.
+  This may be used instead of "hid'm" to remove several temporary ("local")
+  headers at once; however, some of the definitions should be aliased to
+  new headers after removing the local ones, typically as follows:
+    loc:  : tmp1 ;  : tmp2 ;  : tmp3 tmp1 tmp2 ;  tmp3 ' ;loc alias new3
+  this will alias new3 to tmp3 and remove tmp1,tmp2,tmp3 from symbol table
+  : `;loc which@ 5+ c@+ + 1+ H! ;  \ -- ; restore H after last found header
+  : loc:` ";loc`" `;loc ' 0 header ;
+  see also: ' alias hid'm  ff.ff \ Retro/Reva/HelFORTH compat

@@ -1,14 +1,14 @@
-variable features 76 allot
+variable features 100 allot
 : append ( @ # c@ -- ) 2dup c@ + over 2>r c@+ + place drop 2r>
   2dup c! + 1+ 0 swap c! ;
 : appendc ( c c@ -- ) tuck c@+ + tuck c! 0 over 1+ c! over- swap c! ;
-: -v` ."\\_features:_" features c@+ type cr ;
+: -v` ."\\ features: " features c@+ type cr ;
 
 "help" features append
-"help`" find 2drop '`' which@ 6+ c! \ to be deleted by hid'm
+"help`" find 2drop '_' 8 which@ 4+ tuck c! 2+ c! \ to be deleted by hidepvt
 : help` \ <name> -- ; display help for <name>, or for "help" by default
   wsparse 0= IF 2drop "help" THEN
-  [` 2>r "ff.help" needed 2r> `] 0; \ dup this line for your own help file(s)
+  [` 2>r "ff.help" needed 2r> _] 0; \ dup this line for your own help file(s)
   !"no_help_found_for_this_word"
 
 : within over- -rot - u> 2drop nzTRUE ? zFALSE ;  \ n [ ) -- ; nz?
@@ -33,15 +33,15 @@ constant` ' alias equ` \ shorter, and more usual for assembly programmers
 \ pictured numeric output: <# # #s hold sign #>
 
 46 constant pnmaxlen
-create `pnbuf pnmaxlen 2+ allot
-: <#       pnmaxlen `pnbuf c! 0 `pnbuf pnmaxlen+ 1+ c! ; <#
-: #>       2drop `pnbuf c@+ swap over+ swap pnmaxlen swap - ;
-: `len1-   `pnbuf dupc@ 1- swap c! ;
-: hold     `pnbuf dupc@ + c! `len1- ;
-: `dh      9 u> drop IF 7+ THEN '0'+ 'z' u> drop IF '?'_ THEN hold ;
-: `#       um/mod swap `dh 0 ;
-: #        base@ `# ;
-: x#       $10 `# ;
+create pnbuf pvt pnmaxlen 2+ allot
+: <#       pnmaxlen pnbuf c! 0 pnbuf pnmaxlen+ 1+ c! ; <#
+: #>       2drop pnbuf c@+ swap over+ swap pnmaxlen swap - ;
+:. _len1-  pnbuf dupc@ 1- swap c! ;
+: hold     pnbuf dupc@ + c! _len1- ;
+:. _dh     9 u> drop IF 7+ THEN '0'+ 'z' u> drop IF '?'_ THEN hold ;
+:. _#      um/mod swap _dh 0 ;
+: #        base@ _# ;
+: x#       $10 _# ;
 : #s       BEGIN  # over 0- drop 0= UNTIL ;
 : x#s      BEGIN x# over 0- drop 0= UNTIL ;
 : sign     0- drop 0< IF '-' hold THEN ;
@@ -54,38 +54,60 @@ create `pnbuf pnmaxlen 2+ allot
 \ used for once-only symbol resolution at runtime (turnkey safe)
 : fixup libc@ #fun rdrop r> 5- dup>r $bb overc! 1+ ! ;
 
-: `strerror "strerror" fixup
-:  strerror negate 1 dup `strerror #call zlen type cr ;
+:. _strerror "strerror" fixup
+:  strerror negate 1 dup _strerror #call zlen type cr ;
 
 variable ior \ I/O result, error when negative:
 : ?ior dup ior! \ n -- ; displays system error message
   $FF | -1 = 2drop IF ior@ strerror !"system_call_failed" THEN
 ;
 
-: `malloc "malloc" fixup
-:  malloc 1 dup `malloc #call  ; \ # -- @ ; see "man malloc"
-: `free "free" fixup
-:  free 1 dup `free #call drop ; \ @ --
+:. _malloc "malloc" fixup
+:  malloc 1 dup _malloc #call  ; \ # -- @ ; see "man malloc"
+:. _free "free" fixup
+:  free 1 dup _free #call drop ; \ @ --
 
 \ syscall values see /usr/include/asm-i386/unistd.h
 : lseek  3  19 syscall ; \ wh off fd -- off ; wh=0:SET 1:CUR 2:END
 : ioctl  3  54 syscall ; \ int ioctl(int fd, int request, void* arg);
 : select 5 142 syscall ; \ timeval* exceptfds* writefds* readfds* n -- ?
 
-variable `fdset  0 , 0 , \ for select, the 2 zeros are a null timeval
-: key? stdin
-: `fdin? \ fd -- ; returns zFALSE if file-descriptor fd would wait for input
-  1 swap << `fdset! \ fd_set READ; select will return 0 or 1 (or 0<)
-  `fdset 4+ 0 0 `fdset $20 select dup ?ior 0- drop
+\ st_dev 0 st_ino 12 st_mode 16 st_nlink 20 st_uid 24 st_gid 28 st_rdev 32
+\ st_size 44 st_blksize 48 st_blocks 52 st_atim 56 st_mtim 64 st_ctim 72
+
+: mkst` create` 98 allot` ;
+: stat nip tuck 98 erase 2 195 syscall ; \ stat64
+: st_size 44+ @ ;
+
+\ --------------------------------------------------------------------
+\ call back
+
+: 'callback:`  '` :` \ xt <name> -- ; .. arg1 arg0 ret -C- .. arg1 arg0 ; 28/
+  \ 5A(pop edx)8D8424.00FFFFFF(lea eax,[esp-256])94(xchg eax,esp)
+  \ 52(push edx)60(pusha) \ -- ret eax ecx edx ebx esp ebp esi edi
+  \ 94(xchg eax,esp)5B(pop ebx)5A(pop edx)94(xchg eax,esp)E8.long(call xt)
+  $24848D5A, ,4 $FFFF'FF00, ,4 $94605294, ,4 $E8945A5B, ,4  here 4+ - ,
+  \ 895C24.1C(mov[esp+28],ebx)61(popa)C2.0001(ret 256)
+  $1C245C89, ,4 $0100C261, ,4  anon:`
 ;
-: `TCGETS  $5401 SKIP \ see termios
-: `TCSETSW $5403 THEN eob swap stdin ioctl ?ior ;
+
+variable fdset pvt  0 , 0 , \ for select, the 2 zeros are a null timeval
+: key? stdin
+: fdin? \ fd -- ; returns zFALSE if file-descriptor fd would wait for input
+  1 swap << fdset! \ fd_set READ; select will return 0 or 1 (or 0<)
+  fdset 4+ 0 0 fdset $20 select dup ?ior 0- drop
+;
+:. _TCGETS  $5401 SKIP \ see termios
+:. _TCSETSW $5403 THEN eob swap stdin ioctl ?ior ;
 : ekey \ -- c ; raw access to keyboard input
   \ not yet perfect: line-discipline-control-chars still interpreted,
   \ more to patch in termios structure...
-  `TCGETS eob 12+ dup@ swap &100 over! \ -- n eob+12 ; raw
-  `TCSETSW key -rot ! `TCSETSW
+  _TCGETS eob 12+ dup@ swap &100 over! \ -- n eob+12 ; raw
+  _TCSETSW key -rot ! _TCSETSW
 ;
+
+: stopdump? key 10- drop ;
+: ;dump` ;` BEGIN 16 bounds under 2dump stopdump? 0<> UNTIL drop ;  \ @ --
 
 \ --------------------------------------------------------------------
 \ OS shell/command interface
@@ -96,14 +118,14 @@ variable `fdset  0 , 0 , \ for select, the 2 zeros are a null timeval
 : zt  \ @ # -- @ ; append zero-terminator
   over+ 0 swap c! ;
 
-: `getenv "getenv" fixup
-:  getenv 1_ dup `getenv #call 0- 0= IF 0 ELSE zlen THEN ;
-: `getpid "getpid" fixup
-:  getpid 0 0 `getpid #call ;
-: `getppid "getppid" fixup
-:  getppid 0 0 `getppid #call ;
-: `system "system" fixup
-:  system zt 1 dup `system #call ;
+:. _getenv "getenv" fixup
+:  getenv 1_ dup _getenv #call 0- 0= IF 0 ELSE zlen THEN ;
+:. _getpid "getpid" fixup
+:  getpid 0 0 _getpid #call ;
+:. _getppid "getppid" fixup
+:  getppid 0 0 _getppid #call ;
+:. _system "system" fixup
+:  system zt 1 dup _system #call ;
 
 : man` >in@ 4- lnparse + over- \ <mantopic> -- ; 4-:"man_" fallthru
 : shell  \ @ # -- ; send command to shell, command result into ior
@@ -115,7 +137,7 @@ variable `fdset  0 , 0 , \ for select, the 2 zeros are a null timeval
   lnparse shell ;
 
 \ --------------------------------------------------------------------
-[1] [IF] "_locals" features append \ Local variables
+[1] [IF] " locals" features append \ Local variables
 
 \ 8B5804(mov ebx,[eax+0x4])
 \ 8918(mov [eax],ebx) \ 895804(mov [eax+0x4],ebx)
@@ -153,15 +175,41 @@ r0!` ' alias r!`
 : home ( -- ) 0 dup
 : atxy ( xCol yRow -- ) ."^[[" 1+ .dec\ .";" 1+ .dec\ ."H" ;
 : atx  ( xCol -- ) ."^[[" 1+ .dec\ ."G" ;
-[1] [IF] "_normal" features append \ symbolic attributes and color names
-: `color ( n -- ) ."^[[" .dec\ ."m" ;
-: normal 0 `color ;     : bold 1 `color ;          : dim 2 `color ;
-: underline 4 `color ;  : blink 5 `color ;         : inverse 7 `color ;
-: concealed 8 `color ;  : foreground 30+ `color ;  : background 40+ `color ;
+[1] [IF] " normal" features append \ symbolic attributes and color names
+:. _color ( n -- ) ."^[[" .dec\ ."m" ;
+: normal 0 _color ;     : bold 1 _color ;          : dim 2 _color ;
+: underline 4 _color ;  : blink 5 _color ;         : inverse 7 _color ;
+: concealed 8 _color ;  : foreground 30+ _color ;  : background 40+ _color ;
 0 constant black  1 constant red      2 constant green  3 constant yellow
 4 constant blue   5 constant magenta  6 constant cyan   7 constant white
 
-: `ss 1- 0; swap >r `ss r .x r> ;
-: ss  depth cyan foreground ."( " dup .dec\ ."; " 1+ 3 max `ss .")^J" normal ;
-: dd  depth TIMES drop REPEAT ;
+:. _ss 1- 0; swap >r _ss r .x r> ;
+: ss depth cyan foreground ."( " dup .dec\ ."; " 1+ 3 max _ss .")^J" normal ;
+: dd depth TIMES drop REPEAT ;
 [THEN]
+
+\ --------------------------------------------------------------------
+[1] [IF] " .now" features append \ Calendar date and time display
+:. _leap .dec\ ."-2-29" drop ;
+: .d ( n -- ; display days since 0-0-0 as gregorian date )
+  146097 /% 400* swap 146096 = drop IF swap 400+ _leap ;THEN
+  36524 /% 100* rot + swap
+  1461 /% 4* rot + swap 1460 = drop IF swap 4+ _leap ;THEN
+  365 /% rot + swap \ -- y rem
+  dup 31+ 5* 153/ 2+  tuck 1+ 153* 5/ 123- - -rot  \ -- d y m
+  12 > drop IF 12- swap 1+ swap THEN swap \ -- d m y
+  .dec\ ."-" .dec\ ."-" .dec\ ;
+: .wd ( n -- ) 7% 3* "wedthufrisatsunmontue" drop + 3 type ;
+: now  \ -- n ; returns number of seconds since 2000-3-1_0:0:0
+  0 1 13 syscall [ 1970-1-1 2000-3-1- 24:0:0* 1:0:0+ ] lit + ;
+: .now` ( -- ) now dup 24:0:0/ .wd space       \ display current date&time
+: .dt ( n -- ) 24:0:0 /% 2000-3-1+ .d ."\_"    \ display seconds as date&time
+: .t  ( n -- ) 60 /% 60 /% .dec\ .":" .dec\ .":" .dec ; \ display seconds as time
+[THEN]
+: ms@  \ -- n ; get current milliseconds count
+  eob  0 over 2 78 syscall drop  2@ 1000* swap 1000/ + ;
+: ms  \ n -- ; wait n milliseconds
+  1000 /% swap 1'000'000* swap eob 2!  0 eob 2 162 syscall drop ;
+
+\ uncomment the following line to remove all headers marked private
+hidepvt " hidepvt" features append ;

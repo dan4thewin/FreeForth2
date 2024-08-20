@@ -1,0 +1,168 @@
+" fpu" features append \ Uses FPU hardware stack: 8-cells * 80-bits(tword)
+\ Stack notation: "f:x" represents 80-bits float "x" on FPU stack
+pvtmargin
+10 constant fcell \ fcell+ fcell- fcell* fcell/ (see literalcompiler)
+
+\ FPU Status-Word(ro) and Control-Word(rw) access:
+  \ 8D40FC(eax-=4)DD38(fnstsw[eax])871087DA(xchg edx,[eax] xchg ebx,edx)
+: fsw@ ,"^M~@|~]~8^G~^P^G~Z~" ; \ -- w ; don't care MSword: use .w
+  \ 8D40FC(eax-=4)D938(fnstcw[eax])871087DA(xchg edx,[eax] xchg ebx,edx)
+: fcw@ ,"^M~@|~Y~8^G~^P^G~Z~" ; \ -- w ; don't care MSword: use .w
+  \ 87DA8710(xchg ebx,edx xchg edx,[eax])D928(fldcw[eax])8D4004(eax+=4)
+: fcw! ,"^G~Z~^G~^PY~(^M~@^D" ; \ w -- ; don't care MSword
+  \ C740FC.7F07'7F03(mov[eax-4],$037F'077F) nearest'-infinity  '0F7F=truncate
+  \ D968FC(fldcw[eax-4])D9FC(frndint)D968FE(fldcw[eax-2])
+: floor ,"G~@|~^?^G^?^CY~h|~Y~|~Y~h\~~" ; \ f:i.f -- f:i.0 ; integer part
+
+\ Convert between 32-bits integer on DATAstack and 80-bits float on FPU stack
+  \ 8D40FC(eax-=4)DB18(fistp dw[eax])871087DA(xchg edx,[eax] xchg ebx,edx)
+: f>s ,"^M~@|~[~^X^G~^P^G~Z~" ; \ f:n -- n ; convert float to single int
+  \ 87DA8710(xchg ebx,edx xchg edx,[eax])DB00(fild dw[eax])8D4004(eax+=4)
+: s>f ,"^G~Z~^G~^P[~^@^M~@^D" ; \ n -- f:n ; convert single int to float
+
+\ Convert between 64-bits C-double on DATAstack and 80-bits float on FPU stack
+\ (for interfacing with C dynamic libraries using double floats)
+  \ 8D40F8(eax-=8)DD18(fstp qw[eax])8718875004(xchg ebx,[eax] xch edx,[eax-4])
+: f>df ,"^M~@x~]~^X^G~^X^G~P^D" ; \ f:df -- df ; convert float to C-double
+  \ 8718875004(xchg ebx,[eax] xchg edx,[eax-4])DD00(fld qw[eax])8D4008(eax+=8)
+: df>f ,"^G~^X^G~P^D]~^@^M~@^H" ; \ df -- f:df ; convert C-double to float
+
+\ Class2 = FPU macro, inlines 1 or 2 FPU instructions embedded in its header:
+:. f:` ;` wsparse rot 2 header ; \ FPUinstr <name> -- ; class2 definer
+:. f, dup lit` $FFFF0000& 0<> drop IF ,` ;THEN w,` ; \ postpone, immediate;
+:. f; dup      $FFFF0000& 0<> drop IF ,  ;THEN w,  ; f, ' f; ' classes &20+ 2! ;
+
+$E3DB f: finit` \ fninit  initialize FPU cw=$037F sw=$0000
+$EED9 f: 0.`  \ fldz
+$E8D9 f: 1.`  \ fld1
+$EBD9 f: fpi` \ fldpi
+$C0D9 f: fdup`  \ fld st0
+$C1D9 f: fover` \ fld st1
+$D8DD f: fdrop` \ fstp st0
+$D9DD f: fnip`  \ fstp st1
+$C9D9 f: fswap` \ fxch st1
+$C1D9C9D9 f: ftuck`  \ fswap` fover`
+$C9D9C1D9 f: funder` \ fover` fswap`
+$CAD9C9D9 f: frot`   \ fswap`  fxch st2
+$C9D9CAD9 f: f-rot`  \ fxch st2  fswap`
+$C1D9C1D9 f: f2dup`  \ fover` fover`
+$D8DDD8DD f: f2drop` \ fdrop` fdrop`
+
+$C1DAF1DB f: _fmax` pvt \ fcomi  fcmovb st1
+$D1DBF1DB f: _fmin` pvt \ fcomi  fcmovnbe st1
+: fmax` _fmax` fnip` ;
+: fmin` _fmin` fnip` ;
+$E0D9 f: fnegate` \ fchs
+$E1D9 f: fabs`
+$C1DE f: f+`  $C1D8 f: fover+` \ faddp  fadd st0,st1
+$E9DE f: f-`  $E1D8 f: fover-` \ fsubp  fsub st0,st1
+$E1DE f: fswap-` \ fsubrp
+$C9DE f: f*`  $C9D8 f: fover*` \ fmulp  fmul st0,st1
+$F9DE f: f/`  $F1D8 f: fover/` \ fdivp  fdiv st0,st1
+$F1DE f: fswap/` \ fdivrp
+: f1/` 1.` fswap/` ;
+$FAD9 f: fsqrt`
+
+$EDD9 f: fldln2` pvt
+$ECD9 f: fldlg2` pvt
+$EAD9 f: fldl2e` pvt
+$E9D9 f: fldl2t` pvt
+$F0D9 f: f2xm1`   pvt \ f:x -- f:2**x-1 ; |x|<=1
+$F4D9 f: fxtract` pvt \ f:x -- f:e=floor(lb(x)) f:x/2^e
+$D9DDFDD9 f: fscale`  pvt \ f:e f:m -- f:m*2^trunc(e) ; (with fnip)
+$F1D9C9D9 f: fxl2y`   pvt \ fxch fyl2x
+$F9D9C9D9 f: fxl2yp1` pvt \ fxch fyl2xp1
+: fln`   fldln2` SKIP
+: flog`  fldlg2` THEN fxl2y` ;  \ lgX=lbX/lb10 lg2=lb2/lb10 => lgX=lbX*lg2
+: fasinh fdup fover* 1. f+ SKIP \ ln(x+sqrt(x*x+1))
+: facosh fdup fover* 1. f- THEN \ ln(x+sqrt(x*x-1))
+  fsqrt f+ fln ;
+: fatanh 1. fover- fln fswap fldln2 fxl2yp1 fswap- \ (ln(1+x)-ln(1-x))/2
+: f2/ 1. fnegate fswap fscale ;
+: f2* 1. fswap fscale ;
+: f**    fxl2y          SKIP
+: faln   fldl2e SKIP
+: falog  fldl2t THEN f* THEN \ -- f:x*l2(y)
+  fdup floor fswap fover-  f2xm1 1. f+ fscale ;
+: fsinh faln 1. fover/ f- f2/ ; \ (e(x)-e(-x))/2
+: fcosh faln 1. fover/ f+ f2/ ; \ (e(x)+e(-x))/2
+: ftanh f2* faln 1. fover- fswap 1. f+ f/ ; \ (e(2x)-1)/(e(2x)+1)
+
+$FED9 f: fsin`
+$FFD9 f: fcos`
+$FBD9 f: fsincos`   \ f:x -- f:sin f:cos
+$D8DDF2D9 f: ftan`  \ fptan(-- f:tan f:1) fdrop`
+$F3D9E8D9 f: fatan` \ fld1 fpatan
+$F3D9 f: fatan2`    \ f:y f:x -- f:atan(y/x) ; fpatan
+: facos fdup fover* 1. fswap- fsqrt fswap fatan2 ; \ fatan(sqrt(1-x*x)/x)
+: fasin fdup fover* 1. fswap- fsqrt       fatan2 ; \ fatan(x/sqrt(1-x*x))
+
+\ 72:bc/aenc 74:z/nz 76:be/a
+: f0<` $77 :. _f?1 $F1DFEED9 , ?# c! ; \ fld0  fcomip st0,st1
+: f0>=` $76 _f?1 ;
+: f0<>` $75 _f?1 ;
+: f0=` $74 _f?1 ;
+: f0<=` $73 _f?1 ;
+: f0>` $72 _f?1 ;
+: f<` $77 :. _f?2 $F1DB w, ?# c! ; \ fcomi st0,st1
+: f>=` $76 _f?2 ;
+: f<>` $75 _f?2 ;
+: f=` $74 _f?2 ;
+: f<=` $73 _f?2 ;
+: f>` $72 _f?2 ;
+: f~ \ f:y f:x f:t -- f:y f:x ; nz?  t>0:|y-x|<t, t=0:y==x, t<0:|y-x|<|t*(y+x)|
+  f0= IF fdrop f= nzTRUE ? zFALSE ;THEN \ bitwise comparison
+  f0< IF fover ,"X~C~" f* fabs \ D8C3(fadd st0,st3)
+  THEN   fover ,"X~c~" fabs f> f2drop nzTRUE ? zFALSE ; \ D8E3(fsub st0,st3)
+
+: dupf!` $3BDB, s01 ; \ f:n @ -- @ ; fstp tw[ebx]
+: dupf@` $2BDB, s01 ; \ @ -- @ f:n ; fld  tw[ebx]
+: f+!` dupf@` f+`
+: f!` dupf!` drop` ;
+: f@` dupf@` drop` ;
+: f,` $7DDB w, $0A6D8D00 , ; \ DB7D00(fstp[ebp])8D6D0A(lea ebp,[ebp+10])
+: fvariable` create` 0. f, anon:` ;
+: flit` $0AEB w, here >r f, \ jmp+10  fliteral
+:. fcst $2DDB w, r> , ; \ fld tw[@]
+: fconstant` \ f:n <name> -- ; -- f:n ; compiles a macro compiling "fld tw[@]"
+  ;` wsparse 2dup+ dupc@ >r dup>r '`' swap c! 1+ \ append `
+  here 0 header 2r> c!  fcst ' call,  f, anon:` ;
+
+variable f#  4 f#!  \ number of displayed digits < 20
+$E5D9 f: _fxam` \ sw&4500= 4000:ZERO 0500:INF 0100:NaN
+:. fdigit fdup floor fdup f>s '0'+ emit f- fover* ; \ f:10 f:x -- f:10 f:x
+: f. \ f:n -- ; display float in scientific format with f# significant digits
+  f0< IF ."-" THEN fabs  _fxam fsw@ $4500&  $4000 CASE ."0._" fdrop ;THEN
+  $500 CASE ."INF_" fdrop ;THEN  $100 CASE ."NaN_" fdrop ;THEN drop
+  fdup flog floor f#@ 1- s>f f- falog f2/ f+ \ round LSdigit, may carry up
+  fdup flog floor fdup f>s falog f/ \ -- exp f:mant
+  10 s>f fswap fdigit ."." f#@ 1- TIMES fdigit REPEAT f2drop \ -- exp
+  ."e" .dec ; \ display exponent in decimal
+: f.s` \ -- ; display full stack (uses eob)
+  [ $35DD w, eob , ] \ fnsave[eob]  cw[4],sw[4],env[20],stack[8*10]
+  eob 4+ w@ 11 >> negate 7& \ -- #items
+ [0] [IF] \ minimum display, TOS last on right:
+  dup .\ .":_" eob 28+ over 10* + swap TIMES 10- dupf@ f. REPEAT drop cr
+ [ELSE] \ full binary display, TOS first on top:
+  eob 7 TIMES @+ .l space REPEAT cr \ FPU-environment: 7 dwords
+  swap TIMES 10 TIMES r over+ c@ .b REPEAT space dupf@ f. cr 10+ REPEAT drop
+ [THEN]
+  [ $25DD w, eob , ] ; \ frstor[eob]
+
+:^ ferror !"???" \ vectorizable float-parsing-error handler
+: fnumber \ @ # -- f:n ; converts string to float
+  dup 2- 0< drop ferror ?  10 s>f 0.
+  bounds dupc@ '-'- >r 0= IF 1+ THEN  swap dup>r swap \ sign dpl@end
+  BEGIN c@+ BEGIN \ -- @end @ c
+    '.' CASE r> u> drop ferror ?  dup>r BREAK \ dpl@
+    'e' CASE r> 1+ over- 0> IF 0_ THEN -rot swap over- \ -- expn @ #
+        0= ferror ? number 0- ferror ? -rot + >r dup BREAK \ -- 0 0
+    '0'- 9 u> drop ferror  ? fover* s>f f+
+  END u<= UNTIL drop fnip  r> swap - s>f falog f*
+  r> 0- 0= drop IF fnegate THEN ;
+\ link float-literal-compiler to "notfound" and redefine "notfound":
+:. _f# fnumber flit` ;  _f# ' notfound !^  ferror ' alias notfound
+
+hidepvt ;
+finit ; \ comment this line to disable FPU initialization when loading ff.ff
+        \ 7.5Ksource = 1.6Kcode + 1.3Kheaders

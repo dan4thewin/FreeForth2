@@ -1,0 +1,41 @@
+" longconds" features append \ long conditionals
+\ ff.boot default conditionals are limited to byte offsets for forward jumps
+\ (backward jumps use byte offsets when possible, otherwise long offsets):
+\ this is efficient and encourages programmers to write small definitions.
+\ Would you ever need to write bigger definitions requiring long offsets,
+\ this is for you: type "+longconds" to switch to long forward conditionals;
+\ you can also type "-longconds" to switch back to byte forward conditionals;
+\ WARNING: DON'T switch forth or back in the middle of a control structure!
+
+\ 72:bc/aenc 74:z/nz 76:be/a 78:s/ns 7C:l/ge 7E:le/g (long:+0F10)
+\ E0:loopnz/loopz E2:loop/jecxz(byte) E8:call/jmp(long) EB:jmp(byte)
+
+pvtmargin
+:. _then here over- 4- swap ! 0 callmark ! ;
+: IF' cond $0F c, $10+ c, here SC c@ , ;
+: SKIP' $E9 c, here SC c@ , ;
+: ELSE' SKIP' swap dupc@ SC c!
+: THEN' dupc@ >SC _then ;
+: ;THEN' ;;` dupc@ SC c! _then ;
+: START' $90 c, align` $E9 here 1- c! 0 , BEGIN` ;
+: TIMES' >r`
+: RTIMES' BEGIN` $880F08FF , 0 , ;  \ dec[eax] js.l
+: ENTER' mrk@ dup 3& >SC -4& 4- _then ;
+: WHILE' mrk 2@ 3& >SC cond $0F c, $10+ c, here mrk 4+ ! , ;
+: BREAK' mrk 2@ 3& >SC             $E9  c, here mrk 4+ ! , THEN' ;
+: CASE' =` drop` IF' drop` ;
+: AGAIN' $EB -jmp THEN' ;
+: UNTIL' TILL`
+: END' mrk 2@ dup 3& >SC -4& swap \ -mrk +mrk
+  START dup@ swap _then ENTER = UNTIL \ -mrk -mrk
+  @ $880F08FF- 0= drop IF under 4+ _then rdrop` THEN \ balance RTIMES
+  drop mrk 2! ;
+: REPEAT' $EB -jmp END' ;
+: -longconds'  \ -- ; remove headers -longconds`..IF`
+  [ "\_then" find 2drop which@ H@ - constant _size pvt ]
+  "-longconds`" find 0<> IF !"-longconds`_not_found" ;THEN 2drop
+  H@ which@ START 1- dupc@ over _size+ c! ENTER = UNTIL drop _size+ H! ;
+: +longconds`  \ -- ; copy headers -longconds'..IF' -> -longconds`..IF`
+  "-longconds'" find 2drop which@ _size H@ dup>r over- place dup H!
+  '`' swap BEGIN 5+ dupc@ + 2dupc! 2+ r = drop UNTIL 2drop rdrop ;
+hidepvt ;

@@ -1,0 +1,33 @@
+" mmap" features append
+
+\ void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);
+\ Protections are chosen from these bits, OR'd together.
+1 equ PROT_READ     2 equ PROT_WRITE    4 equ PROT_EXEC
+\ Sharing types (must choose one and only one of these).
+1 equ MAP_SHARED    2 equ MAP_PRIVATE
+\ useful flags
+$20 equ MAP_ANON    $100 equ MAP_GROWSDOWN  $4000 equ MAP_NORESERVE
+
+: mkmm` create` 0 , 0 , -1 , PROT_READ , MAP_SHARED , anon:` ;
+: mm.sz 4+ ;
+: mm.fd 8+ ;
+: mm.prot 12+ ;
+: mm.flags 16+ ;
+
+( @ # mm xt -- @ | -n )
+: mmap_ swap >r -rot 2dup stat 0- 0< IF nip nip nip rdrop ;THEN drop st_size r mm.sz !
+  rot execute 0- 0< IF rdrop ;THEN dup r mm.fd !
+  0 swap r mm.flags @ r mm.prot @ r mm.sz @ 0 6 192 syscall dup r> ! ; \ mmap2
+
+( @ # mm -- @ | -n )
+: mmapr PROT_READ over mm.prot ! openr ' mmap_ ;
+: mmapw PROT_READ PROT_WRITE | over mm.prot ! openw ' mmap_ ;
+
+( @ # n mm -- @ | -n )
+: mmapwt PROT_READ PROT_WRITE | over mm.prot !
+  >r -rot openw0 0- 0< IF rdrop ;THEN dup r mm.fd !
+  2dup 2 93 syscall 0- 0< IF nip nip rdrop ;THEN drop swap r mm.sz ! \ ftruncate
+  0 swap r mm.flags @ r mm.prot @ r mm.sz @ 0 6 192 syscall dup r> ! ; \ mmap2
+
+( mm -- ior ior )
+: munmap dup dup mm.sz @ swap @ 2 91 syscall swap mm.fd @ close ;

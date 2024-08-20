@@ -35,14 +35,6 @@
 : over-` $D329, s09 ;
 : over*` $DAAF0F, ,1 s09 ;
 : /%` >S0 $99D08950, ,4 $C389FBF7, ,4 $58, ,1 ;
-: `m/mod >S0 >C1 $240487, ,3 w, $58C389, ,3 ;
-: m/mod`  $FBF7 `m/mod ;
-: um/mod` $F3F7 `m/mod ;
-: `m* >S0 $D089C189, ,4 w, $D389, ,2 $C889C289, ,4 ;
-: m*`  $EBF7 `m* ;
-: um*` $E3F7 `m* ;
-: */mod` >r` m*` r>` m/mod` ;
-: */` */mod` nip` ;
 : 1-` $4B, s1 ;
 : 1+` $43, s1 ;
 : 2+` 1+` 1+` ;
@@ -103,53 +95,65 @@
 : 2swap` rot` >r` rot` r>` ;
 : bounds` over+` swap` ;
 
+: :.` :`
+: pvt` 8
+: ct|! H@ 4+ dupc@ rot | swap c! ;
+: alias` :`
+:. _alias H@ ! $20 ct|! anon:` ;
+: create` :` 1 ct|! anon:` ;
+: variable` create` 0 , anon:` ;
+: constant` create` _alias ;
+: :^` :` $68, ,1 here 5+ , $C3, ,1 ;
+
 : [` anon@ SC c@  anon:` ;
-: ]` 2>r ;` 2r> : `] SC c! anon! ;
+: ]` 2>r ;` 2r> :. _] SC c! anon! ;
 : execute >r ;
 : reverse` $D1FF59, ,3 ;
 
-: alias` :`
-: `alias H@ swap over! 4+ dupc@ 8| swap c! anon:` ;
-: create` :` 1 H@ 4+ c! anon:` ;
-: variable` create` 0 , anon:` ;
-: constant` create` `alias ;
-: :^` :` $68, ,1 here 5+ , $C3, ,1 ;
+:. _m/mod >S0 >C1 $240487, ,3 w, $58C389, ,3 ;
+: m/mod`  $FBF7 _m/mod ;
+: um/mod` $F3F7 _m/mod ;
+:. _m* >S0 $D089C189, ,4 w, $D389, ,2 $C889C289, ,4 ;
+: m*`  $EBF7 _m* ;
+: um*` $E3F7 _m* ;
+: */mod` >r` m*` r>` m/mod` ;
+: */` */mod` nip` ;
 
-variable `noauto
-: \` 2 >in -! lnparse 2drop 1 `noauto! ;
+variable noauto pvt
+: \` 2 >in -! lnparse 2drop 1 noauto! ;
 : (` ')' parse 2drop ;
 : EOF` tp@ >in! ;` ;
 
-variable `?#
+variable ?#
 : 0-` $DB09, s09 ;
-: `?1 `?# c! ;
-: `?1a. $C931, ,2 ;
-: `?1b. 1^ $20+ 8 << $49C1000F | , $CB89, ,1 s1 ;
-: `?1. `?1a. 0-` `?1b. ;
-: `?2 `?1 $DA39, s09 ;
-: `?2. `?1a. $DA39, s09 `?1b. nip` ;
-$74 dup : 0=`  lit `?1 ; dup : 0=.`  lit `?1. ; dup : =`  lit `?2 ; : =.`  lit `?2. ;
-$75 dup : 0<>` lit `?1 ; dup : 0<>.` lit `?1. ; dup : <>` lit `?2 ; : <>.` lit `?2. ;
-$7C dup : 0<`  lit `?1 ; dup : 0<.`  lit `?1. ; dup : <`  lit `?2 ; : <.`  lit `?2. ;
-$7D dup : 0>=` lit `?1 ; dup : 0>=.` lit `?1. ; dup : >=` lit `?2 ; : >=.` lit `?2. ;
-$7E dup : 0<=` lit `?1 ; dup : 0<=.` lit `?1. ; dup : <=` lit `?2 ; : <=.` lit `?2. ;
-$7F dup : 0>`  lit `?1 ; dup : 0>.`  lit `?1. ; dup : >`  lit `?2 ; : >.`  lit `?2. ;
-$72 dup : C1?` lit `?1 ; : C1?.` lit `?1. ;
-$73 dup : C0?` lit `?1 ; : C0?.` lit `?1. ;
-$72 dup : u<`  lit `?2 ; : u<.`  lit `?2. ;
-$73 dup : u>=` lit `?2 ; : u>=.` lit `?2. ;
-$76 dup : u<=` lit `?2 ; : u<=.` lit `?2. ;
-$77 dup : u>`  lit `?2 ; : u>.`  lit `?2. ;
-: `?@ `?# c@ 0 `?#! ;
-: `-c` here dup 4- @ + -5 allot 0 callmark! ;
-: `-js c, c, ;
-: `-jc $0F, ,1 $12+ swap 1- swap
-: `-ju 2- c, 3- , ;
-: `?` `?@ 0- ,"u^C" $75_ swap
-: `-j here 2+ - -$80 >= drop swap `-js [ `-c` 1 here +! ] `?
-  $EB = drop `-ju `-c `? `-jc ;
-:^ -call callmark@ here = 2drop `-c` `-c `? !"is_not_preceded_by_a_call"
-: ?` -call `?` ;
+:. _?1 ?# c! ;
+:. _?1a. $C931, ,2 ;
+:. _?1b. 1^ $20+ 8 << $49C1000F | , $CB89, ,1 s1 ;
+:. _?1. _?1a. 0-` _?1b. ;
+:. _?2 _?1 $DA39, s09 ;
+:. _?2. _?1a. $DA39, s09 _?1b. nip` ;
+$74 dup : 0=`  lit _?1 ; dup : 0=.`  lit _?1. ; dup : =`  lit _?2 ; : =.`  lit _?2. ;
+$75 dup : 0<>` lit _?1 ; dup : 0<>.` lit _?1. ; dup : <>` lit _?2 ; : <>.` lit _?2. ;
+$7C dup : 0<`  lit _?1 ; dup : 0<.`  lit _?1. ; dup : <`  lit _?2 ; : <.`  lit _?2. ;
+$7D dup : 0>=` lit _?1 ; dup : 0>=.` lit _?1. ; dup : >=` lit _?2 ; : >=.` lit _?2. ;
+$7E dup : 0<=` lit _?1 ; dup : 0<=.` lit _?1. ; dup : <=` lit _?2 ; : <=.` lit _?2. ;
+$7F dup : 0>`  lit _?1 ; dup : 0>.`  lit _?1. ; dup : >`  lit _?2 ; : >.`  lit _?2. ;
+$72 dup : C1?` lit _?1 ; : C1?.` lit _?1. ;
+$73 dup : C0?` lit _?1 ; : C0?.` lit _?1. ;
+$72 dup : u<`  lit _?2 ; : u<.`  lit _?2. ;
+$73 dup : u>=` lit _?2 ; : u>=.` lit _?2. ;
+$76 dup : u<=` lit _?2 ; : u<=.` lit _?2. ;
+$77 dup : u>`  lit _?2 ; : u>.`  lit _?2. ;
+:. -c` here dup 4- @ + -5 allot 0 callmark! ;
+:. -js c, c, ;
+:. -jc $0F, ,1 $12+ swap 1- swap
+:. -ju 2- c, 3- , ;
+:. ?@ ?# c@ 0 ?#! ;
+:. _?` ?@ 0- ,"u^C" $75_ swap
+:. -j here 2+ - -$80 >= drop swap -js [ -c` 1 here +! ] _?
+  $EB = drop -ju -c _? -jc ;
+:^ -call callmark@ here = 2drop -c` -c _? !"is_not_preceded_by_a_call"
+: ?` -call _?` ;
 : '` -call lit` ;
 : @^` -call over` $1D8B, s08 1+ , ;
 : !^` -call $1D89, s08 1+ , drop` ;
@@ -159,48 +163,48 @@ $77 dup : u>`  lit `?2 ; : u>.`  lit `?2. ;
 : lib:` :` #lib lit` #fun ' call, ;` ;
 : fun:` :` lit` lit` #call ' call, ;` ;
 
-: `off !"jump_off_range"
-: `?off dup 2* over^ -$100& drop `off ? ;
-: `?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition"
-: `cond `?@ `?nn 1^ ;
-: `cond. 0-` drop` $74 ;
-: `SC, here SC c@ c, ;
-: IF` `cond c, `SC, ;
-: IF.` `cond. c, `SC, ;
-: SKIP` $EB c, `SC, ;
+:. _off !"jump_off_range"
+:. ?off dup 2* over^ -$100& drop _off ? ;
+:. ?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition"
+: cond ?@ ?nn 1^ ;
+:. cond. 0-` drop` $74 ;
+:. SC, here SC c@ c, ;
+: IF` cond c, SC, ;
+: IF.` cond. c, SC, ;
+: SKIP` $EB c, SC, ;
 : ELSE` SKIP` swap dupc@ SC c!
 : THEN` dupc@ >SC
-: `then here over- 1- `?off swap c! 0 callmark! ;
+:. _then here over- 1- ?off swap c! 0 callmark! ;
 : 0;` 0-` 0=` IF` drop`
-: ;THEN` ;;` dupc@ SC c! `then ;
+: ;THEN` ;;` dupc@ SC c! _then ;
 : 0<>;` 0-` 0<>` IF` drop` ;THEN` ;
 : ?dup` 0-` 0<>` IF` dup` THEN` ;
 : BOOL` 0 lit` IF` ~` THEN` ;
 : zFALSE 0 0- drop ;
 : nzTRUE 1 0- drop ;
 : align` $90909090, here negate 3& allot ;
-create `mrk 0 , 0 ,
+create mrk 0 , 0 ,
 : START` $9090 w, align` $00EB here 2- w!
-: BEGIN` `mrk 2@ align` here SC c@ over+ `mrk 2! ;
+: BEGIN` mrk 2@ align` here SC c@ over+ mrk 2! ;
 : TIMES` >r`
 : RTIMES` >C1 BEGIN` $007808FF, ,4 ;
-: ENTER` `mrk@ dup 3& >SC -4& 1- `then ;
-: WHILE` `cond
-: `+jmp `mrk 2@ 3& >SC swap c, here dup `mrk 4+ ! swap - `?off c, ;
-: WHILE.` `cond. `+jmp ;
+: ENTER` mrk@ dup 3& >SC -4& 1- _then ;
+: WHILE` cond
+: +jmp mrk 2@ 3& >SC swap c, here dup mrk 4+ ! swap - ?off c, ;
+: WHILE.` cond. +jmp ;
 : CASE` =` drop` IF` drop` ;
-: BREAK` $EB `+jmp THEN` ;
-: TILL` `cond
-: `-jmp `mrk@ dup 3& >SC -4& `-j ;
-: TILL.` `cond. `-jmp ;
-: AGAIN` $EB `-jmp THEN` ;
+: BREAK` $EB +jmp THEN` ;
+: TILL` cond
+: -jmp mrk@ dup 3& >SC -4& -j ;
+: TILL.` cond. -jmp ;
+: AGAIN` $EB -jmp THEN` ;
 : UNTIL` TILL`
-: END` `mrk 2@ dup 3& >SC -4& swap
-  START dupc@ over `then - ENTER = TILL [ `mrk 2! ]
-  @ $007808FF- 0= drop IF under 3+ `then rdrop` THEN
-  drop `mrk 2! ;
+: END` mrk 2@ dup 3& >SC -4& swap
+  START dupc@ over _then - ENTER = TILL [ mrk 2! ]
+  @ $007808FF- 0= drop IF under 3+ _then rdrop` THEN
+  drop mrk 2! ;
 : UNTIL.` TILL.` END` ;
-: REPEAT` $EB `-jmp END` ;
+: REPEAT` $EB -jmp END` ;
 
 : s>d` dup` 0<.` ;
 : abs`  0-` 0<` IF` negate` THEN` ;
@@ -209,41 +213,41 @@ create `mrk 0 , 0 ,
 : adc` $D311, s09 nip` ;
 : d+` >r` rot` +` swap` r>` adc` ;
 
-: `mov? here 6- c@ $8b- 0; !"is_not_preceded_by_a_mov" ;
-: `dst? here 5- c@ $15- 0; $8- 0; !"destination_is_not_edx_or_ebx" ;
-:^ >mov `mov? `dst? $90 here 7- c! here 6- w! ;
+:. mov? here 6- c@ $8b- 0; !"is_not_preceded_by_a_mov" ;
+:. dst? here 5- c@ $15- 0; $8- 0; !"destination_is_not_edx_or_ebx" ;
+:^ >mov mov? dst? $90 here 7- c! here 6- w! ;
 : ++` $5FF >mov swap` ;
 : --` $DFF >mov swap` ;
 
-: `[] '[' parse 2drop wsparse  0- 0= drop IF drop >in! !"unbalanced" ;THEN
-  1 >in -! dup "ELSE]" $- 0<> drop IF dup "THEN]" $- 0<> drop IF "IF]" $- drop `[] ?
-  BEGIN `[] 0<> UNTIL `[] ;THEN 1+ THEN drop ;
+:. _[] '[' parse 2drop wsparse  0- 0= drop IF drop >in! !"unbalanced" ;THEN
+  1 >in -! dup "ELSE]" $- 0<> drop IF dup "THEN]" $- 0<> drop IF "IF]" $- drop _[] ?
+  BEGIN _[] 0<> UNTIL _[] ;THEN 1+ THEN drop ;
 : [IF]` 0- 0= drop IF
-: [ELSE]` >in@ `[] drop
+: [ELSE]` >in@ _[] drop
 : [THEN]` THEN ;
 : [~]` wsparse find nip ;
 1 constant [1]`
 0 constant [0]`
 
-variable `io
-: key `io 1 under accept drop c@ ;
+variable io pvt
+: key io 1 under accept drop c@ ;
 : space 32
-:^ putc : emit `io 2dupc! swap 1_ type ;
+:^ putc : emit io 2dupc! swap 1_ type ;
 :^ cr ."^J" ;
 
 variable base 10 base!
-: `.d tuck 0 swap m/mod 0- 0= IF drop nip ;THEN rot `.d
+:. _d tuck 0 swap m/mod 0- 0= IF drop nip ;THEN rot _d
 : .digit '0'+ '9' u> drop IF 39+ 'z' u> drop IF '?'_ THEN THEN putc ;
-: .ub\ `.d .digit ;
+: .ub\ _d .digit ;
 : .ub .ub\ space ;
-: `.sign 0- 0< IF '-' putc negate THEN ;
-: .\ `.sign base@ .ub\ ;
+:. .sign 0- 0< IF '-' putc negate THEN ;
+: .\ .sign base@ .ub\ ;
 : . .\ space ;
-: .dec\ `.sign 10 .ub\ ;
+: .dec\ .sign 10 .ub\ ;
 : .dec .dec\ space ;
 : .u\ base@ .ub\ ;
 : .u .u\ space ;
-: .x\ `.sign 9 > drop IF '$' putc THEN $10 .ub\ ;
+: .x\ .sign 9 > drop IF '$' putc THEN $10 .ub\ ;
 : .x .x\ space ;
 : .b 2
 : .#s TIMES dup r 4* >> $F& .digit REPEAT drop ;
@@ -254,41 +258,45 @@ variable base 10 base!
     dup 3& 0= drop IF space THEN space c@+ .b
   ENTER u<= UNTIL 2drop drop space ;
 :^ ui : prompt space depth .\ ';' anon@ 0- 0= drop IF 1- THEN emit space ;
-: `.s  1- 0; swap >r `.s depth 0= drop IF space THEN r . r> ;
-: .s` prompt 9 `.s cr ;
+:. _s  1- 0; swap >r _s depth 0= drop IF space THEN r . r> ;
+: .s` prompt 9 _s cr ;
 : .h` ."free:" H@ here - 1024/ .\ ."k_SC=" SC@ . .s`
   anon@ 0- 0= IF drop H@ @ THEN  here over-
 : dump bounds 2dump cr ;
 
 : words` H@ START 2dup+ 1+ -rot type space ENTER 5+ c@+ 0- 0= UNTIL 2drop cr ;
-: hid'm` H@ 0 over 2- c! dup 1- swap
-  START over+ 1+ swap dupc@ '`'- 0<> drop swap IF nip THEN
-  ENTER 5+ c@+ 0- 0<> IF over 2- c@ 16- drop THEN 0= UNTIL 2drop
-  dup 1- c@+ + 1+ >r  START over 1- c@+ + 1+ swap 6-
+: .hdr+ dup ."$" .l .": " dup @ ."$" .l space 4+ dup c@ . 1+ c@+ 2dup type + 1+ ;
+: .hdrs H@ START .hdr+ cr ENTER dup 5+ c@ 0- 0= drop UNTIL drop ;
+: .hdr .hdr+ drop ;
+: hidepvt` H@ 0 over 2- c! dup 7- swap
+  START over 5+ c@+ + 1+ -rot 8& 0= drop swap IF nip THEN
+  ENTER dup 4+ c@ dup $ff- drop 0<> IF dup $10- drop THEN 0= UNTIL 2drop
+  dup 5+ c@+ + 1+ >r START over 5+ c@+ + 1+ swap
     START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop
-  ENTER H@ 1- = drop UNTIL drop r> H! ;
-: `mark ;` r> 5- here - allot anon:`
+  ENTER H@ 7- = drop UNTIL drop r> H! ;
+:. _mark ;` r> 5- here - allot anon:`
   H@ BEGIN dup@ swap 5+ c@+ + 1+ swap here = 2drop UNTIL H! ;
 : mark` ;` wsparse
 : marker 2dup+ dupc@ >r dup>r '`' swap c! 1+
-  here 0 header 2r> c!  `mark ' call, anon:` ;
-: hidmark H@ 4+ 16 swap c! ;
+  here 0 header 2r> c!  _mark ' call, anon:` ;
+: pvtmargin $10 ct|! ;
 : eval >in@ tp@ 2>r over+ tp! >in! compiler 2r> tp! >in! ;
 
 : argc CS0@ @ ;
-: `argv 1+ 4* CS0@ + @ ;
-: argv `argv zlen ;
+:. _argv 1+ 4* CS0@ + @ ;
+: argv _argv zlen ;
 :^ ossetup ;
-: `back >in@ 1- dup BEGIN tib <> drop WHILE 1- dupc@ 10- drop 0= TILL 1+ END
-  swap over- type ;
-: `eval eval '
-: `exec catch 0;  `back ."_<-error:_" c@+ type cr  2drop
+:. _back >in@ 1- dup BEGIN tib <> drop WHILE 1- dupc@ 10- drop 0= TILL 1+ END
+   swap over- type ;
+:. _auto noauto@ 0- drop 0= IF ;` THEN ;
+:. eval. >in@ tp@ 2>r over+ tp! >in! compiler _auto 2r> tp! >in! ;
+:. _eval eval. '
+:. _exec catch 0;  _back ."_<-error:_" c@+ type cr  2drop
   anon@ 0- 0= IF drop H@ dup@ swap 5+ c@+ + 1+ H! THEN
-  here - allot  0 SC c! anon:` 0<>`
-  START `eval `noauto@ 0- drop 0= IF ;` THEN ENTER
-:^ `top ui 0 `noauto! tib 1024 under accept 0- 0= UNTIL
+  here - allot  0 SC c! anon:` 0<>`  START _eval ENTER
+:^ _top pvt ui 0 noauto! tib 1024 under accept 0- 0= UNTIL
 : bye` ;` cr 0 exit ;
 : help` !"Can't_find_file_ff.ff_needed_for_help!"
-:^ doargv argc 1- 0; 1 `argv swap 2+ `argv over- tuck tib place swap `eval ;
-: `boot ossetup doargv `top ;
-`boot ' `bootxt! ;
+:^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap _eval ;
+:. _boot ossetup doargv _top ;
+_boot ' _bootxt! ;

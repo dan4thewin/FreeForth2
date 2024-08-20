@@ -1,5 +1,4 @@
 #!ff needs
-needs full.ff
 \ $Id: hanoi,v 1.2 2006-12-15 11:21:51 lavarenn Exp $
 \ Hanoi Tours (with four conditionally compilable display variations)
 

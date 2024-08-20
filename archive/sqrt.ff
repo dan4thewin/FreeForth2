@@ -1,0 +1,17 @@
+"_sqrt" features append \ integer square root (bit per bit algorithm, see Wikipedia)
+
+: sqrt  \ u -- sqrt(u) ; unsigned input, rounded (or truncated [*]) output
+  0 $4000'0000  \ -- u sqrt one ; u = remainder, one = current bit
+  BEGIN dup>r + \ -- u sqrt+one | == one
+    u< IF r - ELSE swap over- swap r + THEN \ undo(bit=0), or reduce u(bit=1)
+    1 >> r> 4/  \ -- u sqrt/2 one/4 ; (note: "1 >>" doesn't propagate MSBit)
+  0= UNTIL drop \ -- u sqrt ; final remainder and truncated square root
+  \ [*] (un)comment the following line for a (rounded)truncated result: [*]
+  u> IF 1+ THEN \ -- u sqrt ; round to nearest integer
+  nip \ -- sqrt
+;
+
+EOF
+
+sqrt ( u -- sqrt(u) ) integer square root (rounded or truncated, see ff.ff)
+  see also: fsqrt  ff.ff

@@ -1,0 +1,263 @@
+"_uart!" features append \ Serial interface
+
+\ HOWTO:
+\ + list all available comm-ports:  .ports` \ Lin:ttyS0..ttyUSB0.. Win:COM1..
+\ + select one of 4 UART contexts:  3 uart! \ default: 0 uart! 0 port!
+\ + select context comport number:  1 port! \ max=63, Linux:32-63=ttyUSB0..31
+\ + select speed and open comport:  115200 bps \ no default speed
+\ + select parity (default=none) :  evenParity \ oddParity noParity
+\ + display current context conf.:  .bps` \ macro-executes previous anon-def
+\ + receive/send 1 byte, a buffer:  RX(--c) TX(c--) XRECV(@ #--) XSEND(@ #--)
+\ + trace received and sent bytes:  utrace on  \ trace off (disable)
+\ + emulate a very dumb terminal:   dumbterm   \ dumpterm  (hexa)
+
+create COM \ UART current context
+-1 , \ file-descriptor (-1=invalid)
+ 0 , \ bps<<8, USB<<7, port<<2 (/dev/ttyS0=COM1 /dev/ttyUSB0=USB1), context#
+-1 , 0 ,  -1 , 1 ,  -1 , 2 ,  -1 , 3 , \ 4 contexts
+: uart! \ n -- ; switch UART context
+  COM 2@ over 3& 1+ 8* COM+ 2!  3& 1+ 8* COM+ 2@ COM 2!
+;
+
+\ Linux implementation requires: asroot> chmod o+rw /dev/ttyS?
+\ Note: /bin/stty is used to configure "raw" access to /dev/ttyS?;
+\ using /bin/setserial to setup the speed allows all 115200 submultiples.
+\ http://ftdi-usb-sio.sourceforge.net USB-TO-SERIAL "FTDI" converter cable:
+\ - set tty->termios->c_cflag speed to B38400
+\ - set your real speed in tty->alt_speed; it gets ignored when alt_speed==0
+
+: port! \ n -- ; setup port no: 0=/dev/ttyS0 31=ttyS31 32=ttyUSB0 63=ttyUSB31
+  $3F& 4*  COM 4+ @ 3& +  COM 4+ !
+;
+: .ports` \ -- ; displays all available ttyS* or ttyUSB* ports
+  "/dev/ttyUSB0^@" "/dev/ttyS0^@"
+  2 BEGIN >r 32 BEGIN >r 2dup+ 1- \ -- @ # @+#-1
+    r ~ $1F& 10 /% swap '0'+ swap 0- 0<> IF '0'+ swap THEN rot tuckc! 1- c!
+    2dup openr dup eob $5401 rot ioctl swap close drop 0- drop \ -- @ #
+    0= IF over 5+ over 5- type space THEN
+  r> 1- 0= UNTIL drop 2drop r> 1- 0= UNTIL drop
+;
+: bpsx  COM 2@ SKIP \ to skip "close"
+: bps \ bps -- ; open UART r/w at bps bits-per-second in raw mode[n,8,1]
+  COM 2@ close THEN drop  $FF& \ -- bps s ; flush serial, s with speed null
+  "/bin/stty___38400_raw_-echo_cs8_-parenb_-cstopb_</dev/ttyUSB0_"
+  \ 123456789012345^                                ^1098^65432^0
+  dup>r swap dup>r + 1- >r \ -- bps s | == # @ @+#-1 ; setup port type&number:
+  dup $80& 0<> drop IF "ttyUSB" ELSE "./ttyS" THEN r 7- place drop
+  dup 4/ $1F& 10 /% 0- 0= IF $10- swap THEN '0'+ swap '0'+ r tuckc! 1- c!
+\ '0'+ r 1- c! '0'+ r c!
+  \ -- bps s | == # @ @+#-1
+[1] [IF] \ with /bin/stty only, for standard baudrates:
+  over $100* + swap r> swap r 16+ swap \ -- s @+#-1 @+16 bps | == # @
+  7 TIMES 0- 0<> IF 10 /% >r '0'+ ELSE >r $20 THEN overc! 1- r> REPEAT 2drop
+  \ -- s @+#-1 | == # @ ; /bin/stty command ready
+[ELSE] \ with /bin/setserial (to be installed), for custom baudrates:
+  tuck $80& 0<> 115'200_ IF 24'000'000_ THEN \ -- s bps clk | -- # @ @+#-1
+  swap under / tuck / $100* rot + \ -- div s ; s with bps
+  \ man setserial: gives 115200/divisor bps when 38400 bps asked
+  "/bin/setserial_/dev/ttyUSB0__spd\_cust_divisor_______3" \ -- div s @ #
+  \ 123456789ABCDE^
+  over $F+ r 12- swap 13 cmove \ copy port type/number from /bin/stty command
+  dup>r swap dup>r + 1- rot \ -- s @+#-1 div | -- # @ @+# # @ ; setup divisor:
+  7 TIMES 0- 0<> IF 10 /% >r '0'+ ELSE >r $20 THEN overc! 1- r> REPEAT 2drop
+  r> r> shell r> \ -- s @+# | == # @ ; execute /bin/setserial command
+[THEN] \ -- s @+#-1 | == # @
+  r> r> shell \ -- s @+#-1 ; execute /bin/stty command
+  dupc@ $20- 0<> 12_ IF 1+ THEN swap 12- swap openw tuck COM 2! ?ior
+;
+
+\ variable `fdset  0 , 0 ,  \ the 2 zeros are a null timeval
+\ : select 5 142 syscall ; \ timeval* exceptfds* writefds* readfds* n -- ?
+\ : TX? \ -- ; nz? ; returns zFALSE if TX would wait for available space
+\   1 COM@ << `fdset! \ fd_set WRITE; select will return 0 or 1 (or 0<)
+\   `fdset 4+ 0 `fdset 0 $20 select dup ?ior 0- drop
+\ ;
+: RX? \ -- ; nz? ; returns zFALSE if RX would wait for available data
+  COM@ fdin?
+;
+: `waitRX \ -- c ; waits until RX? or throws KBDirq/RX when key?
+  1 COM@ << 1+ fdset! \ fd_set READ([n]=uart,[0]=stdin)
+  0 0 0 fdset $20 select ?ior \ -- ; sleep until key? or RX?
+  fdset@ 1& 0<> IF !"KBDirq/RX" ;THEN
+  io_ 1 under COM@ read ?ior c@
+;
+
+\ Linux functions for UART signals control:
+\ DB9-25: 1<DCD<8 2<RD<3 3>TD>2 4>DTR>20 5-GND-7 6<DSR<6 7>RTS>4 8<CTS<5 9<RI<22
+\ DB9F-0: 1<DCD<4 2<RD<1 3>TD>7 4>DTR>9  5-GND-5 6<DSR<3 7>RTS>8 8<CTS<2 9<RI<6
+\ DB9F-1:        2<RD<10 3>TD>12         5-GND<5  3V3<15 7>RTS>13 8<CTS<11
+\ C02kbd:         8<BLTX 7>BLRX 2>RST    1-GND           3>TCK  3>3V
+\ C03kbd:         3<UTX1 2>URX1          1-GND    8>3V3         7>3V
+\ see Linux Serial Programming HOWTO
+\ - ioctl requests from /usr/include/asm/ioctls.h:
+\ . TCGETS      5401  GETStruct termios
+\ . TCSETS      5402  SETStruct termios
+\ . TCSBRK      5409  SendBReaK during (int)arg*100ms
+\ . TIOCMGET    5415  ModemGET signals
+\ . TIOCMBIS    5416  ModemBItSet
+\ . TIOCMBIC    5417  ModemBItClear
+\ . TIOCMSET    5418  ModemSET signals
+\ . TIOCGSERIAL 541E  GetSERIAL
+\ . TIOCSSERIAL 541F  SetSERIAL
+\ - TCGETS/TCSETS (struct*termios)arg bits from /usr/include/asm/termbits.h:
+\ . c_cflag:
+\ CBAUD   $100F \ &10017   struct termios { // 25 bytes:
+\ B4800   $000C \ &00014     uint c_iflag;  // input   mode flags
+\ B9600   $000D \ &00015     uint c_oflag;  // output  mode flags
+\ B38400  $000F \ &00017     uint c_cflag;  // control mode flags
+\ B115200 $1002 \ &10002     uint c_lflag;  // local   mode flags
+\ CS8     $0030 \ &00060     uchar c_line;  // line discipline
+\ PARENB  $0100 \ &00400     uchar c_cc[8]; // control characters
+\ PARODD  $0200 \ &01000   };
+\ - TIOCM (int*)arg bits from /usr/include/asm/termios.h:
+\ TIOCM_LOOP 8000 16:                  struct winsize {  // 8 bytes:
+\ TIOCM_OUT2 4000 15>                    ushort ws_row, ws_col;
+\ TIOCM_OUT1 2000 14>                    ushort ws_xpixel, ws_ypixel;
+\ TIOCM_DSR  0100 8< DataSetReady      };
+\ TIOCM_RI   0080 7< RingIndicator     struct termio {   // 17 bytes: obsolete
+\ TIOCM_CD   0040 6< CarrierDetect       ushort c_iflag; // input   mode flags
+\ TIOCM_CTS  0020 5< ClearToSend         ushort c_oflag; // output  mode flags
+\ TIOCM_SR   0010 4: SecondaryReceive    ushort c_cflag; // control mode flags
+\ TIOCM_ST   0008 3: SecondaryTransmit   ushort c_lflag; // local   mode flags
+\ TIOCM_RTS  0004 2> RequestToSend       uchar c_line;   // line discipline
+\ TIOCM_DTR  0002 1> DataTerminalReady   uchar c_cc[8];  // control characters
+\ TIOCM_LE   0001 0: LineEnable        };  // struct termios: s/ushort/uint/
+
+: DSR? $100 SKIP
+: RI?  $080 SKIP
+: CD?  $040 SKIP
+: CTS? $020 THEN THEN THEN
+  eob $5415 COM@ ioctl ?ior \ 5415=TIOCMGET
+  eob@ & drop ; \ -- z?
+: DTR1 $5416 SKIP         \ 5416=TIOCMBIS  5417=TIOCMBIC
+: DTR0 $5417 THEN 2 SKIP  \    2=TIOCM_DTR.4  4=TIOCM_RTS.7
+: RTS1 $5416 SKIP         \ MSP:~DTR=RST/NMI,~RTS=TCK/TST-VPP
+: RTS0 $5417 THEN 4 THEN
+  eob tuck! swap COM@ ioctl ?ior ;
+: UBREAK 1 $5409 COM@ ioctl ?ior ; \ 1=100ms
+
+: `TCGETS $5401 SKIP \ termios@ --
+: `TCSETS $5402 THEN COM@ ioctl ?ior ;
+: noParity   $0000      SKIP  \ default
+: oddParity  $0300 SKIP
+: evenParity $0100 THEN THEN $FCFF
+  eob `TCGETS eob 8+ @ & | eob 8+ ! eob `TCSETS
+;
+: .bps` \ -- ; display current context
+  ;` COM 4+ @ ."uart" dup 3& .\  dup $80& 0<> drop IF .":ttyUSB" ELSE .":ttyS" THEN
+  dup 4/ $1F& .dec  eob `TCGETS  $100/ .dec ."bps_8bits_"  eob 8+ @ $300&
+  BEGIN 0<> IF $200& 0<> IF ."odd" BREAK ."even" BREAK ."no" END drop ."Parity_1stop^J"
+;
+
+variable utrace  \ default 0: no trace
+: RX \ -- c ; receive one byte
+  `waitRX \ wait aborted by throwing "KBDirq/RX" exception when "key?"
+  utrace@ 0- 0<> drop IF ."<" dup .b THEN
+;
+: TX \ c -- ; send one byte
+  utrace@ 0- 0<> drop IF .">" dup .b THEN
+  io tuckc!  1 COM@ write ?ior
+;
+: XRECV TIMES RX overc! 1+ REPEAT drop ; \ @ # -- ; receive # bytes at @
+: XSEND TIMES c@+ TX REPEAT drop ; \ @ # -- ; send # bytes starting from @
+
+: dumbterm`  1 SKIP    \ hexa[00..1F]ascii[20..7E]hexa[7F..FF]CR[0D]LF[0A]
+: dumpterm`  0 THEN >r \ hexa[00..FF]
+  BEGIN normal RX ' catch 0- drop 0= IF \ (nz when key?)
+    inverse r 0- 0<> IF \ dumbterm:
+      $7E_ <= IF $20_ >= IF : `e drop emit AGAIN 13_ = `e ? 10_ = `e ? THEN
+    THEN '\'_ emit .b AGAIN
+    here dup 256 accept \ -- here n ; Lin:here+n-1:^J Win:here+n-2:^M^J
+    over+ 1- 13 swap ! \ EOL:^M^@^@^@
+    BEGIN c@+ 0- 0<> WHILE \ -- @ c
+      '^' CASE c@+ $40^ ELSE \ -- @ c ; "^c":control-char
+      '\' CASE dup 2+ swap 1- '$' overc! 3 number \ -- @+2 n 0 ; "\xx":hexa
+        0- 0<> drop IF swap 1- nipdup 1- c@ \ -- @+1 c
+        13 <> drop WHILE \ -- @+1 c ; "\EOL":zapCR
+        'q' = drop IF 2drop rdrop ;THEN \ "\q":quit.
+      THEN      THEN    THEN TX \ -- @+1
+    REPEAT 2drop \ --
+  REPEAT
+;
+\ 10Ksource = 2Kcode + 0.4Kheaders
+
+EOF
+
+  -----------
+  SERIAL COMM
+
+uart! ( n -- ) selects the current serial context: up to 4 (n=0,1,2,3) serial
+  contexts may be maintained concurrently, all other serial commands operate
+  implicitly in the current serial context.
+  : uart! COM 2@ over 3& 1+ 8* COM+ 2!  3& 1+ 8* COM+ 2@ COM 2! ;
+port! ( n -- ) selects the port number of the current serial context:
+  Lin: n=0:/dev/ttyS0 .. 31:/dev/ttyS31, 32:/dev/ttyUSB0 .. n=63:/dev/ttyUSB31
+  Win: n=1:COM1 .. n=64:COM64  (Note: Windows"COM1" == Linux"/dev/ttyS0")
+.ports` ( -- ) displays a list of all available serial ports
+  Win: already open ports won't appear in this list
+  see also: uart! bps noParity RTS0 RX dumpterm COM  ff.ff
+
+COM ( -- @ ) constant: serial contexts base address; "COM@" returns the serial
+  file-descriptor(Linux) or handle(Windows) of the current serial context.
+  create COM -1 , 0 , \ current: file-desc/handle(-1=invalid), 4*port#+context#
+  -1 , 0 ,  -1 , 1 ,  -1 , 2 ,  -1 , 3 , \ 4 saved serial contexts
+  see also: uart!  ff.ff
+
+bps ( n -- ) opens the current serial port (selected by "port!" in the current
+  serial context) for read-write access, with speed = "n" Bits-Per-Second,
+  8 data-bits, no parity, 1 stop-bit. On failure, throws an exception,
+  otherwise the open file-descriptor(Linux) or handle(Windows) is stored in
+  the current serial context (and may be obtained with "COM@", as for example
+  to close the current serial port: "COM@ close ?ior").
+.bps` ( -- ) macro-executes the previous anonymous definition, then displays
+  the current UART context number, port, speed, data-bits, parity, stop-bit:
+  Lin: 0:ttyS0 9600 bps 8bits noParity 1stop \ after: "9600 bps .bps"
+  Win: 1:COM1 9600 bps 8bits oddParity 1stop \ after: "9600 bps oddParity .bps"
+  see also: bps uart! noParity RTS0  ff.ff
+
+noParity ( -- )
+oddParity ( -- )
+evenParity ( -- ) selects the parity of the current serial port, which must
+  already have been open (with "bps"); default is "noParity".
+  see also: noParity uart! bps RTS0  ff.ff
+
+DSR? ( -- ; nz? ) tests DSR input (DataSetReady)
+CTS? ( -- ; nz? ) tests CTS input (ClearToSend)
+RI? ( -- ; nz? ) tests RI input (RingIndicator)
+CD? ( -- ; nz? ) tests CD input (CarrierDetect)
+RTS0 ( -- ) clears RTS=0 (RequestToSend)
+RTS1 ( -- ) forces RTS=1
+DTR0 ( -- ) clears DTR=0 (DataTerminalReady)
+DTR1 ( -- ) forces DTR=1
+UBREAK ( -- ) clears during 100 ms the serial data line (i.e. generate a BREAK)
+  Clears or forces the modem-control-lines of the current serial port.
+  see also: RST0 uart!  ff.ff
+
+RX ( -- c ) returns next byte "c" from the current serial port; if none is
+  available, waits until one is received, or throws the exception "KBDirq/RX"
+  when "key?" becomes true
+RX? ( -- ; nz? ) returns zFALSE if "RX" would wait
+key? ( -- ; nz? ) returns zFALSE if "key" would wait
+TX ( c -- ) sends byte "c" into the current serial port
+XRECV ( @ # -- ) receives from the current serial port "#" bytes into "@"
+  : XRECV TIMES RX overc! 1+ REPEAT drop ;
+XSEND ( @ # -- ) sends to current serial port "#" bytes read from buffer "@"
+  : XSEND TIMES c@+ TX REPEAT drop ;
+  see also: RX utrace uart! bps  ff.ff
+
+dumpterm ( -- ) displays every byte received from the current serial port,
+  in reverse video, in hexadecimal (with ".b") preceded by an '\',
+  and sends every line typed at the keyboard, ending with a CR(ascii13=^M);
+  '^' and '\' are interpreted as prefixes:
+  . '^' toggles the next character.bit6 ("^@"="\00", "^A"="\01" etc)
+  . '\' followed by 2 hexadecimal digits generates the corresponding ASCII code
+  . '\' at end of line inhibits the transmission of the ending CR
+  . '\' followed by 'q' terminates dumpterm execution, ignoring end of line
+  . '\' is otherwise ignored (use "\\" resp. "\^" to generate a '\' resp. '^')
+dumbterm ( -- ) same as "dumpterm", except displayable received bytes, i.e.
+  CR=ascii13, LF=ascii10, and space=ascii32 upto ~=ascii126, are normally
+  displayed (as single characters, instead of hexadecimal).
+utrace ( -- @ ) variable: when non-null, the current serial port communicated
+  data bytes are traced in hexadecimal (with ".b") with RX (resp. TX) bytes
+  preceded by a "<" (resp. ">")
+  see also: dumpterm RX uart!  ff.ff

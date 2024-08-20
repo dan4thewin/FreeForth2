@@ -337,7 +337,7 @@ macro WORD name, xt, ct {       ; generate a header entry:
 }
 macro GENWORDS {                ; last called, first definition of GENWORDS
         dd 0                    ; don't-care xt
-        db 0                    ; don't-care ct
+        db -1                   ; -1 ct stop value for hidepvt
         CDB ""                  ; empty counted string marks end of headers
 }
 macro CODE name, entry {        ; subroutine entry
@@ -349,7 +349,7 @@ macro DATA name, addr, init {   ; data variable
 addr    dd init                 ; initialized data buffer
 }
 macro CSTE name, value {        ; literal constant
-        WORD name, value, 9     ; literal value
+        WORD name, value, $21   ; literal value
 }
 macro VECT name, entry {        ; vectorizable subroutine entry
         CODE name, entry
@@ -417,8 +417,8 @@ DATA "H",H,H0                   ; headers
 DATA "anon",anon,ebp0
 DATA "CS0",CS0,0                ; CALLstack base address, set later
 DATA "DS0",DS0,0                ; DATAstack base address, set later
-DATA "`bssend",bssend,0
-DATA "`bootxt",bootxt,0
+DATA "_bssend",bssend,0
+DATA "_bootxt",bootxt,0
 DATA "libc",_libc,0
 
 ;;; -------------------------------------------------------
