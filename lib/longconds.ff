@@ -11,7 +11,9 @@
 \ E0:loopnz/loopz E2:loop/jecxz(byte) E8:call/jmp(long) EB:jmp(byte)
 
 pvtmargin
+:. +jmp mrk 2@ 3& >SC >r TIMES c, REPEAT here mrk 4+ ! r> , ;
 :. _then here over- 4- swap ! 0 callmark ! ;
+: IF.' cond.
 : IF' cond $0F c, $10+ c, here SC c@ , ;
 : SKIP' $E9 c, here SC c@ , ;
 : ELSE' SKIP' swap dupc@ SC c!
@@ -21,10 +23,13 @@ pvtmargin
 : TIMES' >r`
 : RTIMES' BEGIN` $880F08FF , 0 , ;  \ dec[eax] js.l
 : ENTER' mrk@ dup 3& >SC -4& 4- _then ;
-: WHILE' mrk 2@ 3& >SC cond $0F c, $10+ c, here mrk 4+ ! , ;
-: BREAK' mrk 2@ 3& >SC             $E9  c, here mrk 4+ ! , THEN' ;
+: WHILE.' cond.
+: WHILE' cond $10+ $0F 2 +jmp ;
+: jmp' $E9 1 +jmp ;
+: BREAK' jmp' THEN' ;
 : CASE' =` drop` IF' drop` ;
 : AGAIN' $EB -jmp THEN' ;
+: UNTIL.' cond.
 : UNTIL' TILL`
 : END' mrk 2@ dup 3& >SC -4& swap \ -mrk +mrk
   START dup@ swap _then ENTER = UNTIL \ -mrk -mrk

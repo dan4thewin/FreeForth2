@@ -2,7 +2,7 @@
 \ debug` ( -- ) swaps normal compiler for debug compiler
 \ nodebug` ( -- ) swaps compiler back to normal
 " debug" features append
-needs see.ff needs longconds.ff +longconds ;
+needs see.ff ;
 
 pvtmargin
 : _append ( @ # c@ -- ) 2dup c@ + over 2>r c@+ + place drop 2r>
@@ -39,9 +39,9 @@ variable _here pvt here _here!
 		2 CASE ( leave on stack ) BREAK 3 CASE lit` BREAK !"bad type" END ;
 :. xtct		find 0- 0= IF which@ 4+ c@ swap THEN ;
 :. endc!	>r 2dup + r> swap c! ;
-:. dbgc		BEGIN wsparse 0- 0> WHILE
-		here ol+ _here@ = 2drop IF rewind ELSE here _here! THEN
-		@>si obs, 2dup bba
+:. dbg,		here ol+ _here@ = 2drop IF rewind ELSE here _here! THEN
+		@>si obs, 2dup bba ;
+:. dbgc		BEGIN wsparse 0- 0> WHILE  dbg,
 		'`'  endc! 1+ xtct 0- 0= IF    ct AGAIN
 		1- 0 endc!    xtct 0- 0= IF 1_ ct AGAIN
 		litcomp REPEAT 2drop ;

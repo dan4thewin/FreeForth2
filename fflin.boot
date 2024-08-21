@@ -40,6 +40,7 @@ create openbuf pvt 80 allot
 :. needexec needed H@ @ execute ;
 : see` "see.ff" needexec ;
 : -d` "debug.ff" needexec ;
+: +longconds` "longconds.ff" needexec ;
 
 variable mainxt pvt
 :. _main mainxt @ execute 0 exit

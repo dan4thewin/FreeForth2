@@ -1092,9 +1092,10 @@ longconds see +longconds
   long offsets): this is efficient and encourages programmers to write small
   definitions. Would you ever need to write bigger definitions requiring long
   offsets, +longconds` switches to long forward conditionals
+  (loads longconds.ff)
 -longconds` ( -- ) switches back from +longconds` to byte forward conditionals
   WARNING: DON'T switch forth and back in the middle of a control structure!
-  see also: conditionals flow-control  full.ff
+  see also: conditionals flow-control  longconds.ff
 
 ?` ( -- ) expects the instruction compiled just before it to be a "call",
   that it converts into a conditional jump instruction, which condition

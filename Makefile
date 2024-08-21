@@ -23,6 +23,7 @@ clean:
 test: ff
 	@tabs -10
 	for d in test/*; do echo -ne $$d \\t; ./ff -f $$d | tail -1; done
+	for d in test/*; do echo -ne $$d \\t; ./ff +longconds -f $$d | tail -1; done
 	@tabs -8
 
 PREFIX=$$HOME/.local

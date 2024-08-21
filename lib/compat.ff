@@ -58,7 +58,7 @@ r`		' alias i` ;
 r2`		' alias j` ;
 2r>`		' alias unloop`
 exit		' alias osexit ;
-: exit`		$eb +jmp ;
+jmp`		' alias exit` ;
 : do`		2>r` BEGIN` ;
 : loop`		2r>` 1+` >` WHILE` 2>r` REPEAT` 2drop` ;
 : +loop`	r>` +` r>` swap` <=` WHILE` 2>r` REPEAT` 2drop` ;

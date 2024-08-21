@@ -167,10 +167,10 @@ $77 dup : u>`  lit _?2 ; : u>.`  lit _?2. ;
 :. ?off dup 2* over^ -$100& drop _off ? ;
 :. ?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition"
 : cond ?@ ?nn 1^ ;
-:. cond. 0-` drop` $74 ;
+: cond. 0-` drop` 0<>` ;
 :. SC, here SC c@ c, ;
+: IF.` cond.
 : IF` cond c, SC, ;
-: IF.` cond. c, SC, ;
 : SKIP` $EB c, SC, ;
 : ELSE` SKIP` swap dupc@ SC c!
 : THEN` dupc@ >SC
@@ -189,21 +189,22 @@ create mrk 0 , 0 ,
 : TIMES` >r`
 : RTIMES` >C1 BEGIN` $007808FF, ,4 ;
 : ENTER` mrk@ dup 3& >SC -4& 1- _then ;
+: WHILE.` cond.
 : WHILE` cond
 : +jmp mrk 2@ 3& >SC swap c, here dup mrk 4+ ! swap - ?off c, ;
-: WHILE.` cond. +jmp ;
+: jmp` $EB +jmp ;
+: BREAK` jmp` THEN` ;
 : CASE` =` drop` IF` drop` ;
-: BREAK` $EB +jmp THEN` ;
+: TILL.` cond.
 : TILL` cond
 : -jmp mrk@ dup 3& >SC -4& -j ;
-: TILL.` cond. -jmp ;
 : AGAIN` $EB -jmp THEN` ;
+: UNTIL.` cond.
 : UNTIL` TILL`
 : END` mrk 2@ dup 3& >SC -4& swap
   START dupc@ over _then - ENTER = TILL [ mrk 2! ]
   @ $007808FF- 0= drop IF under 3+ _then rdrop` THEN
   drop mrk 2! ;
-: UNTIL.` TILL.` END` ;
 : REPEAT` $EB -jmp END` ;
 
 : s>d` dup` 0<.` ;
