@@ -66,8 +66,8 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
 $ cat cat.ff
 doargv n^
 mkmm m
-: ?ior  dup $FF | -1 = 2drop IF strerror rdrop ELSE drop THEN ;
-: cat   m mmapr ?ior m @ m mm.sz @ type m munmap 2drop ;
+: ok?   dup $FF | -1 = 2drop IF strerror rdrop ELSE drop THEN ;
+: cat   m mmapr ok? m @ m mm.sz @ type m munmap 2drop ;
 : main  0 argc 1- TIMES 1+ dup argv cat REPEAT ;
 $ ./ff -f mmap.ff -f cat.ff -f mkimage.ff
 $ make fftk
@@ -79,7 +79,7 @@ $ mv fftk ffcat
 $ ./ffcat cat.ff
 doargv n^
 mkmm m
-: ?ior  dup $FF | -1 = 2drop IF strerror rdrop ELSE drop THEN ;
-: cat   m mmapr ?ior m @ m mm.sz @ type m munmap 2drop ;
+: ok?   dup $FF | -1 = 2drop IF strerror rdrop ELSE drop THEN ;
+: cat   m mmapr ok? m @ m mm.sz @ type m munmap 2drop ;
 : main  0 argc 1- TIMES 1+ dup argv cat REPEAT ;
 ```

@@ -1438,6 +1438,7 @@ mkst ( <name> -- ) allocate space for a stat structure
 stat ( @ # st -- 0 | -n ) requests the operating system to stat a file;
   returns 0 on success and -n if an error occurred; populates st
   with a stat structure.
+st.size ( @ -- @ ) increase address of st struct with offset of size field.
   see also: mkst openr openw read write "man stat"  full.ff
 
 mmap see mkmm mmapr mmapw mmapwt

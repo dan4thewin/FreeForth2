@@ -77,7 +77,7 @@ variable ior \ I/O result, error when negative:
 
 : mkst` create` 98 allot` ;
 : stat nip tuck 98 erase 2 195 syscall ; \ stat64
-: st_size 44+ @ ;
+: st.size 44+ ;
 
 \ --------------------------------------------------------------------
 \ call back

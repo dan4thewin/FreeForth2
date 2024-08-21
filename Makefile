@@ -9,7 +9,7 @@ ff: ff.o
 	$(LD) -o $@ $<
 
 cmpl dict: ff
-	./ff -f mkimage
+	./ff -f mkimage.ff
 
 fftk.o: fftk.asm cmpl dict
 	fasm $< $@

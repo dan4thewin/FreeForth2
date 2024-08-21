@@ -8,15 +8,16 @@
 \ useful flags
 $20 equ MAP_ANON    $100 equ MAP_GROWSDOWN  $4000 equ MAP_NORESERVE
 
-: mkmm` create` 0 , 0 , -1 , PROT_READ , MAP_SHARED , anon:` ;
+: mkmm` create` 0 , 0 , -1 , PROT_READ , MAP_SHARED , 98 allot anon:` ;
 : mm.sz 4+ ;
 : mm.fd 8+ ;
 : mm.prot 12+ ;
 : mm.flags 16+ ;
+: mm.stat 20+ ;
 
 ( @ # mm xt -- @ | -n )
-: mmap_ swap >r -rot 2dup stat 0- 0< IF nip nip nip rdrop ;THEN drop st_size r mm.sz !
-  rot execute 0- 0< IF rdrop ;THEN dup r mm.fd !
+: mmap_ swap >r -rot 2dup r mm.stat stat 0- 0< IF nip nip nip rdrop ;THEN
+  drop r mm.stat st.size @ r mm.sz ! rot execute 0- 0< IF rdrop ;THEN dup r mm.fd !
   0 swap r mm.flags @ r mm.prot @ r mm.sz @ 0 6 192 syscall dup r> ! ; \ mmap2
 
 ( @ # mm -- @ | -n )
