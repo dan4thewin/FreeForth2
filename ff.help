@@ -1367,6 +1367,7 @@ stdout ( -- n ) constant: returns the console output file-descriptor/handle
   Win: these constants are initialized at startup (with GetStdHandle)
   see also: stdin accept type  fflinio.asm/ffwinio.asm
 
+FFPATH see ffpath
 ffpath ( -- @ ) variable holding the library search path populated at boot
   from the environment variable FFPATH and the defaults:
   ".:lib:$FFPATH:$HOME/.local/share/ff:/usr/local/share/ff"
@@ -1657,23 +1658,30 @@ words` ( -- ) displays the symbol table headers, last defined first displayed
 pvt` ( -- ) marks the most recent header as private by setting ct bit 8
   : ct|! H@ 4+ dupc@ rot | swap c! ;
   : pvt` 8 ct|! ;
+FFHIDE see hide
+hide ( -- @ ) variable - if set to 0 hidepvt does nothing.  Use the environment
+  variable setting "FFHIDE=0" before running ff to prevent hiding in ff.ff.
 hidepvt` ( -- ) removes from the compiler symbol table all the headers with
   a ct having bit 8 set (either by :. or pvt); the memory space of the
   removed headers is recovered by packing up all the other headers, thus
   freeing heap space, and also speeding up future symbol table searches.
   source code in ff.boot:
-  : hidepvt` H@ 0 over 2- c! dup 7- swap       \ push all pvt-marked addresses
-    START over 5+ c@+ + 1+ -rot 8& 0= drop swap IF nip THEN
-    ENTER dup 4+ c@ dup $ff- drop 0<> IF dup $10- drop THEN 0= UNTIL 2drop
+  variable hide hide on
+  :^ hidestop 0<> IF dup $10- drop THEN ;
+  : hidepvt` hide@ 0; drop H@ 0 over 2- c! dup 7- swap    \ set up sentinel
+    START over 5+ c@+ + 1+ -rot 8& 0= drop swap IF nip THEN \ push all pvt hfa
+    ENTER dup 4+ c@ dup $ff- drop hidestop 0= UNTIL 2drop
     dup 5+ c@+ + 1+ >r START over 5+ c@+ + 1+ swap        \ then pop addresses
       START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop   \ and pack headers
-    ENTER H@ 7- = drop UNTIL drop r> H! ;      \ based on hid'm from FreeForth
-pvtmargin ( -- ) updates the most recent header so hidepvt stops
-  at that point leaving earlier headers untouched. Use at the start of a
-  file to update the marker created when the file is loaded by needs.
-  Use hidepvt at the end of the file to remove headers marked pvt created
-  within the file.
+  ENTER H@ 7- = drop UNTIL drop r> H! ;      \ based on hid'm from FreeForth
+pvtmargin ( -- ) sets bit 16 in the ct of the most recent header so hidepvt
+  stops at that point leaving earlier headers untouched. Loading a file with
+  needs creates an initial marker and calls pvtmargin. Add hidepvt to the end
+  of the file to remove headers marked pvt created within the file.
   : pvtmargin $10 ct|! ;
+hidestop ( -- ) a vectorized word that stops hidepvt when a pvtmargin-marked
+  header is found. Disable hidestop to run hidepvt on all headers: hidestop n^
+  Reset hidestop: hidestop ^^
   see also: pvt hidepvt :. mark header  ff.boot
 
 mark` ( <name> -- ) creates a self-forgetting mark
@@ -1934,10 +1942,10 @@ ms@ ( -- u ) returns the system current milliseconds count
 test the file test.ff provides a test harness akin to the one from John Hayes
   and borrowing from TAP (test anything protocol).  Run "make test" from the
   shell in the source directory to run all unit tests.
-plan a variable to hold the number of tests
-okcnt a variable to hold the number of tests that pass
-skipcnt a variable to hold the number of tests skipped
-verbose a variable - if nonzero, test cases are echoed
+plan ( -- @ ) variable to hold the number of tests
+okcnt ( -- @ ) variable to hold the number of tests that pass
+skipcnt ( -- @ ) variable to hold the number of tests skipped
+verbose ( -- @ ) variable - if nonzero, test cases are echoed
 t{ ( -- ) starts a new test: stack must be empty
 -> ( -- ) records stack depth
 }t ( -- ) checks that the stack contents before and after -> match

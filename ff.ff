@@ -211,5 +211,5 @@ r0!` ' alias r!`
 : ms  \ n -- ; wait n milliseconds
   1000 /% swap 1'000'000* swap eob 2!  0 eob 2 162 syscall drop ;
 
-\ uncomment the following line to remove all headers marked private
+"FFHIDE" getenv 0- 0<> IF swap c@ $30- 0= IF hide off THEN THEN 2drop ;
 hidepvt " hidepvt" features append ;

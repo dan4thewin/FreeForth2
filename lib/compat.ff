@@ -1,7 +1,6 @@
 \ shim aimed at passing most of the Forth 2012 Core word set tests
 " compat" features append
 
-pvtmargin
 \ swap find for one that ignores case and won't return a word being defined
 :. sz-		2dup 5+ c@ - drop ;
 :. nm-		3dup 6+ swap $-. drop ;

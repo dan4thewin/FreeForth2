@@ -4,7 +4,6 @@
 " debug" features append
 needs see.ff ;
 
-pvtmargin
 : _append ( @ # c@ -- ) 2dup c@ + over 2>r c@+ + place drop 2r>
   2dup c! + 1+ 0 swap c! ;
 \ source copied here during compilation

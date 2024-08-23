@@ -1,6 +1,5 @@
 " fpu" features append \ Uses FPU hardware stack: 8-cells * 80-bits(tword)
 \ Stack notation: "f:x" represents 80-bits float "x" on FPU stack
-pvtmargin
 10 constant fcell \ fcell+ fcell- fcell* fcell/ (see literalcompiler)
 
 \ FPU Status-Word(ro) and Control-Word(rw) access:

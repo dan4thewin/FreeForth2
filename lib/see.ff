@@ -5,7 +5,6 @@
 \ findnm ( @ -- )		types the name of the header closest to @ and the offset
 " see" features append
 
-pvtmargin
 variable xt pvt
 :. sz-		2dup 5+ c@ - drop ;
 :. nm-		3dup 6+ swap $- drop ;

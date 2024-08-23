@@ -156,9 +156,10 @@ $77 dup : u>`  lit _?2 ; : u>.`  lit _?2. ;
 : ?` -call _?` ;
 : '` -call lit` ;
 : @^` -call over` $1D8B, s08 1+ , ;
-: !^` -call $1D89, s08 1+ , drop` ;
 : ^^` -call $05C7, ,2 dup 1+ , 6+ , ;
-: n^` -call $05C7, ,2 , $441F0F , ;
+:. nop ;
+: n^` nop '
+: !^` -call $1D89, s08 1+ , drop` ;
 : x^` -call 6+ dcall, ;
 : lib:` :` #lib lit` #fun ' call, ;` ;
 : fun:` :` lit` lit` #call ' call, ;` ;
@@ -269,9 +270,11 @@ variable base 10 base!
 : .hdr+ dup ."$" .l .": " dup @ ."$" .l space 4+ dup c@ . 1+ c@+ 2dup type + 1+ ;
 : .hdrs H@ START .hdr+ cr ENTER dup 5+ c@ 0- 0= drop UNTIL drop ;
 : .hdr .hdr+ drop ;
-: hidepvt` H@ 0 over 2- c! dup 7- swap
+variable hide hide on
+:^ hidestop 0<> IF dup $10- drop THEN ;
+: hidepvt` hide@ 0; drop H@ 0 over 2- c! dup 7- swap
   START over 5+ c@+ + 1+ -rot 8& 0= drop swap IF nip THEN
-  ENTER dup 4+ c@ dup $ff- drop 0<> IF dup $10- drop THEN 0= UNTIL 2drop
+  ENTER dup 4+ c@ dup $ff- drop hidestop 0= UNTIL 2drop
   dup 5+ c@+ + 1+ >r START over 5+ c@+ + 1+ swap
     START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop
   ENTER H@ 7- = drop UNTIL drop r> H! ;

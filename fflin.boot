@@ -34,7 +34,7 @@ create openbuf pvt 80 allot
 : needs` ;` wsparse
 : needed 2dup+ dupc@ >r dup>r '`' swap c! 1+ find 2r> c! 0= IF 2drop ;THEN 1-
   2dup openlib 0- 0< IF drop type space !"Can't_open_file." ;THEN
-  >r marker tp@ eob over- under r read r> close drop
+  >r marker pvtmargin tp@ eob over- under r read r> close drop
   over w@ [ "#!" drop w@ ] lit = 2drop
   IF bounds BEGIN c@+ 10- 0= drop UNTIL swap over- THEN eval 0 noauto! ;
 :. needexec needed H@ @ execute ;
