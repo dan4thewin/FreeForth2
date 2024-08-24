@@ -1,4 +1,5 @@
 \ see` ( <name> -- )		native disassembly of <name>
+\ see. ( @ -- )			native disassembly starting at @
 \ dis` ( <name> -- )		calls gdb to disassemble <name>
 \ findxt ( @ # -- xt len )	looks for string in headers, skips constants and aliases
 \ findh ( @ -- hdr@ offset )	finds the header with xt closest to @
@@ -17,26 +18,18 @@ variable xt pvt
 		nip nip @ xt@ over- ;
 : findh		H@
 		START 2dup @ < 2drop WHILE nexth ENTER stop? REPEAT
-		swap over @ - ;
+		dup which! swap over @ - ;
 : findnm	findh swap 5+ c@+ type 0; ."+" .x ;
-
-create nbuf pvt 12 allot
-:. nac		nbuf appendc ;
-:. nac!^	nac ' putc !^ ;
-:. nac^^	putc ^^ ;
-:. n2str	0 nbuf! execute nbuf c@+ ;
-:. u2str	nac!^ 10 .ub\ ' n2str nac^^ ;
-:. x2str	nac!^ .x\ ' n2str nac^^ ;
 
 create buf pvt 80 allot
 :. ba		buf append ;
-:. ua		u2str ba ;
-:. xa		x2str ba ;
+:. ua		0 <# #s #> ba ;
+:. xa		s>d swap over dabs <# x#s '$' hold rot sign #> ba ;
 :. gdbscript	over+ swap
 		0 buf!
-		"attach_" ba getpid ua "^J" ba
+		"attach " ba getpid ua "^J" ba
 		"set disassembly-flavor intel^J" ba
-		"disass/r_" ba ua "," ba ua "^J" ba ;
+		"disass/r " ba ua "," ba ua "^J" ba ;
 :. gdbrun	"gdb --batch -x .see | less -F -+c" shell ;
 :. tmpsave	openw0 dup >r ?ior r write ?ior r close ?ior rdrop ;
 :. gdbdump	gdbscript buf c@+ ".see" tmpsave gdbrun ;
@@ -59,10 +52,13 @@ variable unknown pvt
 create op pvt 256 4* allot ;
 .A? ' 256 TIMES dup op r 4* + ! REPEAT drop ;
 
-:. callop	c@ 4* op+ @ execute ;
+\ each "op" advances @cur according to the opcode ("inc ebx" adds 1, "call" adds 5)
+\ and returns a stop flag in TOS; a jump changes @end to max of @end and jump target
+:. callop	c@ 4* op+ @ execute ;	\ @end @cur -- @end+? @cur+n stop?
 :. oneop	0 buf! callop buf c@+ 40 atx type cr ;
-:. _see		0 unknown! over+ swap
-		BEGIN dup oneop 2dup - drop 0<= UNTIL
+: see.		0 unknown! dup	\ ( @ -- ) dup address to serve as @end and @cur
+		\ loop finishes upon a non-zero stop flag when @cur > @end
+		BEGIN dup oneop >r 2dup - drop 0>= IF rdrop AGAIN r> 0- drop 0<> UNTIL
 		2drop unknown@ 0; ."unknown bytes: " . cr ;
 
 \ Op/En	Operand 1	Operand 2
@@ -118,47 +114,48 @@ create 80exts	pvt 24 allot "addor adcsbbandsubxorcmp" 80exts swap move
 \ 2-byte opcodes starting with 0F
 $0f :. 0f	dup 1+ callop ;op
 
-$01 :. add	2b  "add    " ba mr ;op
-$03 :. add.	2b  "add    " ba rm ;op
-$09 :. or	2b  "or     " ba mr ;op
-$0b :. or.	2b  "or     " ba rm ;op
-$11 :. adc	2b  "adc    " ba mr ;op
-$21 :. and	2b  "and    " ba mr ;op
-$29 :. sub	2b  "sub    " ba mr ;op
-$2b :. sub.	2b  "sub    " ba rm ;op
-    :. _rdtsc	1b. "rdtsc  " ba ;	\ $0f $31
+$01 :. add	2b  "add    " ba mr 0 ;op
+$03 :. add.	2b  "add    " ba rm 0 ;op
+$09 :. or	2b  "or     " ba mr 0 ;op
+$0b :. or.	2b  "or     " ba rm 0 ;op
+$11 :. adc	2b  "adc    " ba mr 0 ;op
+$21 :. and	2b  "and    " ba mr 0 ;op
+$29 :. sub	2b  "sub    " ba mr 0 ;op
+$2b :. sub.	2b  "sub    " ba rm 0 ;op
+    :. _rdtsc	1b. "rdtsc  " ba 0 ;	\ $0f $31
 $31 :. xor	_rdtsc ' 0falt
-		2b  "xor    " ba mr ;op
-$33 :. xor.	2b  "xor    " ba rm ;op
-$39 :. cmp	2b  "cmp    " ba mr ;op
-$3b :. cmp.	2b  "cmp    " ba rm ;op
-$42 :. incD	1b  "inc    edx" ba ;op
-$43 :. incB	1b  "inc    ebx" ba ;op
-$45 :. incBP	1b  "inc    ebp" ba ;op
-$49 :. decC	1b  "dec    ecx" ba ;op
-$4a :. decD	1b  "dec    edx" ba ;op
-$4b :. decB	1b  "dec    ebx" ba ;op
-$4d :. decBP	1b  "dec    ebp" ba ;op
-$50 :. pushA	1b  "push   eax" ba ;op
-$51 :. pushC	1b  "push   ecx" ba ;op
-$52 :. pushD	1b  "push   edx" ba ;op
-$53 :. pushB	1b  "push   ebx" ba ;op
-$55 :. pushBP	1b  "push   ebp" ba ;op
-$58 :. popA	1b  "pop    eax" ba ;op
-$59 :. popC	1b  "pop    ecx" ba ;op
-$5a :. popD	1b  "pop    edx" ba ;op
-$5b :. popB	1b  "pop    ebx" ba ;op
-$5d :. popBP	1b  "pop    ebp" ba ;op
-$5e :. popSI	1b  "pop    esi" ba ;op
-$5f :. popDI	1b  "pop    edi" ba ;op
+		2b  "xor    " ba mr 0 ;op
+$33 :. xor.	2b  "xor    " ba rm 0 ;op
+$39 :. cmp	2b  "cmp    " ba mr 0 ;op
+$3b :. cmp.	2b  "cmp    " ba rm 0 ;op
+$42 :. incD	1b  "inc    edx" ba 0 ;op
+$43 :. incB	1b  "inc    ebx" ba 0 ;op
+$45 :. incBP	1b  "inc    ebp" ba 0 ;op
+$49 :. decC	1b  "dec    ecx" ba 0 ;op
+$4a :. decD	1b  "dec    edx" ba 0 ;op
+$4b :. decB	1b  "dec    ebx" ba 0 ;op
+$4d :. decBP	1b  "dec    ebp" ba 0 ;op
+$50 :. pushA	1b  "push   eax" ba 0 ;op
+$51 :. pushC	1b  "push   ecx" ba 0 ;op
+$52 :. pushD	1b  "push   edx" ba 0 ;op
+$53 :. pushB	1b  "push   ebx" ba 0 ;op
+$55 :. pushBP	1b  "push   ebp" ba 0 ;op
+$58 :. popA	1b  "pop    eax" ba 0 ;op
+$59 :. popC	1b  "pop    ecx" ba 0 ;op
+$5a :. popD	1b  "pop    edx" ba 0 ;op
+$5b :. popB	1b  "pop    ebx" ba 0 ;op
+$5d :. popBP	1b  "pop    ebp" ba 0 ;op
+$5e :. popSI	1b  "pop    esi" ba 0 ;op
+$5f :. popDI	1b  "pop    edi" ba 0 ;op
     :. 66movi16	3b  "mov    word" ba drop mr16 ;
     :. 66movi32	3b  "mov    word" ba drop split nip mod ,a dup space c@+ .b c@+ .b drop dup ws@ xa 2+ ;
-$66 :. 66	dup 1+ c@ BEGIN $89 CASE 66movi16 BREAK $c7 CASE 66movi32 BREAK drop .A? END ;op
-$68 :. pushi32	5b  "push   "     ba xa ;op
-$69 :. imuli32	2b  "imul   " ba rm ,a .N xa ;op
-$6a :. pushi8	2b  "push   " ba se xa ;op
-$6b :. imul	3b  "imul   " ba rm ,a xa ;op
-    :. j_	ba se over+ jba ;
+$66 :. 66	dup 1+ c@ BEGIN $89 CASE 66movi16 BREAK $c7 CASE 66movi32 BREAK drop .A? END 0 ;op
+$68 :. pushi32	5b  "push   " ba xa 0 ;op
+$69 :. imuli32	2b  "imul   " ba rm ,a .N xa 0 ;op
+$6a :. pushi8	2b  "push   " ba se xa 0 ;op
+$6b :. imul	3b  "imul   " ba rm ,a xa 0 ;op
+    :. farther?	>r swap r max swap r> ;
+    :. j_	ba se over+ farther? jba 0 ;
 $72 :. jb	2b  "jb     " j_ ;op
 $73 :. jae	2b  "jae    " j_ ;op
 $74 :. jz	2b  "jz     " j_ ;op
@@ -170,105 +167,105 @@ $7c :. jl	2b  "jl     " j_ ;op
 $7d :. jge	2b  "jge    " j_ ;op
 $7e :. jle	2b  "jle    " j_ ;op
 $7f :. jg	2b  "jg     " j_ ;op
-$80 :. 80	3b  ext 80exta r8 ,a xa ;op
-$81 :. 81	2b  ext 80exta r32 ,a .le dup @ xa 4+ ;op
-    :. j_i32	ba  .le dup 4+ swap @ over+ jba ;
+$80 :. 80	3b  ext 80exta r8 ,a xa 0 ;op
+$81 :. 81	2b  ext 80exta r32 ,a .le dup @ xa 4+ 0 ;op
+    :. j_i32	ba  .le dup 4+ swap @ over+ farther? jba 0 ;
 $82 :. jbi32	1b. "jb     " j_i32 ;op
     :. jaei32	1b. "jae    " j_i32 ;	\ $0f $83
 $83 :. 83	jaei32 ' 0falt
-		2b  ext 80exta r32 ,a dup cs@ dup .b xa 1+ ;op
+		2b  ext 80exta r32 ,a dup cs@ dup .b xa 1+ 0 ;op
 $84 :. jzi32	1b. "jz     " j_i32 ;op
 $85 :. jnzi32	1b. "jnz    " j_i32 ;op
     :. jbei32	1b. "jbe    " j_i32 ;	\ $0f $86
 $86 :. xchg8	jbei32 ' 0falt
-		2b  "xchg   " ba rm8 ;op
+		2b  "xchg   " ba rm8 0 ;op
     :. jai32	1b. "ja     " j_i32 ;	\ $0f $87
 $87 :. xchg	jai32 ' 0falt
-		2b  "xchg   " ba rm ;op
+		2b  "xchg   " ba rm 0 ;op
     :. jsi32	1b. "js     " j_i32 ;	\ $0f $88
 $88 :. mov8	jsi32 ' 0falt
-		2b  "mov    " ba mr8 ;op
-$89 :. mov	2b  "mov    " ba mr ;op
-$8b :. mov.	2b  "mov    " ba rm ;op
+		2b  "mov    " ba mr8 0 ;op
+$89 :. mov	2b  "mov    " ba mr 0 ;op
+$8b :. mov.	2b  "mov    " ba rm 0 ;op
 $8c :. jli32	1b. "jl     " j_i32 ;op
     :. jgei32	1b. "jge    " j_i32 ;	\ $0f $8d
 $8d :. lea	jgei32 ' 0falt
-		2b  "lea    " ba rm ;op
+		2b  "lea    " ba rm 0 ;op
 $8e :. jlei32	1b. "jle    " j_i32 ;op
     :. jgi32	1b. "jg     " j_i32 ;	\ $0f $8f
 $8f :. pop	jgi32 ' 0falt
-		2b  "pop    dword" ba split nip mod ;op
-$90 :. nop	1b  "nop" ba ;op
-    :. set__	ba split nip mod8 ;
+		2b  "pop    dword" ba split nip mod 0 ;op
+$90 :. nop	1b  "nop" ba 0 ;op
+    :. set__	ba split nip mod8 0 ;
 $92 :. setb	2b. "setb   " set__ ;op
     :. setae	2b. "setae  " set__ ;	\ $0f $93
 $93 :. xchgBA	setae ' 0falt
-		1b  "xchg   ebx,eax" ba ;op
+		1b  "xchg   ebx,eax" ba 0 ;op
     :. setz	2b. "setz   " set__ ;	\ $0f $94
 $94 :. xchgSA	setz ' 0falt
-		1b  "xchg   esp,eax" ba ;op
+		1b  "xchg   esp,eax" ba 0 ;op
 $95 :. setnz	2b. "setnz  " set__ ;op
 $96 :. setbe	2b. "setbe  " set__ ;op
 $97 :. seta	2b. "seta   " set__ ;op
-$99 :. cdq	1b  "cdq" ba ;op
+$99 :. cdq	1b  "cdq" ba 0 ;op
     :. setl	2b. "setl   " set__ ;	\ $0f 9c
 $9c :. pushf	setl ' 0falt
-		1b  "pushf" ba ;op
+		1b  "pushf" ba 0 ;op
     :. setge	2b. "setge  " set__ ;	\ $0f 9d
 $9d :. popf	setge ' 0falt
-		1b  "popf" ba ;op
+		1b  "popf" ba 0 ;op
 $9e :. setle	2b. "setle  " set__ ;op
 $9f :. setg	2b. "setg   " set__ ;op
-$af :. imulaf	2b. "imul   " ba rm ;op
-$b1 :. movCi8	2b  "mov    cl," ba se xa ;op
-    :. mov_x	ba split BEGIN 0 CASE r32 ",byte" ba r@ BREAK 3 CASE r32 ,a r8 BREAK 2drop drop ??? END ;
-    :. mov_xi16	ba split 0- drop 0<> IF 2drop ??? ;THEN r32 ",word" ba r@ ;
+$af :. imulaf	2b. "imul   " ba rm 0 ;op
+$b1 :. movCi8	2b  "mov    cl," ba se xa 0 ;op
+    :. mov_x	ba split BEGIN 0 CASE r32 ",byte" ba r@ BREAK 3 CASE r32 ,a r8 BREAK 2drop drop ??? END 0 ;
+    :. mov_xi16	ba split 0- drop 0<> IF 2drop ??? 0 ;THEN r32 ",word" ba r@ 0 ;
 $b6 :. movzx	2b. "movzx  " mov_x ;op
 $b7 :. movzxi16	2b. "movzx  " mov_xi16 ;op
-$b9 :. movCi32	5b  "mov    ecx," ba xa ;op
-$ba :. movDi32	5b  "mov    edx," ba xa ;op
-$bb :. movBi32	5b  "mov    ebx," ba xa ;op
-$bd :. movBPi32	5b  "mov    ebp," ba xa ;op
+$b9 :. movCi32	5b  "mov    ecx," ba xa 0 ;op
+$ba :. movDi32	5b  "mov    edx," ba xa 0 ;op
+$bb :. movBi32	5b  "mov    ebx," ba xa 0 ;op
+$bd :. movBPi32	5b  "mov    ebp," ba xa 0 ;op
     :. movsx	2b. "movsx  " mov_x ;		\ $0f $be
 $be :. movSIi32	movsx ' 0falt
-		5b  "mov    esi," ba xa ;op
+		5b  "mov    esi," ba xa 0 ;op
     :. movsxi16	2b. "movsx  " mov_xi16 ;	\ $0f $bf
 $bf :. movDIi32	movsxi16 ' 0falt
-		5b  "mov    edi," ba xa ;op
+		5b  "mov    edi," ba xa 0 ;op
 $c1 :. shl	3b  ext
-		BEGIN 4 CASE "shl" BREAK 7 CASE "sar" BREAK 2drop ??? ;; END
-		ba "    " ba r32 ,a xa ;op
-$c3 :. ret	1b  "ret" ba ;op
-$c6 :. movi8	2b  "mov    byte" ba split nip mod ,a dup cs@ dup space .b xa 1+ ;op
-$c7 :. movi32	2b  "mov    "     ba split nip mod ,a space .le dup @ xa 4+ ;op
-$ca :. bswapD	.A .B 0f= .B "bswap  " ba $c8- r32 ;op
+		BEGIN 4 CASE "shl" BREAK 7 CASE "sar" BREAK 2drop ??? 0 ;; END
+		ba "    " ba r32 ,a xa 0 ;op
+$c3 :. ret	1b  "ret" ba -1 ;op
+$c6 :. movi8	2b  "mov    byte" ba split nip mod ,a dup cs@ dup space .b xa 1+ 0 ;op
+$c7 :. movi32	2b  "mov    "     ba split nip mod ,a space .le dup @ xa 4+ 0 ;op
+$ca :. bswapD	.A .B 0f= .B "bswap  " ba $c8- r32 0 ;op
 $cb :. bswapB	bswapD ;op
 $d1 :. shl1	2b ext
-		BEGIN 4 CASE "shl" BREAK 7 CASE "sar" BREAK 2drop ??? ;; END
-		ba "    " ba r32 ",1" ba ;op
+		BEGIN 4 CASE "shl" BREAK 7 CASE "sar" BREAK 2drop ??? 0 ;; END
+		ba "    " ba r32 ",1" ba 0 ;op
 $d3 :. sh_cl	2b ext
-		BEGIN 4 CASE "shl" BREAK 5 CASE "shr" BREAK 2drop ??? ;; END
-		ba "    " ba r32 ",cl" ba ;op
-$e3 :. jecxz	2b  "jecxz  " ba over+ jba ;op
+		BEGIN 4 CASE "shl" BREAK 5 CASE "shr" BREAK 2drop ??? 0 ;; END
+		ba "    " ba r32 ",cl" ba 0 ;op
+$e3 :. jecxz	2b  "jecxz  " ba over+ farther? jba 0 ;op
 $e8 :. call	5b  "call   " ba over+ dup jba BEGIN
 		[ litcomp ' $71+ ] lit CASE " "  ba BREAK
 		[ litcomp ' $78+ ] lit CASE " ." ba BREAK
 		[ catch  ' $28+  ] lit CASE " !" ba BREAK
-		drop ;; END c@+ 2dup "^b" ba ba "^b" ba + 1+ ;op
-$e9 :. jmpE9	5b  "jmp    " ba over+ jba ;op
-$eb :. jmp	2b  "jmp    " ba se over+ jba ;op
+		drop 0 ;; END c@+ 2dup "^b" ba ba "^b" ba + 1+ 0 ;op
+$e9 :. jmpE9	5b  "jmp    " ba over+ farther? jba -1 ;op
+$eb :. jmp	2b  "jmp    " ba se over+ farther? jba -1 ;op
 $f3 :. rep	2b BEGIN
 		$a4 CASE "rep    movsb" BREAK
 		$a6 CASE "repz   cmpsb" BREAK
 		$aa CASE "rep    stosb" BREAK
-		drop ??? ;; END ba ;op
+		drop ??? 0 ;; END ba 0 ;op
 create f7exts	pvt 32 allot "testtestnot neg mul imuldiv idiv" f7exts swap move
-$f7 :. f7	2b split swap 4* f7exts+ 4 ba "   " ba mod ;op
-$fc :. cld	1b  "cld" ba ;op
-$fd :. std	1b  "std" ba ;op
+$f7 :. f7	2b split swap 4* f7exts+ 4 ba "   " ba mod 0 ;op
+$fc :. cld	1b  "cld" ba 0 ;op
+$fd :. std	1b  "std" ba 0 ;op
 $ff :. ff	2b split swap
-		BEGIN 0 CASE "inc " BREAK 1 CASE "dec " BREAK 2 CASE "call" BREAK 6 CASE "push" BREAK 2drop drop ??? ;; END
-		ba "   " ba mod ;op
+		BEGIN 0 CASE "inc " BREAK 1 CASE "dec " BREAK 2 CASE "call" BREAK 6 CASE "push" BREAK 2drop drop ??? 0 ;; END
+		ba "   " ba mod 0 ;op
 
-: see`		wsparse 0- 0= IF 2drop ;THEN 2dup findxt 2swap type cr _see ;
+: see`		wsparse 0- 0= IF 2drop ;THEN 2dup findxt drop -rot type cr see. ;
 hidepvt ;

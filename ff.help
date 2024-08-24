@@ -1583,8 +1583,10 @@ hold ( c -- ) concatenate c to output buffer like a digit
 sign ( x -- ) if single-cell x is negative, hold a minus sign
 #> ( xx -- @ # ) drop double-cell xx, return the address and length of the
   converted number from the pictured numeric output buffer
-x# ( xx -- yy ) # using base 16
-x#s ( xx -- 0 0 ) #s using base 16
+X# ( xx -- yy ) # using base 16
+X#s ( xx -- 0 0 ) #s using base 16
+x# ( xx -- yy ) # using base 16 and lowercase letters
+x#s ( xx -- 0 0 ) #s using base 16 and lowercase letters
   see also: <# # #s #> . .l  ff.ff
 
   -----------
@@ -1765,6 +1767,7 @@ dis ( <name> -- ) calls gdb to display the disassembly of name or throws an
   NB. If name is not found, you may want to try name`
 see` ( <name> -- ) uses a native disassembler to display name, resolving calls
   and jumps and showing inline strings appropriately. (loads see.ff)
+see. ( @ -- ) start disassembler at @
 debug` ( -- ) swaps the normal compiler for a debug compiler.
   Other words that backtrack are also swapped for debug versions.
   A word compiled by the debug compiler shows the stack and the corresponding
@@ -1779,7 +1782,7 @@ findh ( @ -- hfa offset ) finds the header with xt closest to @ and returns
   the header field address and offset from the xt or throws "not found".
 findnm ( @ -- ) calls findh and types the name of the header with xt closest
   to @ and the offset
-  see also: dis see` debug -d` nodebug` findxt findnm .hdr see.ff debug.ff
+  see also: dis see` see. debug -d` nodebug` findxt findnm .hdr see.ff debug.ff
 
 bye` ( -- ) requests the operating system to terminate the FreeForth session
   with a null return value

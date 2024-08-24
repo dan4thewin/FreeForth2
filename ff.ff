@@ -38,12 +38,15 @@ create pnbuf pvt pnmaxlen 2+ allot
 : #>       2drop pnbuf c@+ swap over+ swap pnmaxlen swap - ;
 :. _len1-  pnbuf dupc@ 1- swap c! ;
 : hold     pnbuf dupc@ + c! _len1- ;
-:. _dh     9 u> drop IF 7+ THEN '0'+ 'z' u> drop IF '?'_ THEN hold ;
-:. _#      um/mod swap _dh 0 ;
-: #        base@ _# ;
-: x#       $10 _# ;
-: #s       BEGIN  # over 0- drop 0= UNTIL ;
-: x#s      BEGIN x# over 0- drop 0= UNTIL ;
+:. _dh     9 u> drop IF over+ THEN nip '0'+ 'z' u> drop IF '?'_ THEN hold ;
+:. _#      >r um/mod r> rot _dh 0 ;
+: #        base@ 7 _# ;
+: x#       $10 39 _# ;
+: X#       $10 7 _# ;
+:. _s      >r BEGIN r execute over 0- drop 0= UNTIL rdrop ;
+: #s        # ' _s ;
+: x#s      x# ' _s ;
+: X#s      X# ' _s ;
 : sign     0- drop 0< IF '-' hold THEN ;
 
 \ --------------------------------------------------------------------
