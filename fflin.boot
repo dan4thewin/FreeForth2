@@ -44,7 +44,7 @@ create openbuf pvt 80 allot
 
 variable mainxt pvt
 :. _main mainxt @ execute 0 exit
-: -f` needs` "main" find 0- 0= drop IF mainxt ! _main ' _top !^ ELSE drop THEN ;
+: -f` needs` "main" find 0- 0= drop IF mainxt ! _main ' _top !^ doargv n^ ELSE drop THEN ;
 : quit _top ^^ _top ;
 
 linsetup ' ossetup !^ _boot ' >r

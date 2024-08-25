@@ -155,12 +155,6 @@ $77 dup : u>`  lit _?2 ; : u>.`  lit _?2. ;
 :^ -call callmark@ here = 2drop -c` -c _? !"is_not_preceded_by_a_call"
 : ?` -call _?` ;
 : '` -call lit` ;
-: @^` -call over` $1D8B, s08 1+ , ;
-: ^^` -call $05C7, ,2 dup 1+ , 6+ , ;
-:. nop ;
-: n^` nop '
-: !^` -call $1D89, s08 1+ , drop` ;
-: x^` -call 6+ dcall, ;
 : lib:` :` #lib lit` #fun ' call, ;` ;
 : fun:` :` lit` lit` #call ' call, ;` ;
 
@@ -207,6 +201,13 @@ create mrk 0 , 0 ,
   @ $007808FF- 0= drop IF under 3+ _then rdrop` THEN
   drop mrk 2! ;
 : REPEAT` $EB -jmp END` ;
+
+: @^` -call over` $1D8B, s08 1+ , ;
+: ^^` -call $05C7, ,2 dup 1+ , 6+ , ;
+:. nop ;
+: n^` -call nop ' lit` SKIP
+: !^` -call THEN $1D89, s08 1+ , drop` ;
+: x^` -call 6+ dcall, ;
 
 : s>d` dup` 0<.` ;
 : abs`  0-` 0<` IF` negate` THEN` ;
