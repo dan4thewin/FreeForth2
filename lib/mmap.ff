@@ -9,11 +9,12 @@
 $20 equ MAP_ANON    $100 equ MAP_GROWSDOWN  $4000 equ MAP_NORESERVE
 
 : mkmm` create` 0 , 0 , -1 , PROT_READ , MAP_SHARED , 98 allot anon:` ;
-: mm.sz 4+ ;
-: mm.fd 8+ ;
-: mm.prot 12+ ;
-: mm.flags 16+ ;
-: mm.stat 20+ ;
+4+` ' alias mm.sz
+: mm.fd` "8+" eval ;
+: mm.prot` "12+" eval ;
+: mm.flags` "16+" eval ;
+: mm.stat` "20+" eval ;
+: mkmm. dup 12 erase PROT_READ over mm.prot ! MAP_SHARED swap mm.flags ! ;
 
 ( @ # mm xt -- @ | -n )
 : mmap_ swap >r -rot 2dup r mm.stat stat 0- 0< IF nip nip nip rdrop ;THEN

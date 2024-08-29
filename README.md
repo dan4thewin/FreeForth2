@@ -64,12 +64,12 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
 
 ```
 $ cat cat.ff
-doargv n^
+needs mmap.ff
 mkmm m
 : ok?   dup $FF | -1 = 2drop IF strerror rdrop ELSE drop THEN ;
 : cat   m mmapr ok? m @ m mm.sz @ type m munmap 2drop ;
 : main  0 argc 1- TIMES 1+ dup argv cat REPEAT ;
-$ ./ff -f mmap.ff -f cat.ff -f mkimage.ff
+$ ./ff -f cat.ff -f mkimage.ff
 $ make fftk
 fasm fftk.asm fftk.o
 flat assembler  version 1.73.27  (16384 kilobytes memory)
@@ -77,7 +77,7 @@ flat assembler  version 1.73.27  (16384 kilobytes memory)
 ld -m elf_i386 -lc --dynamic-linker=/lib/ld-linux.so.2 -s -o fftk fftk.o
 $ mv fftk ffcat
 $ ./ffcat cat.ff
-doargv n^
+needs mmap.ff
 mkmm m
 : ok?   dup $FF | -1 = 2drop IF strerror rdrop ELSE drop THEN ;
 : cat   m mmapr ok? m @ m mm.sz @ type m munmap 2drop ;
