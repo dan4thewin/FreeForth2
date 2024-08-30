@@ -9,7 +9,7 @@
 $20 equ MAP_ANON    $100 equ MAP_GROWSDOWN  $4000 equ MAP_NORESERVE
 
 : mkmm` create` 0 , 0 , -1 , PROT_READ , MAP_SHARED , 98 allot anon:` ;
-4+` ' alias mm.sz
+4+` ' alias mm.sz`
 : mm.fd` "8+" eval ;
 : mm.prot` "12+" eval ;
 : mm.flags` "16+" eval ;
