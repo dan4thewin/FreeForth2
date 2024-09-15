@@ -1,3 +1,4 @@
+SHELL=/bin/bash
 LD=ld -m elf_i386 -lc --dynamic-linker=/lib/ld-linux.so.2 -s
 
 all: ff
@@ -21,10 +22,18 @@ clean:
 	rm -f ff fftk *.o
 
 test: ff
-	@tabs -10
-	for d in test/*; do echo -ne $$d \\t; ./ff -f $$d | tail -1; done
-	for d in test/*; do echo -ne $$d \\t; ./ff +longconds -f $$d | tail -1; done
-	@tabs -8
+	@echo ff
+	@for d in test/*; do echo -ne $$d \\e[21G; ./ff -f $$d | tail -1; done
+	@echo ff +longconds
+	@for d in test/*; do echo -ne $$d \\e[21G; ./ff +longconds -f $$d | tail -1; done
+	@echo fftk
+	@./ff -f test.ff -f mkimage.ff
+	@$(MAKE) fftk >/dev/null
+	@for d in test/*; do echo -ne $$d \\e[21G; ./fftk -f $$d | tail -1; done
+	@echo fftk +longconds
+	@./ff +longconds -f test.ff -f mkimage.ff
+	@$(MAKE) fftk >/dev/null
+	@for d in test/*; do echo -ne $$d \\e[21G; ./fftk -f $$d | tail -1; done
 
 PREFIX=$$HOME/.local
 FFBIN=$(PREFIX)/bin

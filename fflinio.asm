@@ -103,13 +103,14 @@ nipeax: mov ebx,eax             ; TOS = syscall result
 ;;; ---------------------------------------------------
 ;;; FreeForth interface to Linux dynamic-link libraries
 
+saveSP  dd 0
 CODE "#call",_dlcall            ; #args funh -- funresult
         lea edx,[eax+4*edx]     ; dataSP after funcall
         push edx                ; save it
         xchg eax,esp
-        mov [bssend],eax        ; save callSP
+        mov [saveSP],eax        ; save callSP
         call ebx                ; eax = funresult
-        mov esp,[bssend]        ; restore callSP
+        mov esp,[saveSP]        ; restore callSP
         jmp nipeax
 
 if defined ffdl ;; TODO: try to inline dl* functions to compile with fasm only.

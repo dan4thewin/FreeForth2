@@ -20,9 +20,8 @@ _start:
         mov ecx,-4
         add ecx,eax
         mov [cmpl+12],ecx        ; depth fix
-        mov [cmpl+16],dword _bssend ; set immed in #call
-        mov ecx,[cmpl+20]       ; _boot
-        mov [cmpl+24],dword 0   ; zero libc value, must run dlopen
+        mov ecx,[cmpl+16]       ; _boot
+        mov [cmpl+20],dword 0   ; zero libc value, must run dlopen
         xor ebx,ebx
         xor edx,edx
         jmp ecx
@@ -49,10 +48,6 @@ section '.bss'
 bss     rb 1024*488
 tib     rb 1024*256
 eob     rb 1024
-_bssend:
-
-    bss_size = $-bss
-    heap_size = tib-bss
+bssend:
 
     H0 = tib-headers_size
-    tp0 = tib

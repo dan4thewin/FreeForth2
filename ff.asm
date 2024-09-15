@@ -417,7 +417,6 @@ DATA "H",H,H0                   ; headers
 DATA "anon",anon,ebp0
 DATA "CS0",CS0,0                ; CALLstack base address, set later
 DATA "DS0",DS0,0                ; DATAstack base address, set later
-DATA "_bssend",bssend,0
 DATA "_bootxt",bootxt,0
 DATA "libc",_libc,0
 
@@ -1254,7 +1253,6 @@ _start: ;; relocate headers and boot source: H->[headers]tib:[boot]<-tp
         mov [CS0],esp           ; save for argv
         mov [DS0],-4
         add [DS0],eax           ; relocate DATAstack base address
-        mov [bssend],_bssend-4
         xor ebx,ebx
         xor edx,edx
         ;; compile boot source:
@@ -1337,7 +1335,7 @@ section '.bss'
 bss     rb 1024*512             ; code and data -> heap <- headers
 tib     rb 1024*256             ; terminal input and blocks buffer
 eob     rb 1024                 ; temporary scratch area
-_bssend:                        ; segmentation fault after this address.
+bssend:                         ; segmentation fault after this address.
 
     bss_size = $-bss
     heap_size = tib-bss
