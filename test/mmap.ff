@@ -1,0 +1,31 @@
+needs mmap.ff
+needs test.ff
+12 >plan
+
+testing mkst stat st.size
+
+!! dd if=/dev/random of=$PPID bs=512 count=1 2>/dev/null
+: pid. getpid s>d #s #> ;
+: pid <# pid. ;
+: pid- <# '-' hold pid. ;
+: cmp "cmp $PPID $PPID-" shell ;
+
+t{ mkst s -> }t
+t{ pid s stat -> 0 }t
+t{ s st.size+ @ -> 512 }t
+
+testing mkmm mmapr mm.fd mm.sz openw write close munmap
+
+t{ mkmm m -> }t
+t{ pid m mmapr $FF | -1 =. -> 0 }t
+t{ m mm.fd+ @ -> 3 }t
+t{ m mm.sz+ @ -> 512 }t
+t{ pid- openw -> 4 }t
+t{ m @ m mm.sz+ @ 4 write -> 512 }t
+t{ 4 close -> 0 }t
+t{ m munmap -> 0 0 }t
+t{ cmp ' catch -> 0 }t
+
+!! rm -f $PPID $PPID-
+
+tally-exit ;
