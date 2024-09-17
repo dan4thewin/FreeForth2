@@ -41,5 +41,5 @@
   H@ which@ START 1- dupc@ over _size+ c! ENTER = UNTIL drop _size+ H! ;
 : +longconds`  \ -- ; copy headers -longconds'..IF' -> -longconds`..IF`
   "-longconds'" find 2drop which@ _size H@ dup>r over- place dup H!
-  '`' swap BEGIN 5+ dupc@ + 2dupc! 2+ r = drop UNTIL 2drop rdrop ;
+  '`' swap BEGIN h.sz+ dupc@ + 2dupc! 2+ r = drop UNTIL 2drop rdrop ;
 hidepvt ;

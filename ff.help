@@ -270,8 +270,10 @@ depth ( -- n ) returns the net number of cells pushed onto (positive)
 
 >r` ( x -- | == x ) pops x from DATAstack and pushes it onto CALLstack
   : >r` dup>r` drop` ;
+2dup>r` ( x y -- x y | == x y ) pushes NOS and TOS contents onto CALLstack
+  : 2dup>r` swap` dup>r` swap` dup>r` ;
 2>r` ( x y -- | == x y ) double-pop DATAstack to double-push CALLstack
-  : 2>r` swap` dup>r` swap` dup>r` 2drop` ;
+  : 2>r` 2dup>r` 2drop` ;
 dup>r` ( x -- x | == x ) pushes TOS contents onto CALLstack
   : dup>r` >C0 $53, s1 ; \ push ebx
 r>` ( -- x | x == ) pops x from CALLstack and pushes it onto DATAstack
@@ -688,14 +690,19 @@ H ( -- @ ) compiler state variable: symbol table allocation pointer,
 header ( @ # xt ct -- ) creates a header with string starting at "@" for "#"
   characters, with type "ct", and with embedded data "xt".
   Each header is composed of:
-  . +0: 4 bytes: header embedded data: pointer on code or data, or constant
-  . +4: 1 byte: header type: 0 = ptr on code, 1 = ptr on data or constant
+  . +0: 4 bytes: header embedded data: pointer to code or data, or constant
+  . +4: 1 byte: type (bits 0-2): 0 = ptr to code, 1 = constant or ptr to data
+        flags: 8 = private, $10 = private margin, $20 = alias or constant
   . +5: 1 byte: header name string size (null-terminator excluded)
   . +6: size bytes: header name string, null-terminated
   source code in ff.asm, functionally equivalent to:
   : header  2>r tuck  0 H@ 1- tuckc!  over- place  \ -- # H@-#-1 | == xt ct
     1- tuckc!  r> swap 1- tuckc!  r> swap 4- tuck!  H! ;
+h.ct ( -- n ) offset of ct field within header
+h.sz ( -- n ) offset of sz field within header
+h.nm ( -- n ) offset of nm field within header
   see also: H : :^ alias create variable constant mark words compiler classes
+            pvt pvtmargin
 
 find ( @ # -- ptr 0 | @ # ) looks in the symbol table for a header
   matching the string "#" bytes long stored at "@";
@@ -1440,18 +1447,20 @@ mkst ( <name> -- ) allocate space for a stat structure
 stat ( @ # st -- 0 | -n ) requests the operating system to stat a file;
   returns 0 on success and -n if an error occurred; populates st
   with a stat structure.
-st.size ( @ -- @ ) increase address of st struct with offset of size field.
+st.size ( -- n ) offset of size field within st struct
   see also: mkst openr openw read write "man stat"  full.ff
 
 mmap see mkmm mmapr mmapw mmapwt
 mkmm ( <name> -- ) allocate mm structure to describe an mmap'd file and
   populate with default values. The first cell holds the map address.
   Subsequent cells hold the size (sz), file descriptor (fd),
-  protection bits (prot), and flags.
-mm.sz ( @ -- @ ) increase address of mm struct with offset of sz field.
-mm.fd ( @ -- @ ) increase address of mm struct with offset of fd field.
-mm.prot ( @ -- @ ) increase address of mm struct with offset of prot field.
-mm.flags ( @ -- @ ) increase address of mm struct with offset of flags field.
+  protection bits (prot), flags, and a stat structure.
+mkmm. ( @ -- ) initialize memory at @ like mkmm
+mm.sz ( -- n ) offset of sz field within mm struct
+mm.fd ( -- n ) offset of fd field within mm struct
+mm.prot ( -- n ) offset of prot field within mm struct
+mm.flags ( -- n ) offset of flags field within mm struct
+mm.stat ( -- n ) offset of stat struct within mm struct
 mmapr ( @ # mm -- @ | -n ) open and mmaps existing file for reading;
   populates mm struct; returns address on success or -n on error.
 mmapw ( @ # mm -- @ | -n ) open and mmaps existing file for reading and writing;
@@ -1559,6 +1568,10 @@ base ( -- @ ) system variable: output conversion base for "." and ".\"
 .x\ ( n -- ) .x without a space
   : .sign 0- 0< IF '-' putc negate THEN ;
   : .x\ .sign 9 > drop IF '$' putc THEN $10 .ub\ ;
+.ux ( n -- ) unsigned .x
+  : .ux .ux\ space ;
+.ux\ ( n -- ) .ux without a space
+  : .ux\ $10 .ub\ ;
 .dec ( n -- ) display n in decimal
   : .dec .dec\ space ;
 .dec\ ( n -- ) .dec without a space
@@ -1657,9 +1670,9 @@ words` ( -- ) displays the symbol table headers, last defined first displayed
   --------------
   HIDING HEADERS
 
-pvt` ( -- ) marks the most recent header as private by setting ct bit 8
-  : ct|! H@ 4+ dupc@ rot | swap c! ;
-  : pvt` 8 ct|! ;
+pvt` ( -- ) marks the most recent header as private by setting ct bit 3
+  : ct|! h.ct+ dupc@ rot | swap c! ;
+  : pvt` 8 H@ ct|! ;
 FFHIDE see hide
 hide ( -- @ ) variable - if set to 0 hidepvt does nothing.  Use the environment
   variable setting "FFHIDE=0" before running ff to prevent hiding in ff.ff.
@@ -1676,7 +1689,7 @@ hidepvt` ( -- ) removes from the compiler symbol table all the headers with
     dup 5+ c@+ + 1+ >r START over 5+ c@+ + 1+ swap        \ then pop addresses
       START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop   \ and pack headers
   ENTER H@ 7- = drop UNTIL drop r> H! ;      \ based on hid'm from FreeForth
-pvtmargin ( -- ) sets bit 16 in the ct of the most recent header so hidepvt
+pvtmargin ( -- ) sets bit 4 in the ct of the most recent header so hidepvt
   stops at that point leaving earlier headers untouched. Loading a file with
   needs creates an initial marker and calls pvtmargin. Add hidepvt to the end
   of the file to remove headers marked pvt created within the file.
@@ -1880,6 +1893,9 @@ ior ( -- @ ) variable used by "?ior"
     otherwise, the returned value is often negative when an error occurred
     (HFILE_ERROR = INVALID_HANDLE_VALUE = INVALID_FILE_SIZE = -1 for examples),
     then use "?ior" directly (preceded by "dup" or later followed by "ior@").
+?ior. ( n -- ) like ?ior but does not store n in ior
+  Use ?ior after openr/openw/openw0 to save fd in ior and ?ior. after
+  read/write so fd is preserved.
   see also: ior shell cd libc k32  Lin:ff.ff Win:ffwinio.asm
 
 zt ( @ # -- @ ) append a NUL byte to string starting at address "@"

@@ -19,10 +19,10 @@
 
 H@ @								\ fetch the xt of the newest header (the mark)
 								\ this is the value here had prior to loading this
-H@ 5+ dupc@ + 2+						\ fetch the address of next header
+H@ h.sz+ dupc@ + 2+						\ fetch the address of next header
 								\ this is the value H had prior to loading this
-: save	openw0 dup >r ?ior r write ?ior r close ?ior rdrop ;	\ define new words after populating stack
-: eoh	H@ START + 2+ ENTER 5+ dupc@ 0- 0= UNTIL + 2+ ;
+: save	openw0 ?ior ior@ write ?ior. ior@ close ?ior. ; 	\ define new words after populating stack
+: eoh	H@ START + 2+ ENTER h.sz+ dupc@ 0- 0= UNTIL + 2+ ;
 eoh    over- "dict" save
 H swap over- "cmpl" save					\ address of H is the beginning of the compiled area
 0 exit ;

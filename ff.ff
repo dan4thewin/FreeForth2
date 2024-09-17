@@ -5,7 +5,7 @@ variable features 100 allot
 : -v` ."\\ features: " features c@+ type cr ;
 
 "help" features append
-"help`" find 2drop '_' 8 which@ 4+ tuck c! 2+ c! \ to be deleted by hidepvt
+"help`" find 2drop '_' 8 which@ tuck ct|! h.nm+ c! \ to be deleted by hidepvt
 : help` \ <name> -- ; display help for <name>, or for "help" by default
   wsparse 0= IF 2drop "help" THEN
   [` 2>r "ff.help" needed 2r> _] 0; \ dup this line for your own help file(s)
@@ -62,8 +62,7 @@ create pnbuf pvt pnmaxlen 2+ allot
 
 variable ior \ I/O result, error when negative:
 : ?ior dup ior! \ n -- ; displays system error message
-  $FF | -1 = 2drop IF ior@ strerror !"system_call_failed" THEN
-;
+: ?ior. dup $FF | -1 <> 2drop IF drop ;THEN strerror !"system_call_failed" ;
 
 :. _malloc "malloc" fixup
 :  malloc 1 dup _malloc #call  ; \ # -- @ ; see "man malloc"

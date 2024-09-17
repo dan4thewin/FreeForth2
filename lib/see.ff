@@ -7,19 +7,19 @@
 " see" features append
 
 variable xt pvt
-:. sz-		2dup 5+ c@ - drop ;
-:. nm-		3dup 6+ swap $- drop ;
+:. sz-		2dup h.sz+ c@ - drop ;
+:. nm-		3dup h.nm+ swap $- drop ;
 :. hdr-		sz- nm- 0= ? ;
-:. skip?	dup 4+ c@ $20& drop ;
-:. stop?	dup 5+ c@ 0<>; !"not found" ;
-:. nexth	START 5+ c@+ + 1+ skip? 0<> WHILE ENTER stop? REPEAT ;
+:. skip?	dup h.ct+ c@ $20& drop ;
+:. stop?	dup h.sz+ c@ 0<>; !"not found" ;
+:. nexth	START h.sz+ c@+ + 1+ skip? 0<> WHILE ENTER stop? REPEAT ;
 : findxt	here xt! H@
 		START hdr- 0<> WHILE dup@ xt! nexth ENTER stop? REPEAT
 		nip nip @ xt@ over- ;
 : findh		H@
 		START 2dup @ < 2drop WHILE nexth ENTER stop? REPEAT
 		dup which! swap over @ - ;
-: findnm	findh swap 5+ c@+ type 0; ."+" .x ;
+: findnm	findh swap h.sz+ c@+ type 0; ."+" .x ;
 
 create buf pvt 80 allot
 :. ba		buf append ;
@@ -31,7 +31,7 @@ create buf pvt 80 allot
 		"set disassembly-flavor intel^J" ba
 		"disass/r " ba ua "," ba ua "^J" ba ;
 :. gdbrun	"gdb --batch -x .see | less -F -+c" shell ;
-:. tmpsave	openw0 dup >r ?ior r write ?ior r close ?ior rdrop ;
+:. tmpsave	openw0 ?ior ior@ write ?ior. ior@ close ?ior. ;
 :. gdbdump	gdbscript buf c@+ ".see" tmpsave gdbrun ;
 : dis`		wsparse findxt gdbdump ;
 
@@ -41,7 +41,7 @@ create buf pvt 80 allot
 :. .B		dup 1+ swap c@ dup .b space ;		\ @ -- @+1 c	; show 1 byte
 :. .N		dup 4+ swap .le space @ ;		\ @ -- @+4 n	; show 4-byte number
 :. jba		dup xa " " ba				\ @ --		; show jump destination
-		findh swap 5+ c@+ ba 0; "+" ba xa ;
+		findh swap h.sz+ c@+ ba 0; "+" ba xa ;
 :. se		dup $80& 0; drop -$80| ;		\ n -- n	; sign extend a byte
 :. ,a		"," ba ;
 
@@ -135,6 +135,7 @@ $49 :. decC	1b  "dec    ecx" ba 0 ;op
 $4a :. decD	1b  "dec    edx" ba 0 ;op
 $4b :. decB	1b  "dec    ebx" ba 0 ;op
 $4d :. decBP	1b  "dec    ebp" ba 0 ;op
+$4f :. decDI	1b  "dec    edi" ba 0 ;op
 $50 :. pushA	1b  "push   eax" ba 0 ;op
 $51 :. pushC	1b  "push   ecx" ba 0 ;op
 $52 :. pushD	1b  "push   edx" ba 0 ;op

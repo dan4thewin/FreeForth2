@@ -90,17 +90,18 @@
 : 2dup` over` over` ;
 : 3dup` 2dup` $082474FF, ,4 ;
 : 2r>` 2dup` dropr>` swap` dropr>` swap` ;
-: 2>r` swap` dup>r` swap` dup>r`
+: 2dup>r` swap` dup>r` swap` dup>r` ;
+: 2>r` 2dup>r`
 : 2drop` drop` drop` ;
 : 2swap` rot` >r` rot` r>` ;
 : bounds` over+` swap` ;
 
 : :.` :`
-: pvt` 8
-: ct|! H@ 4+ dupc@ rot | swap c! ;
+: pvt` 8 H@
+: ct|! h.ct+ dupc@ rot | swap c! ;
 : alias` :`
-:. _alias H@ ! $20 ct|! anon:` ;
-: create` :` 1 ct|! anon:` ;
+:. _alias H@ ! $20 H@ ct|! anon:` ;
+: create` :` 1 H@ ct|! anon:` ;
 : variable` create` 0 , anon:` ;
 : constant` create` _alias ;
 : :^` :` $68, ,1 here 5+ , $C3, ,1 ;
@@ -250,6 +251,8 @@ variable base 10 base!
 : .dec .dec\ space ;
 : .u\ base@ .ub\ ;
 : .u .u\ space ;
+: .ux\ $10 .ub\ ;
+: .ux .ux\ space ;
 : .x\ .sign 9 > drop IF '$' putc THEN $10 .ub\ ;
 : .x .x\ space ;
 : .b 2
@@ -267,24 +270,24 @@ variable base 10 base!
   anon@ 0- 0= IF drop H@ @ THEN  here over-
 : dump bounds 2dump cr ;
 
-: words` H@ START 2dup+ 1+ -rot type space ENTER 5+ c@+ 0- 0= UNTIL 2drop cr ;
-: .hdr+ dup ."$" .l .": " dup @ ."$" .l space 4+ dup c@ . 1+ c@+ 2dup type + 1+ ;
-: .hdrs H@ START .hdr+ cr ENTER dup 5+ c@ 0- 0= drop UNTIL drop ;
+: words` H@ START 2dup+ 1+ -rot type space ENTER h.sz+ c@+ 0- 0= UNTIL 2drop cr ;
+: .hdr+ dup .x\ .": " dup @ .x dup h.ct+ c@ .x h.sz+ c@+ 2dup type + 1+ ;
+: .hdrs H@ START .hdr+ cr ENTER dup h.sz+ c@ 0- 0= drop UNTIL drop ;
 : .hdr .hdr+ drop ;
 variable hide hide on
 :^ hidestop 0<> IF dup $10- drop THEN ;
-: hidepvt` hide@ 0; drop H@ 0 over 2- c! dup 7- swap
-  START over 5+ c@+ + 1+ -rot 8& 0= drop swap IF nip THEN
-  ENTER dup 4+ c@ dup $ff- drop hidestop 0= UNTIL 2drop
-  dup 5+ c@+ + 1+ >r START over 5+ c@+ + 1+ swap
+: hidepvt` hide@ 0; drop H@ 0 over 2- c! dup h.nm- 1- swap
+  START over h.sz+ c@+ + 1+ -rot 8& 0= drop swap IF nip THEN
+  ENTER dup h.ct+ c@ dup $ff- drop hidestop 0= UNTIL 2drop
+  dup h.sz+ c@+ + 1+ >r START over h.sz+ c@+ + 1+ swap
     START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop
-  ENTER H@ 7- = drop UNTIL drop r> H! ;
+  ENTER H@ h.nm- 1- = drop UNTIL drop r> H! ;
 :. _mark ;` r> 5- here - allot anon:`
-  H@ BEGIN dup@ swap 5+ c@+ + 1+ swap here = 2drop UNTIL H! ;
+  H@ BEGIN dup@ swap h.sz+ c@+ + 1+ swap here = 2drop UNTIL H! ;
 : mark` ;` wsparse
 : marker 2dup+ dupc@ >r dup>r '`' swap c! 1+
   here 0 header 2r> c!  _mark ' call, anon:` ;
-: pvtmargin $10 ct|! ;
+: pvtmargin $10 H@ ct|! ;
 : eval >in@ tp@ 2>r over+ tp! >in! compiler 2r> tp! >in! ;
 
 : argc CS0@ @ ;
@@ -297,7 +300,7 @@ variable hide hide on
 :. eval. >in@ tp@ 2>r over+ tp! >in! compiler _auto 2r> tp! >in! ;
 :. _eval eval. '
 :. _exec catch 0;  _back ."_<-error:_" c@+ type cr  2drop
-  anon@ 0- 0= IF drop H@ dup@ swap 5+ c@+ + 1+ H! THEN
+  anon@ 0- 0= IF drop H@ dup@ swap h.sz+ c@+ + 1+ H! THEN
   here - allot  0 SC c! anon:` 0<>`  START _eval ENTER
 :^ _top pvt ui 0 noauto! tib 1024 under accept 0- 0= UNTIL
 : bye` ;` cr 0 exit ;

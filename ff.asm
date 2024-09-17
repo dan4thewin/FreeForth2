@@ -419,6 +419,12 @@ DATA "CS0",CS0,0                ; CALLstack base address, set later
 DATA "DS0",DS0,0                ; DATAstack base address, set later
 DATA "_bootxt",bootxt,0
 DATA "libc",_libc,0
+h.ct = 4                        ; offset of ct in header struct
+CSTE "h.ct",h.ct
+h.sz = 5                        ; offset of sz in header struct
+CSTE "h.sz",h.sz
+h.nm = 6                        ; offset of name in header struct
+CSTE "h.nm",h.nm
 
 ;;; -------------------------------------------------------
 ;;; basic code generation support
@@ -836,7 +842,7 @@ litnumd:                        ; @ # -- n ; called from other lit*
 litdata:                        ; @ # -- xt ; called from lit@!
         call _find              ; -- @ # | xt 0
         jnz notfnd
-        mov cl,byte[esi+4]
+        mov cl,byte[esi+h.ct]
         and ecx,7               ; firewall!
         cmp ecx,1               ; 9 or 1=data, 8 or 0=code
         jnz notfnd
@@ -950,9 +956,9 @@ CODE "header",_header           ; @ # xt ct -- ; creates a new header
         mov edi,[H]             ; edi = headers base
         dec edi                 ; allocate zero-terminator
         sub edi,ecx             ; allocate name
-        mov [edi-1],cl          ; store #
-        mov [edi-2],bl          ; store ct
-        lea ebx,[edi-6]         ; allocate xt[4],ct[1],#[1]
+        mov [edi-h.nm+h.sz],cl  ; store #
+        mov [edi-h.nm+h.ct],bl  ; store ct
+        lea ebx,[edi-h.nm]      ; allocate xt[4],ct[1],#[1]
         mov [H],ebx             ; update H
         mov [ebx],edx           ; store xt
         rep movsb               ; copy string, ends with ecx = 0
@@ -967,7 +973,7 @@ drop2:  xchg eax,esp            ; x y --
 DATA "which",which,0            ; holds last found hfa
 VECT "find",_find               ; @ # -- @ # | xt 0
         mov esi,[H]             ; esi = headers pointer
-.b:     lea esi,[esi+6]         ; skip over xt[4],ct[1],sz[1]
+.b:     lea esi,[esi+h.nm]         ; skip over xt[4],ct[1],sz[1]
         movzx ecx,byte[esi-1]   ; ecx = string length
         jecxz .e                ; null length = headers end: stack unchanged
         cmp ecx,ebx             ; if string length differs,
@@ -977,7 +983,7 @@ VECT "find",_find               ; @ # -- @ # | xt 0
 @@:     lea esi,[esi+ecx+1]     ; skip to initial of next string
         jnz .b                  ; until match:
         sub esi,ebx             ; back to string initial +1(zero-terminator)
-        lea esi,[esi-7]         ; back over xt[4],ct[1],sz[1],zt,  esi = hfa
+        lea esi,[esi-h.nm-1]    ; back over xt[4],ct[1],sz[1],zt,  esi = hfa
         mov [which],esi         ; save hfa
         mov edx,[esi]           ; edx = xt
         xor ebx,ebx             ; ebx = 0 = found
@@ -1067,7 +1073,7 @@ VECT "compiler",_compiler       ; --
         pop dword[edi]          ; restore following bytes
         jnz @f
         DROP1                   ; -- found.xt
-        movzx ecx,byte[esi+4]   ; ecx = ct
+        movzx ecx,byte[esi+h.ct]; ecx = ct
         and ecx,7               ; firewall!
         call [_classes+8*ecx]
         jmp _compiler
@@ -1075,7 +1081,7 @@ VECT "compiler",_compiler       ; --
         call _find              ; -- @ # | found.xt 0 esi=hfa z=found
         jnz @f
         DROP1                   ; -- found.xt
-        movzx ecx,byte[esi+4]   ; ecx = ct
+        movzx ecx,byte[esi+h.ct]; ecx = ct
         and ecx,7               ; firewall!
         call [_classes+4+8*ecx]
         jmp _compiler

@@ -2,11 +2,11 @@
 " compat" features append
 
 \ swap find for one that ignores case and won't return a word being defined
-:. sz-		2dup 5+ c@ - drop ;
-:. nm-		3dup 6+ swap $-. drop ;
+:. sz-		2dup h.sz+ c@ - drop ;
+:. nm-		3dup h.nm+ swap $-. drop ;
 :. hdr-		sz- nm- 0= ? ;
-:. more?	dup 5+ c@ 0- drop ;
-:. nexth	5+ c@+ + 1+ ;
+:. more?	dup h.sz+ c@ 0- drop ;
+:. nexth	h.sz+ c@+ + 1+ ;
 :. tos>si`	$de89, s08 ;	\ 89DE(mov esi,ebx)
 :. findic	H@ anon@ 0- drop 0= IF nexth THEN BEGIN
 		more? 0<> WHILE
@@ -50,8 +50,8 @@ char`		' alias [char]` ;
 $20 constant bl
 
 : recurse`	H@ @ call, ;
-: immediate	H@ dup 1- tuck over 5+ c@ 6+ move dup H!
-		5+ dup c@ 1+ tuck overc! + '`' swap c! ;
+: immediate	H@ dup 1- tuck over h.sz+ c@ h.nm+ move dup H!
+		h.sz+ dup c@ 1+ tuck overc! + '`' swap c! ;
 
 r`		' alias i` ;
 r2`		' alias j` ;
