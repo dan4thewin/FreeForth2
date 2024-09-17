@@ -271,7 +271,8 @@ variable base 10 base!
 : dump bounds 2dump cr ;
 
 : words` H@ START 2dup+ 1+ -rot type space ENTER h.sz+ c@+ 0- 0= UNTIL 2drop cr ;
-: .hdr+ dup .x\ .": " dup @ .x dup h.ct+ c@ .x h.sz+ c@+ 2dup type + 1+ ;
+: .hdr+ dup .x\ .": " dup @ .x dup h.rc+ @ dup>r .x dup h.ct+ c@ .x h.sz+ c@+ 2dup type + 1+
+  r> 0; ." -> " START h.sz+ c@+ type space 4+ ENTER dup @ 0- 0= UNTIL 2drop ;
 : .hdrs H@ START .hdr+ cr ENTER dup h.sz+ c@ 0- 0= drop UNTIL drop ;
 : .hdr .hdr+ drop ;
 variable hide hide on

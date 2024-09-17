@@ -1,0 +1,5 @@
+needs mmap.ff
+mkmm m
+: ok?   dup $FF | 1+ drop 0= IF strerror rdrop ;THEN drop ;
+: cat   m mmapr ok? m @ m mm.sz+ @ type m munmap 2drop ;
+: main  0 argc 1- TIMES 1+ dup argv cat REPEAT ;

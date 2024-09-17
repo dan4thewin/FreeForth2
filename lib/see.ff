@@ -249,8 +249,8 @@ $d3 :. sh_cl	2b ext
 		ba "    " ba r32 ",cl" ba 0 ;op
 $e3 :. jecxz	2b  "jecxz  " ba over+ farther? jba 0 ;op
 $e8 :. call	5b  "call   " ba over+ dup jba BEGIN
-		[ litcomp ' $71+ ] lit CASE " "  ba BREAK
-		[ litcomp ' $78+ ] lit CASE " ." ba BREAK
+		[ $@ ' $10+ ] lit CASE " "  ba BREAK
+		[ $@ ' $17+ ] lit CASE " ." ba BREAK
 		[ catch  ' $28+  ] lit CASE " !" ba BREAK
 		drop 0 ;; END c@+ 2dup "^b" ba ba "^b" ba + 1+ 0 ;op
 $e9 :. jmpE9	5b  "jmp    " ba over+ farther? jba -1 ;op

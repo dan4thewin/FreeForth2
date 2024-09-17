@@ -4,6 +4,18 @@
 ;;; --------------------------------------------------
 ;;; FreeForth interface to Linux syscall and file-I/O
 
+if defined ffdl
+extrn dlopen                    ; void* dlopen(const char* filename, int flag);
+CODE "dlopen",_dlopen
+        jmp dlopen
+extrn dlsym                     ; void* dlsym(void* handle, char* symbol);
+CODE "dlsym",_dlsym
+        jmp dlsym
+extrn dlerror                   ; const char* dlerror(void);
+CODE "dlerror",_dlerror
+        jmp dlerror
+end if
+
 CODE "exit",_exit               ; n -- ; 1 1 syscall ;
         mov ecx,1
         jmp _sys1
@@ -57,7 +69,8 @@ CSTE "stdout",1
 VECT "type",_type               ; @ # -- ; 1 write drop ;
         DUP1 1                  ; stdout=1
         call _write
-        jmp drop1
+        DROP1
+        ret
 
 CODE "write",_write             ; @ # fd -- n ; >rswapr> 3 4 syscall ;
         mov ecx,4
@@ -115,9 +128,9 @@ CODE "#call",_dlcall            ; #args funh -- funresult
 
 if defined ffdl ;; TODO: try to inline dl* functions to compile with fasm only.
 
-extrn dlopen                    ; void* dlopen(const char* filename, int flag);
-extrn dlsym                     ; void* dlsym(void* handle, char* symbol);
-extrn dlerror                   ; const char* dlerror(void);
+;extrn dlopen                    ; void* dlopen(const char* filename, int flag);
+;extrn dlsym                     ; void* dlsym(void* handle, char* symbol);
+;extrn dlerror                   ; const char* dlerror(void);
 ;extrn dlclose                  ; int dlclose (void* handle);
 ;libs   dd $+4, 16 dup 0        ; libraries handles for dlclose on exit
 ;libsEnd                        ; libs buffer end address
@@ -145,7 +158,7 @@ CODE "#lib",_dllib              ; @ # -- libh
 ;       extrn dlopen            ; void* dlopen(const char* filename, int flag);
         pushd $101              ; RTLD_LAZY | RTLD_GLOBAL
         push edx                ; filename, null-terminated
-        call dlopen             ; eax = library handle (null on error)
+        call _dlopen            ; eax = library handle (null on error)
         jmp dlret
 
 ;;; Note: when ffdl undefined, the following line must be commented:
@@ -157,7 +170,7 @@ CODE "#fun",_dlfun              ; @ # libh -- funh
 ;       extrn dlsym             ; void* dlsym(void* handle, char* symbol);
         push ecx                ; library function name, null-terminated
         push ebx                ; library handle
-        call dlsym              ; eax = function handle (null on error)
+        call _dlsym             ; eax = function handle (null on error)
 dlret:  or eax,eax
         jz dlerr
         add esp,8               ; cleanup 2 args from stack
@@ -168,7 +181,7 @@ dlret:  or eax,eax
         ret
 
 ;       extrn dlerror           ; const char* dlerror(void);
-dlerr:  call dlerror            ; eax = null-terminated error string
+dlerr:  call _dlerror           ; eax = null-terminated error string
         mov esi,eax             ; copy it to counted string at here
         mov edi,ebp
 @@:     stosb                   ; first stosb is for string count

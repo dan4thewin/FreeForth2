@@ -6,11 +6,16 @@ dlsetup
 : libc_ libc@ #fun #call ; \ runtime version, turnkey safe
 
 create SEGVact pvt 140 allot SEGVact 140 0 fill
+create ILLact  pvt 140 allot ILLact  140 0 fill
 :. SEGVhndlr !"SEGV caught" ;
+:. ILLhndlr  !"ILL caught" ;
 SEGVhndlr ' SEGVact!
+ILLhndlr  ' ILLact!
 $40000000 SEGVact 132+ ! \ SA_NODEFER
+$40000000 ILLact  132+ !
 :. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
-:. linsetup dlsetup SEGVthrow ;
+:. ILLthrow  0 ILLact  4  3 "sigaction" libc_ drop ;
+:. linsetup dlsetup SEGVthrow ILLthrow ;
 
 "HOME"   1_ libc. getenv 0- 0<> IF zlen THEN dup >r
 "FFPATH" 1_ libc. getenv 0- 0<> IF zlen THEN dup >r

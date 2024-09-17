@@ -1,0 +1,56 @@
+\ $ FFHIDE=0 ./ff -f cat.ff -f mkimage-.ff
+\ cmpl-: 1409 bytes
+\ $ fasm fftk-.asm fftk-.o
+\ flat assembler  version 1.73.27  (16384 kilobytes memory)
+\ 1 passes, 1932 bytes.
+\ $ ld -m elf_i386 -lc --dynamic-linker=/lib/ld-linux.so.2 -s -o fftk- fftk-.o
+
+variable H1 H@ H1!
+:. _deps	dup h.ct+ c@ dup $80& drop 0<> IF 2drop ;THEN
+		$21 = 2drop IF drop ;THEN
+		$80 over ct|! h.rc+ @ 0;
+		START _deps 4+ ENTER dup @ 0- 0= UNTIL 2drop ;
+:. findok	find 0; !"not found" ;
+: deps`		wsparse findok drop which@ _deps ;
+: nomarkers	H@ START dup h.ct+ c@ $10- drop 0= IF dup h.sz+ c@+ + 1- '_' swap c! THEN h.sz+ c@+ + 1+
+		ENTER dup h.ct+ c@ $ff- drop 0= UNTIL drop ;
+
+variable undo
+variable undoH
+:. dep?		H@ >r H1@ H! find r> H! 2drop 0<> IF 0 ;THEN which@ h.ct+ c@ $80& ;
+: tos>bp`	$dd89, s08 ;
+
+:`  ' alias \:`
+:^ :`		\:` ;
+: _:`		>in@ >r wsparse dep?
+		0- drop 0= IF undo@ 0- drop 0= IF here undo! H@ undoH! THEN
+		ELSE undo@ 0- drop 0<> IF undo@ tos>bp anon! undoH@ H! 0 undo! THEN THEN r> >in! \:` ;
+: filter	_:` ' :` !^ ;
+: nofilter	:` ^^ ;
+: :.`		:` pvt ;
+: :^`		:` $68, ,1 here 5+ , $C3, ,1 ;
+: create`	:` 1 H@ ct|! anon:` ;
+: variable`	create` 0 , anon:` ;
+: constant`	create` _alias ;
+
+variable there
+: back		undo@ tos>bp anon! ;
+: forward`	undo@ 0- drop 0= IF here undo! H@ undoH! THEN there@ tos>bp anon! ;
+: err		!"Can't open file." ;
+: needed.	filter openlib 0- 0< err ? >r tp@ eob over- under r read r> close drop back eval forward` 0 noauto! nofilter ;
+: tmpsave	2dup>r openw0 ?ior ior@ write dup>r ?ior. ior@ close ?ior. r> 2r> type .": " .dec ."bytes^J" ;
+
+nomarkers
+deps main
+here there! gap tos>bp drop 0 tailrec!
+: libc_ libc@ #fun #call ;
+: dlsetup libc@ 0- 0<> IF drop ;THEN drop "libc.so.6" #lib libc! ;
+: execute >r ;
+: _boot dlsetup _mainxt@ execute 0 exit ;
+forward ;
+"ff.boot" needed. ;
+"ff.ff" needed. ;
+"cat.ff" needed. ;
+_boot ' _bootxt! main ' _mainxt! ;
+H undo@ over- "cmpl-" tmpsave ;
+bye ;

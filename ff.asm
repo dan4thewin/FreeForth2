@@ -330,6 +330,7 @@ macro CDB [string] {            ; compile counted string
 macro WORD name, xt, ct {       ; generate a header entry:
     macro GENWORDS \{           ; redefines GENWORDS
         dd xt                   ; code or data address, or literal
+        dd 0                    ; reserved
         db ct                   ; 0:code, 1:data/lit, etc?
         CDB name                ; name counted string
         GENWORDS                ; calls GENWORDS _previous_ definition
@@ -337,6 +338,7 @@ macro WORD name, xt, ct {       ; generate a header entry:
 }
 macro GENWORDS {                ; last called, first definition of GENWORDS
         dd 0                    ; don't-care xt
+        dd 0                    ; don't-care reserved
         db -1                   ; -1 ct stop value for hidepvt
         CDB ""                  ; empty counted string marks end of headers
 }
@@ -418,13 +420,174 @@ DATA "anon",anon,ebp0
 DATA "CS0",CS0,0                ; CALLstack base address, set later
 DATA "DS0",DS0,0                ; DATAstack base address, set later
 DATA "_bootxt",bootxt,0
+DATA "_mainxt",mainxt,0
 DATA "libc",_libc,0
-h.ct = 4                        ; offset of ct in header struct
+DATA "aux",aux,aux0             ; auxiliary headers
+h.rc = 4                        ; offset of reserved cell in header struct
+CSTE "h.rc",h.rc
+h.ct = 8                        ; offset of ct in header struct
 CSTE "h.ct",h.ct
-h.sz = 5                        ; offset of sz in header struct
+h.sz = 9                        ; offset of sz in header struct
 CSTE "h.sz",h.sz
-h.nm = 6                        ; offset of name in header struct
+h.nm = 10                       ; offset of name in header struct
 CSTE "h.nm",h.nm
+
+;;; ----------------------------------------------------------------------
+;;; include Operating-System interface
+
+OSINCLUDE
+
+;;; -------------------------------------------------------
+;;; memory/string utilities
+
+;;; cmove/place are defined as macros in ff.boot for their quite frequent use.
+;;; erase/fill/move/$-/search, less frequently used, are defined here:
+
+CODE "$@",skipstr               ; -- @ #
+        DUP2
+        pop edi                 ; edi = return address
+        pop edx                 ; edx = caller's return address
+        movzx ebx,byte[edx]     ; ebx = string count
+        inc edx                 ; edx now points on string initial
+        lea ecx,[edx+ebx+1]     ; skip over string and its zero-terminator
+        jmp edi
+litstr:                         ; -- @ # ; _quote compiles call litstr
+        call skipstr
+        jmp ecx                 ; resume execution after string
+dotstr:                         ; -- ; _dotquote compiles call dotstr
+        call skipstr
+        push ecx                ; push return address
+        jmp _type
+CODE "erase",_erase             ; @ # --
+        DUP1 0                  ; @ # 0 --
+CODE "fill",_fill               ; @ # byte --
+        xchg eax,esp            ; 94
+        xchg eax,ebx            ; 93/92
+        mov  ecx,edx            ; 89D1/89D9
+        pop  edi                ; 5F
+        rep  stosb              ; F3AA
+        xchg eax,ebx            ; 93/92
+        pop ebx
+        pop edx
+        xchg eax,esp
+        ret
+
+CODE "move",_move               ; @src @dst # -- ; safe memory-block-move
+        xchg eax,esp
+        pop esi                 ; esi = @src
+        mov edi,edx             ; edi = @dst
+        mov ecx,ebx             ; ecx = #
+        cmp esi,edi
+        jae @f
+        dec ebx
+        add esi,ebx             ; esi = @src+#-1
+        add edi,ebx             ; edi = @dst+#-1
+        std                     ; by decreasing addresses
+@@:     rep movsb
+        cld
+        pop ebx
+        pop edx
+        xchg eax,esp
+        ret
+
+CODE "$-",_stringsub            ; @1 @2 # -- n ; n=0:match
+        xchg eax,esp            ; 94
+        pop esi                 ; 5E esi = @1
+        mov edi,edx             ; 89D7/89DF edi = @2
+        mov ecx,ebx             ; 89D9/89D1 ecx = #
+        repz cmpsb              ; F3A6 esi and edi after last comparison
+        movzx ebx,byte[esi-1]   ; 0FB65EFF/0FB656FF
+        movzx edx,byte[edi-1]   ; 0FB657FF/0FB65FFF
+        sub ebx,edx             ; 29D3/29DA -- n
+        pop edx                 ; 5A/5B restore NOS
+        xchg eax,esp            ; 94
+        ret
+
+CODE "$-.",_stringsubdot        ; @1 @2 # -- n ; n=0:match
+        xchg eax,esp            ; 94
+        pop esi                 ; 5E esi = @1
+        mov edi,edx             ; 89D7/89DF edi = @2
+        mov ecx,ebx             ; 89D9/89D1 ecx = #
+.rc:    repz cmpsb              ; loop, stop at mismatch(nz) or match(ecx=0,z)
+        movzx ebx,byte[esi-1]   ; last char compared from @1
+        movzx edx,byte[edi-1]   ; last char compared from @2
+        jz .se                  ; if z:match break
+        cmp dl,'A'              ; non-matching, is char within A..z?
+        jl .se                  ; if <'A' break
+        cmp dl,'z'
+        jg .se                  ; if >'z' break
+        xor dl,$20              ; flip case
+        cmp ebx,edx             ; match?
+        jnz .me                 ; if nz:no_match break
+        cmp dl,'A'              ; match, is flipped char in A..z? catch [\]^_`
+        jl .me                  ; if <'A' break
+        cmp dl,'z'
+        jg .me                  ; if >'z' break
+        jecxz .se               ; if ecx==0 break
+        jmp .rc                 ; resume loop with next char
+.me:    movzx edx,byte[edi-1]   ; restore unflipped char
+.se:    sub ebx,edx             ; n for $-.
+        pop edx                 ; 5A/5B restore NOS
+        xchg eax,esp            ; 94
+        ret
+
+CODE "search",_search           ; @ # @k #k -- @r #r ; z:match, nz:fail
+        mov ecx,[eax]           ; ecx=#
+        mov edi,[eax+4]         ; edi=@
+        xchg eax,esp
+        push eax                ; save callSP
+        sub ecx,ebx
+        inc ecx                 ; for initial in very last position
+        jle .fail
+        mov al,[edx]            ; al=kInitial
+.loop:  repnz scasb             ; look for kInitial
+        jnz .fail
+        push edi                ; edi after matched initial
+        push ecx                ; ecx=remainingBytes
+        dec edi                 ; back over initial
+        mov ecx,ebx             ; ecx=#k
+        mov esi,edx             ; esi=@k
+        repz cmpsb              ; z:match
+        pop ecx
+        pop edi                 ; resume after initial
+        jnz .loop
+        lea edx,[edi-1]         ; back over initial
+        lea ebx,[ebx+ecx]       ; remaining count
+        pop eax                 ; restore callSP
+        xchg eax,esp
+        lea eax,[eax+8]         ; -- @found #remaining ; z:match
+        ret
+.fail:  pop eax                 ; restore callSP
+        pop ebx                 ; restore @ and #
+        pop edx                 ; -- @ # ; nz:failed
+        xchg eax,esp
+        ret
+
+;; count a nul terminated string, keep the address
+;; eg. "HOME" 1_ libc. getenv zlen type
+CODE "zlen",zlen                ; @ -- @ #
+        DUP1
+        mov edi,edx
+        xor ecx,ecx
+        not ecx
+        push eax
+        xor eax,eax
+        repne scasb
+        pop eax
+        not ecx
+        dec ecx
+        mov ebx,ecx
+        ret
+
+CODE "depth",_depth             ; -- n
+        DUP1
+        mov ebx,[DS0]
+        sub ebx,eax
+        sar ebx,2
+        ret
+
+DATA "gap",gap,0
+_gap    rb 8192                 ; backfill with turnkey code
 
 ;;; -------------------------------------------------------
 ;;; basic code generation support
@@ -676,21 +839,6 @@ CODE "litcomp",literalcompiler  ; @ # -- ; from _wsparse
         dd litcomma,litfetch,litstore
 .def    dd litnum               ; default
 
-skipstr:                        ; -- @ #
-        DUP2
-        pop edi                 ; edi = return address
-        pop edx                 ; edx = caller's return address
-        movzx ebx,byte[edx]     ; ebx = string count
-        inc edx                 ; edx now points on string initial
-        lea ecx,[edx+ebx+1]     ; skip over string and its zero-terminator
-        jmp edi
-litstr:                         ; -- @ # ; _quote compiles call litstr
-        call skipstr
-        jmp ecx                 ; resume execution after string
-dotstr:                         ; -- ; _dotquote compiles call dotstr
-        call skipstr
-        push ecx                ; push return address
-        jmp _type
 litquote:                       ; @ # -- ; embed a string literal
         cmp byte[edx],','       ; initial comma
         jz memcomma
@@ -846,6 +994,7 @@ litdata:                        ; @ # -- xt ; called from lit@!
         and ecx,7               ; firewall!
         cmp ecx,1               ; 9 or 1=data, 8 or 0=code
         jnz notfnd
+        call toAux
         jmp drop1               ; -- xt
 litfetch:                       ; @ # --
         call litdata            ; -- xt
@@ -923,6 +1072,8 @@ CODE ";;`",_semisemi            ; --
         ret
 
 VECT ";`",_semi                 ; -- ; who needs the interpreter anyway!
+        xor esi,esi
+        call toAux
         call _rst
         mov ecx,[anon]
         cmp ecx,ebp             ; empty?
@@ -958,7 +1109,9 @@ CODE "header",_header           ; @ # xt ct -- ; creates a new header
         sub edi,ecx             ; allocate name
         mov [edi-h.nm+h.sz],cl  ; store #
         mov [edi-h.nm+h.ct],bl  ; store ct
-        lea ebx,[edi-h.nm]      ; allocate xt[4],ct[1],#[1]
+        mov ebx,[aux]
+        mov [edi-h.nm+h.rc],ebx
+        lea ebx,[edi-h.nm]      ; allocate xt[4],rc[4],ct[1],#[1]
         mov [H],ebx             ; update H
         mov [ebx],edx           ; store xt
         rep movsb               ; copy string, ends with ecx = 0
@@ -973,7 +1126,7 @@ drop2:  xchg eax,esp            ; x y --
 DATA "which",which,0            ; holds last found hfa
 VECT "find",_find               ; @ # -- @ # | xt 0
         mov esi,[H]             ; esi = headers pointer
-.b:     lea esi,[esi+h.nm]         ; skip over xt[4],ct[1],sz[1]
+.b:     lea esi,[esi+h.nm]      ; skip over xt[4],rc[4],ct[1],sz[1]
         movzx ecx,byte[esi-1]   ; ecx = string length
         jecxz .e                ; null length = headers end: stack unchanged
         cmp ecx,ebx             ; if string length differs,
@@ -983,7 +1136,7 @@ VECT "find",_find               ; @ # -- @ # | xt 0
 @@:     lea esi,[esi+ecx+1]     ; skip to initial of next string
         jnz .b                  ; until match:
         sub esi,ebx             ; back to string initial +1(zero-terminator)
-        lea esi,[esi-h.nm-1]    ; back over xt[4],ct[1],sz[1],zt,  esi = hfa
+        lea esi,[esi-h.nm-1]    ; back over xt[4]...ct[1],sz[1],zt,  esi = hfa
         mov [which],esi         ; save hfa
         mov edx,[esi]           ; edx = xt
         xor ebx,ebx             ; ebx = 0 = found
@@ -1091,147 +1244,22 @@ VECT "compiler",_compiler       ; --
 icall:  push ebx                ; immediate call: execute found.xt
         DROP1
 ilit:   ret                     ; immediate literal: leave found.xt on stack
+toAux:  mov edi,[aux]
+        mov [edi],esi
+        add edi,4
+        mov [aux],edi
+        ret
+acall:  call toAux
+        jmp _call
+alit:   call toAux
+        jmp _lit
 ccerr:  call _error
         CDB "undefined compiler class"
 CSTE "classes",_classes         ; compiler classes table: immediate,postponed
-_classes dd icall,_call         ; 0: call
-        dd ilit,_lit            ; 1: literal
+_classes dd icall,acall         ; 0: call
+        dd ilit,alit            ; 1: literal
         dd ccerr,ccerr          ; 2: FPU-macro (see `f:` in ff.ff)
         dd 5 dup (ccerr,ccerr)  ; 3-7: undefined (add more if needed)
-
-;;; -------------------------------------------------------
-;;; memory/string utilities
-
-;;; cmove/place are defined as macros in ff.boot for their quite frequent use.
-;;; erase/fill/move/$-/search, less frequently used, are defined here:
-
-CODE "erase",_erase             ; @ # --
-        DUP1 0                  ; @ # 0 --
-CODE "fill",_fill               ; @ # byte --
-        xchg eax,esp            ; 94
-        xchg eax,ebx            ; 93/92
-        mov  ecx,edx            ; 89D1/89D9
-        pop  edi                ; 5F
-        rep  stosb              ; F3AA
-        xchg eax,ebx            ; 93/92
-        pop ebx
-        pop edx
-        xchg eax,esp
-        ret
-
-CODE "move",_move               ; @src @dst # -- ; safe memory-block-move
-        xchg eax,esp
-        pop esi                 ; esi = @src
-        mov edi,edx             ; edi = @dst
-        mov ecx,ebx             ; ecx = #
-        cmp esi,edi
-        jae @f
-        dec ebx
-        add esi,ebx             ; esi = @src+#-1
-        add edi,ebx             ; edi = @dst+#-1
-        std                     ; by decreasing addresses
-@@:     rep movsb
-        cld
-        pop ebx
-        pop edx
-        xchg eax,esp
-        ret
-
-CODE "$-",_stringsub            ; @1 @2 # -- n ; n=0:match
-        xchg eax,esp            ; 94
-        pop esi                 ; 5E esi = @1
-        mov edi,edx             ; 89D7/89DF edi = @2
-        mov ecx,ebx             ; 89D9/89D1 ecx = #
-        repz cmpsb              ; F3A6 esi and edi after last comparison
-        movzx ebx,byte[esi-1]   ; 0FB65EFF/0FB656FF
-        movzx edx,byte[edi-1]   ; 0FB657FF/0FB65FFF
-        sub ebx,edx             ; 29D3/29DA -- n
-        pop edx                 ; 5A/5B restore NOS
-        xchg eax,esp            ; 94
-        ret
-
-CODE "$-.",_stringsubdot        ; @1 @2 # -- n ; n=0:match
-        xchg eax,esp            ; 94
-        pop esi                 ; 5E esi = @1
-        mov edi,edx             ; 89D7/89DF edi = @2
-        mov ecx,ebx             ; 89D9/89D1 ecx = #
-.rc:    repz cmpsb              ; loop, stop at mismatch(nz) or match(ecx=0,z)
-        movzx ebx,byte[esi-1]   ; last char compared from @1
-        movzx edx,byte[edi-1]   ; last char compared from @2
-        jz .se                  ; if z:match break
-        cmp dl,'A'              ; non-matching, is char within A..z?
-        jl .se                  ; if <'A' break
-        cmp dl,'z'
-        jg .se                  ; if >'z' break
-        xor dl,$20              ; flip case
-        cmp ebx,edx             ; match?
-        jnz .me                 ; if nz:no_match break
-        cmp dl,'A'              ; match, is flipped char in A..z? catch [\]^_`
-        jl .me                  ; if <'A' break
-        cmp dl,'z'
-        jg .me                  ; if >'z' break
-        jecxz .se               ; if ecx==0 break
-        jmp .rc                 ; resume loop with next char
-.me:    movzx edx,byte[edi-1]   ; restore unflipped char
-.se:    sub ebx,edx             ; n for $-.
-        pop edx                 ; 5A/5B restore NOS
-        xchg eax,esp            ; 94
-        ret
-
-CODE "search",_search           ; @ # @k #k -- @r #r ; z:match, nz:fail
-        mov ecx,[eax]           ; ecx=#
-        mov edi,[eax+4]         ; edi=@
-        xchg eax,esp
-        push eax                ; save callSP
-        sub ecx,ebx
-        inc ecx                 ; for initial in very last position
-        jle .fail
-        mov al,[edx]            ; al=kInitial
-.loop:  repnz scasb             ; look for kInitial
-        jnz .fail
-        push edi                ; edi after matched initial
-        push ecx                ; ecx=remainingBytes
-        dec edi                 ; back over initial
-        mov ecx,ebx             ; ecx=#k
-        mov esi,edx             ; esi=@k
-        repz cmpsb              ; z:match
-        pop ecx
-        pop edi                 ; resume after initial
-        jnz .loop
-        lea edx,[edi-1]         ; back over initial
-        lea ebx,[ebx+ecx]       ; remaining count
-        pop eax                 ; restore callSP
-        xchg eax,esp
-        lea eax,[eax+8]         ; -- @found #remaining ; z:match
-        ret
-.fail:  pop eax                 ; restore callSP
-        pop ebx                 ; restore @ and #
-        pop edx                 ; -- @ # ; nz:failed
-        xchg eax,esp
-        ret
-
-;; count a nul terminated string, keep the address
-;; eg. "HOME" 1_ libc. getenv zlen type
-CODE "zlen",zlen                ; @ -- @ #
-        DUP1
-        mov edi,edx
-        xor ecx,ecx
-        not ecx
-        push eax
-        xor eax,eax
-        repne scasb
-        pop eax
-        not ecx
-        dec ecx
-        mov ebx,ecx
-        ret
-
-CODE "depth",_depth             ; -- n
-        DUP1
-        mov ebx,[DS0]
-        sub ebx,eax
-        sar ebx,2
-        ret
 
 ;;; -------------------------------------------------------
 ;;; startup code: relocate headers from ebp^ to ^H
@@ -1311,12 +1339,6 @@ else    ;; this allows debugging of boot source:
 end if
 
 ;;; ----------------------------------------------------------------------
-;;; include Operating-System interface
-
-OSINCLUDE
-
-
-;;; ----------------------------------------------------------------------
 ;;; memory map:
 
 ;;; [binary code and data> heap <headers][source code> blocks][ ]  < stacks ]
@@ -1341,6 +1363,7 @@ section '.bss'
 bss     rb 1024*512             ; code and data -> heap <- headers
 tib     rb 1024*256             ; terminal input and blocks buffer
 eob     rb 1024                 ; temporary scratch area
+aux0    rb 1024*16
 bssend:                         ; segmentation fault after this address.
 
     bss_size = $-bss
