@@ -1,4 +1,6 @@
 # FreeForth2
+[![Tests Status](https://github.com/dan4thewin/FreeForth2/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/dan4thewin/FreeForth2/actions/workflows/ci.yml?query=branch%3Amaster)
+
 Derived from FreeForth by Christophe Lavarenne (1956-2011)
 
 ## New Features
