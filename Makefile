@@ -41,7 +41,7 @@ test: ff
 	$(MAKE) -s FF=./fftk test1
 
 ci:
-	type fasm >/dev/null 2>&1 || sudo apt-get install -y fasm
+	sudo apt-get install -y fasm gcc-multilib
 	$(MAKE) ARGS=nocolor test
 
 PREFIX=$$HOME/.local
