@@ -1937,6 +1937,8 @@ background ( color -- ) changes the console window background color attribute
 foreground ( color -- ) changes the console window foreground color attribute
   "color" may be "black" "red" "green" "yellow" "blue" "magenta" "cyan" "white"
   Linux and Windows define some other specific attributes (see ff.ff)
+nocolor ( -- ) disable colors; reset the color vector to enable again, i.e.,
+  color ^^
   see also: normal background cls  ff.ff
 
 .d ( u -- ) displays n as Gregorian date since 0-0-0

@@ -21,19 +21,28 @@ fftk: fftk.o
 clean:
 	rm -f ff fftk *.o
 
+test1:
+	@set -o pipefail; \
+	for d in test/*; do \
+		echo -n $$d; printf %$$((20-$${#d}))s; \
+		$(FF) $(ARGS) -f $$d | tail -1; let e+=$$?; \
+	done; exit $$e
+
 test: ff
-	@echo ff
-	@for d in test/*; do echo -ne $$d \\e[21G; ./ff -f $$d | tail -1; done
-	@echo ff +longconds
-	@for d in test/*; do echo -ne $$d \\e[21G; ./ff +longconds -f $$d | tail -1; done
-	@echo fftk
-	@./ff -f test.ff -f mkimage.ff
-	@$(MAKE) fftk >/dev/null
-	@for d in test/*; do echo -ne $$d \\e[21G; ./fftk -f $$d | tail -1; done
-	@echo fftk +longconds
-	@./ff +longconds -f test.ff -f mkimage.ff
-	@$(MAKE) fftk >/dev/null
-	@for d in test/*; do echo -ne $$d \\e[21G; ./fftk -f $$d | tail -1; done
+	@echo ff; \
+	$(MAKE) -s ff FF=./ff test1; \
+	echo ff +longconds; \
+	$(MAKE) -s ff FF='./ff +longconds' test1; \
+	echo fftk; \
+	./ff -f test.ff -f mkimage.ff && $(MAKE) -s fftk >/dev/null; \
+	$(MAKE) -s FF=./fftk test1; \
+	echo fftk +longconds; \
+	./ff +longconds -f test.ff -f mkimage.ff && $(MAKE) -s fftk >/dev/null; \
+	$(MAKE) -s FF=./fftk test1
+
+ci:
+	type fasm >/dev/null 2>&1 || sudo apt-get install -y fasm
+	$(MAKE) ARGS=nocolor test
 
 PREFIX=$$HOME/.local
 FFBIN=$(PREFIX)/bin
@@ -48,4 +57,4 @@ install-share: ff.ff ff.help lib/*
 
 install: install-bin install-share
 
-.PHONY: clean test install install-bin install-share
+.PHONY: clean test1 test ci install install-bin install-share
