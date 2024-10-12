@@ -3,7 +3,21 @@
 
 Derived from FreeForth by Christophe Lavarenne (1956-2011)
 
+FreeForth2 offers a novel, lightweight Forth for x86 Linux that deftly blends assembly and Forth.
+
+## Features
+FreeForth2 inherits its most distinctive features from FreeForth.
+* interactivity through compiled anonymous functions (no separate interpret mode)
+* macros generate inline x86 code
+* top two stack elements use registers
+* register renaming means zero-cost swap
+* tail-call optimized to jump
+* allows multiple entry-points to a function
+* built-in help system
+
 ## New Features
+FreeForth2 improves usability, Linux integration, and quality controls.
+* stat, mmap, getenv, getpid, getppid, system
 * turnkey support
 * simple locals
 * segfault handler
@@ -12,16 +26,18 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
 * library search path
 * debug compiler makes verbose words
 * alternate versions of conditionals use Booleans on the stack
+* pictured numeric output
 * unit tests
   * with optional `compat.ff`, passes 90% of the core words tests from the Forth 2012 test suite
 
-## Changes
-* interactive input automatically terminated
+## Changes from FreeForth
+* interactive input automatically terminated (closing `;` assumed)
 * quoted literals may contain spaces
 * abandoned windows support
-* require explicit conditions before IF
+* requires explicit conditions before `IF`
+  * avoids source of faulty assumptions (see criticism below)
 * features separated into files in lib
-* leading backquote for hiding headers replaced with :. pvt and hidepvt
+* leading backquote for hiding headers replaced with `:.` `pvt` and `hidepvt`
 
 ## Docs
 * Christophe Lavarenne's writings about the original FreeForth with some notes
@@ -68,8 +84,8 @@ Derived from FreeForth by Christophe Lavarenne (1956-2011)
 $ cat cat.ff
 needs mmap.ff
 mkmm m
-: ok?   dup $FF | -1 = 2drop IF strerror rdrop ELSE drop THEN ;
-: cat   m mmapr ok? m @ m mm.sz @ type m munmap 2drop ;
+: ok?   dup $FF | 1+ drop 0= IF strerror rdrop ;THEN drop ;
+: cat   m mmapr ok? m @ m mm.sz+ @ type m munmap 2drop ;
 : main  0 argc 1- TIMES 1+ dup argv cat REPEAT ;
 $ ./ff -f cat.ff -f mkimage.ff
 $ make fftk
@@ -81,7 +97,7 @@ $ mv fftk ffcat
 $ ./ffcat cat.ff
 needs mmap.ff
 mkmm m
-: ok?   dup $FF | -1 = 2drop IF strerror rdrop ELSE drop THEN ;
-: cat   m mmapr ok? m @ m mm.sz @ type m munmap 2drop ;
+: ok?   dup $FF | 1+ drop 0= IF strerror rdrop ;THEN drop ;
+: cat   m mmapr ok? m @ m mm.sz+ @ type m munmap 2drop ;
 : main  0 argc 1- TIMES 1+ dup argv cat REPEAT ;
 ```
