@@ -296,7 +296,7 @@ variable hide hide on
 :^ ossetup ;
 :. _back >in@ 1- dup BEGIN tib <> drop WHILE 1- dupc@ 10- drop 0= TILL 1+ END
    swap over- type ;
-:. _auto noauto@ 0- drop 0= IF ;` THEN ;
+:. _auto noauto@ 0- drop 0= IF >in@ -- ;` THEN ;
 :. eval. >in@ tp@ 2>r over+ tp! >in! compiler _auto 2r> tp! >in! ;
 :. _eval eval. '
 :. _exec catch 0;  _back ."_<-error:_" c@+ type cr  2drop
