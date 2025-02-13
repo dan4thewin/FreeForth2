@@ -61,7 +61,7 @@ t{ msb 2* -> 0s }t
 t{ 0s 2/ -> 0s }t
 t{ 1 2/ -> 0 }t
 t{ 4000 2/ -> 2000 }t
-t{ 1s 2/ -> 1s }t            \ msb propogated
+t{ 1s 2/ -> 1s }t            \ msb propagated
 t{ 1s 1 ^ 2/ -> 1s }t
 t{ msb 2/ msb & -> msb }t
 
