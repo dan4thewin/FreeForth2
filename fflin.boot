@@ -1,6 +1,6 @@
 1 constant [os]`
 \ do dlopen now, and hook it to _boot to do dlopen for the turnkey case
-:. dlsetup libc@ 0- 0<> IF drop ;THEN drop "libc.so.6" #lib libc! ;
+:. dlsetup libc@ 0<>; drop "libc.so.6" #lib libc! ;
 dlsetup
 : libc.` wsparse libc@ #fun lit` #call ' call, ;
 : libc_ libc@ #fun #call ; \ runtime version, turnkey safe

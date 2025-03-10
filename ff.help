@@ -1843,21 +1843,19 @@ fun:` ( funEntry N <name> -- ; argN..arg1 -- result ) defines a word
   Example: "GetTickCount" k32 0 fun: ms@  \ -- currentMillisecondsCount (ff.ff)
   see also: lib: fun: libc k32  ff.boot
 
+libc ( -- @ ) compiler state variable: stores the library handle for libc.so.6
+  :. dlsetup libc@ 0<>; drop "libc.so.6" #lib libc! ;
 libc.` ( N <name> -- ; argN ... arg1 -- result ) compiles inline a harness
   calling the libc function named "name" taking "N" arguments, which must
   be pushed on DATAstack in the same order as in C, i.e. C-prototype (see man)
   rightmost argument first, leftmost last; the N arguments are consumed
   by the function, which returns a single result on top of DATAstack.
   Lin: libc.` wsparse libc lit` #call ' call, ;  \ Win: see ker32.
-libc ( @ # -- funEntry ) looks up in libc.so.6 for the function matching
-  the name starting at address "@" for "#" bytes, and if found returns its
-  entry, otherwise throws an exception (example: "putc" libc 1 fun: putc)
-  "libc.so.6" lib: libc  \ Linux only, Windows see k32
 man` ( <toEOL> -- ) parses to end-of-line and passes it to the shell command
   "man", the Linux online manual which documents all system and libc functions
   (beginners, start with: man man)
   : man` >in@ 4- lnparse + over- shell ; \ 4-:"man_"
-  see also: libc. lib: fun: ?ior man  fflin.boot
+  see also: libc lib: fun: #fun ?ior man  fflin.boot
 
 libc_ *TODO*  contrast with libc.
   see also: turnkey
