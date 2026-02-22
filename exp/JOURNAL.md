@@ -517,3 +517,49 @@ Each level saves/restores `filebuf_ptr` along with `tin`/`tp`.
 ```
 
 ---
+
+## Experiment 014: Return Stack and String Operations
+
+**Goal**: Add return stack words (`>r`, `r>`, `r@`) and string/memory
+operations (`zlen`, `cmove`, `fill`, `erase`, `emit`).
+
+**Return stack implementation**: On x86-64, `rsp` is the call/return stack.
+The return stack words must work around the fact that calling `>r` itself
+pushes a return address. Solution: pop the return address into `rax`, do the
+operation, then `jmp rax` instead of `ret`. This is the standard Forth
+technique for return stack manipulation.
+
+**Result**: ✅ Pass. All words work correctly.
+```
+: swap-r >r >r swap r> r> ; 1 2 3 4 swap-r . . . . cr ;  → 4 3 1 2
+$41 emit $42 emit $43 emit cr ;                           → ABC
+42 >r r> . cr ;                                           → 42
+```
+
+---
+
+## Experiment 015: SWAPbit Infrastructure
+
+**Goal**: Add the SWAPbit infrastructure — the SC (swap counter) variable,
+`_rst` (register synchronization), and `_swap_ct` (compile-time swap toggle).
+
+**What was built**:
+- `SC` byte variable with bit 1 as the SWAPbit
+- `_rst`: checks SWAPbit; if set, emits `xchg rbx,rdx` and clears it
+- `_swap_ct`: toggles SWAPbit without emitting code
+- `_call_compile` and `_semi` call `_rst` before emitting code
+
+**Why swap remains runtime**: Full SWAPbit integration requires ALL primitives
+to use inline code generation with s01/s08/s09 register selection. Currently,
+primitives like `_sub` have internal `xchg rbx,rdx` that conflicts with `_rst`'s
+xchg — the two cancel out. The original FreeForth solves this by making
+primitives compile inline with SWAPbit-aware register encoding, but that's a
+fundamental restructuring best done in the final ff64 assembly.
+
+**Status**: Infrastructure in place. `swap` uses runtime `call _swap` (ct=0).
+The SWAPbit optimization is deferred to the final assembly phase where
+primitives will be rewritten as inline code generators.
+
+**Result**: ✅ Pass (with runtime swap). All existing tests pass.
+
+---
