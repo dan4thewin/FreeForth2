@@ -429,3 +429,54 @@ here dup $41 swap c! c@ . cr ;         → 65
 ```
 
 ---
+
+## Experiment 012: Variables, Constants, Strings, and ct Rework
+
+**Goal**: Add `variable`, `constant`, and `."` (dot-quote string printing).
+This requires reworking the compile-type (ct) system to support three
+distinct behaviors.
+
+**ct field rework**: The original experiments used ct=0 for runtime and
+ct=1 for compile-time words. This experiment introduces ct=1 for literal
+words (variables, constants) whose xt value should be pushed as an inline
+literal during compilation, and moves compile-time words to ct=2:
+
+| ct | Compiler action | Examples |
+|----|----------------|----------|
+| 0 | Emit `call xt` | `+ - * dup drop .` |
+| 1 | Emit literal push of xt value | variables (push addr), constants (push value) |
+| ≥2 | Execute xt immediately | `IF THEN ELSE BEGIN ( \` |
+
+**variable implementation**: `variable x` parses the name "x", allocates
+an 8-byte cell in the code buffer (initialized to 0), creates a header
+with xt = cell address and ct=1. When `x` is subsequently used, the
+compiler emits a literal push of the cell's address. `x @` reads, `x !`
+writes.
+
+**constant implementation**: `42 constant answer` first executes the
+accumulated anonymous code (via `_semi_exec`) to put 42 on the data stack,
+then creates a header with xt=42 (the TOS value) and ct=1. When `answer`
+is used, 42 is pushed as an inline literal.
+
+**`."` (dot-quote) implementation**: A compile-time word (ct=2) that
+scans input until the closing `"` and compiles an inline string print.
+The generated code is: `call _dotstr_rt` followed by a length byte and
+the string data. At runtime, `_dotstr_rt` pops its return address (which
+points to the string), prints it via sys_write, and jumps past the string
+data. This is a common Forth technique — strings are embedded directly
+in the instruction stream.
+
+**Result**: ✅ Pass.
+```
+variable x  42 x !  x @ . cr ;               → 42
+42 constant answer  answer . cr ;             → 42
+variable counter  0 counter !
+1 counter +!  1 counter +!  counter @ . cr ;  → 2
+: show ." x = " x @ . ." answer = " answer . cr ;
+42 x ! show ;                                 → x = 42 answer = 42
+99 x ! show ;                                 → x = 99 answer = 42
+: fact dup 1 > IF dup 1 - fact * THEN ;
+10 fact . cr ;                                → 3628800
+```
+
+---
