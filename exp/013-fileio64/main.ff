@@ -1,0 +1,5 @@
+( main.ff — includes lib.ff )
+include lib.ff
+-42 abs . cr ;
+3 7 max . cr ;
+3 7 min . cr ;

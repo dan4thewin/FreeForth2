@@ -1,0 +1,4 @@
+( lib.ff — math library )
+: abs dup 0< IF negate THEN ;
+: max over over < IF swap THEN drop ;
+: min over over > IF swap THEN drop ;

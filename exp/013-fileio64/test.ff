@@ -1,0 +1,5 @@
+( test.ff — loaded from file )
+: square dup * ;
+: cube dup square * ;
+: greet ." Hello from file!" cr ;
+42 constant MAGIC

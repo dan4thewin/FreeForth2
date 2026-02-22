@@ -480,3 +480,40 @@ variable counter  0 counter !
 ```
 
 ---
+
+## Experiment 013: File I/O (include)
+
+**Goal**: Add the ability to load and compile Forth source from files,
+enabling code to be organized across multiple files.
+
+**New capability**: `include <filename>` — opens a file, reads its contents
+into a buffer, compiles it (exactly as if the text were typed at the REPL),
+then restores the previous input state.
+
+**Implementation details**:
+- Uses x86-64 Linux syscalls: `open` (2), `read` (0), `close` (3)
+- Input state (`tin`, `tp`) saved/restored on the call stack
+- A `filebuf_ptr` tracks the current position in a 64KB file buffer,
+  advancing with each nesting level. This allows nested includes (a file
+  that includes another file) without overwriting the parent's buffer.
+- Each include level gets up to 16KB of buffer space
+- Error handling: missing files print an error and continue
+
+**Nested includes**: When `main.ff` includes `lib.ff`, the buffer layout is:
+```
+filebuf: [main.ff content...][gap][lib.ff content...]
+```
+Each level saves/restores `filebuf_ptr` along with `tin`/`tp`.
+
+**Result**: ✅ Pass.
+```
+> include test.ff
+> 5 square . cr ;     → 25   (square defined in test.ff)
+> 3 cube . cr ;       → 27   (cube defined in test.ff)
+> greet ;             → Hello from file!
+> include main.ff     → 42 7 3  (nested: main.ff includes lib.ff)
+> include bogus.ff    → error: cannot open file  (graceful error)
+> 3 4 + . cr ;        → 7    (continues after error)
+```
+
+---
