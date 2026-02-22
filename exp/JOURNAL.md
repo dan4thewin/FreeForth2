@@ -563,3 +563,71 @@ primitives will be rewritten as inline code generators.
 **Result**: ✅ Pass (with runtime swap). All existing tests pass.
 
 ---
+
+## Final Assembly: ff64.asm and ff64.boot
+
+**Goal**: Assemble the proven experiment code into the production `ff64.asm`
+and `ff64.boot` files, integrated into the project Makefile.
+
+**What was done**:
+- `ff64.asm`: Assembled from experiment 015 (which accumulated all features
+  from experiments 001–015). This is the x86-64 kernel with 60 built-in words.
+- `ff64.boot`: Minimal boot source providing standard Forth words (`2dup`,
+  `2drop`, `abs`, `max`, `min`, `within`, `>=`, `<=`, `<>`, `?`, `on`, `off`,
+  `space`, `spaces`, `?dup`, `2swap`, `TRUE`, `FALSE`).
+- `Makefile`: Updated with `ff64` target. `make all` now builds both `ff`
+  (32-bit) and `ff64` (64-bit).
+- Command-line `-f <file>` support: `./ff64 -f ff64.boot` loads the boot
+  file before entering the REPL. Multiple `-f` flags supported.
+
+**Built-in word inventory (60 words)**:
+
+| Category | Words |
+|----------|-------|
+| Arithmetic | `+ - * / mod /mod negate` |
+| Comparison | `= < > 0= 0<> 0<` |
+| Stack | `dup drop swap over rot nip tuck depth` |
+| Return stack | `>r r> r@` |
+| Memory | `@ ! c@ c! +! here allot , c,` |
+| Bitwise | `and or xor not lshift rshift` |
+| I/O | `. cr emit` |
+| Literals | `1 2` |
+| String/mem ops | `zlen cmove fill erase` |
+| Control flow (ct=2) | `IF THEN ELSE BEGIN AGAIN UNTIL WHILE REPEAT` |
+| Comments (ct=2) | `( \` |
+| Strings (ct=2) | `."` |
+
+**Architecture summary**:
+- rbx=TOS, rdx=NOS, r15=data stack, rsp=call stack, rbp=compilation pointer
+- ct=0 → compile call, ct=1 → compile literal, ct≥2 → execute immediately
+- 8-byte cells, subroutine-threaded, CALL rel32 linking
+- `syscall` instruction with x86-64 Linux ABI
+- Interactive REPL with `> ` prompt and `ok` response
+- Named definitions with `:` and `;`, variables and constants
+- File loading via `include` (with nesting) and `-f` command-line flag
+- SWAPbit infrastructure present (SC, _rst) but not yet activated
+
+---
+
+## Epilogue
+
+This journal documents the incremental creation of a 64-bit x86-64 port of
+FreeForth2, Christophe Lavarenne's minimal Forth system. Through 15
+experiments, each building on the last, the port was assembled piece by piece:
+from a bare "Hello World" syscall to a complete interactive Forth compiler
+capable of recursive definitions, flow control, variables, constants, string
+printing, and file loading.
+
+The most memorable bug was a single bit in a REX prefix (experiment 010):
+`49` instead of `4D` caused `lea r15, [r15+8]` to silently target `rdi`
+instead of `r15`, corrupting the data stack during recursive calls. One bit,
+days of debugging, and a lesson in x86-64 instruction encoding that no
+textbook could teach as effectively.
+
+The SWAPbit optimization — FreeForth's most distinctive feature, where `swap`
+emits zero instructions by tracking register assignments at compile time —
+was proven at the instruction level (experiment 005) but awaits deep
+integration into the code generator. This is a natural next step for anyone
+continuing Christophe's work.
+
+FreeForth2 lives on.

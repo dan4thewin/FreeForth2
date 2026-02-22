@@ -1,13 +1,20 @@
 SHELL=/bin/bash
 LD=ld -m elf_i386 -lc --dynamic-linker=/lib/ld-linux.so.2 -s
+LD64=ld -m elf_x86_64
 
-all: ff
+all: ff ff64
 
 ff.o: fflin.asm ff.asm fflinio.asm ff.boot fflin.boot
 	fasm $< $@
 
 ff: ff.o
 	$(LD) -o $@ $<
+
+ff64.o: ff64.asm
+	fasm $< $@
+
+ff64: ff64.o
+	$(LD64) -o $@ $<
 
 cmpl dict: ff
 	./ff -f mkimage.ff
@@ -19,7 +26,7 @@ fftk: fftk.o
 	$(LD) -o $@ $<
 
 clean:
-	rm -f ff fftk *.o
+	rm -f ff ff64 fftk *.o
 
 test1:
 	@set -o pipefail; \
