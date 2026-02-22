@@ -285,3 +285,89 @@ heads64 for runtime headers.
 ```
 
 ---
+
+## Experiment 010: Flow Control (IF/THEN/ELSE, BEGIN/UNTIL/WHILE/REPEAT)
+
+**Goal**: Implement compile-time words that generate conditional and looping
+machine code, enabling branching and iteration in defined words.
+
+**New concepts**:
+- **Compile-time words (ct=1)**: When `_find` returns a word with ct=1, the
+  compiler *executes* it immediately instead of emitting a call. These words
+  emit inline machine code (branches, jumps) into the code buffer and use the
+  Forth data stack (rbx/rdx/r15) at *compile time* to track forward-reference
+  patch addresses.
+- **CF-based _find signaling**: Changed from ZF to CF (carry flag) for
+  found/not-found. ecx holds the ct value when found. This avoids conflicts
+  with ct field testing.
+- **Flag-preserving DROP1**: Conditional branch words (IF, UNTIL) compile
+  `test rbx,rbx` followed by DROP1 followed by `jz rel32`. The DROP1 must
+  not clobber the flags set by `test`. Solution: use `lea r15,[r15+8]`
+  instead of `add r15,8` — LEA does not modify flags.
+
+**Compile-time words implemented**:
+
+| Word | Compile-time action |
+|------|---------------------|
+| IF | Emit `test rbx,rbx; DROP1; jz <forward>`. Push patch address. |
+| THEN | Patch the forward jump at the address on the data stack. |
+| ELSE | Emit `jmp <forward>`. Patch previous IF. Push new patch address. |
+| BEGIN | Push current compilation pointer (loop target) onto data stack. |
+| AGAIN | Emit `jmp <backward>` to BEGIN target. |
+| UNTIL | Emit `test rbx,rbx; DROP1; jz <backward>` to BEGIN target. |
+| WHILE | Same as IF (push patch address for forward jump). |
+| REPEAT | Emit `jmp <backward>` to BEGIN, then patch WHILE's forward jump. |
+
+**Runtime comparison words added**: `=`, `<`, `>`, `0=`, `0<>`, `0<`, `negate`, `1`, `2`
+
+**Bugs found and fixed** (a chronicle of x86-64 encoding subtleties):
+
+1. **IF flag clobbering** (subtle): `add r15, 8` in DROP1 clobbers ZF from
+   the preceding `test rbx,rbx`. Fix: encode as `lea r15, [r15+8]` which
+   preserves all flags. Encoded as `4D 8D 7F 08`.
+
+2. **Comparison flag clobbering**: `add r15, 8` in `_eq`/`_lt`/`_gt`
+   clobbered flags before `setX cl` could capture the comparison result.
+   Fix: execute `setX cl` immediately after `cmp`, before any flag-modifying
+   instructions.
+
+3. **`_number` rdx corruption**: Compile-time words use rdx/r15 (the data
+   stack) during compilation to track patch addresses. When the compiler
+   encounters a number literal, `_number` was clobbering rdx (used as an
+   accumulator). Fix: save/restore rdx around `_number`. Changed success/
+   failure signaling to use ZF: `cmp rax,rax` (always sets ZF) for success,
+   `test rax,rax` (nonzero clears ZF) for failure.
+
+4. **The REX prefix single-bit bug** (the most insidious): The flag-preserving
+   `lea r15, [r15+8]` was encoded as `49 8D 7F 08`. REX prefix `49` has
+   REX.W=1, REX.R=0, REX.B=1. The ModR/M byte `7F` has reg=111 (7) and
+   r/m=111 (7). With REX.B=1, r/m extends to r15 ✓. But with REX.R=0,
+   reg stays as 7 = rdi. So the instruction was actually `lea rdi, [r15+8]`
+   — it wrote to rdi instead of r15! The data stack pointer was never
+   updated, causing a one-cell offset that corrupted values during recursive
+   calls. The fix: change `49` to `4D` (set REX.R=1), making reg=15=r15.
+   **One bit, four days of debugging.**
+
+**Result**: ✅ Pass.
+```
+: abs dup 0< IF negate THEN ; -42 abs . cr ;        → 42
+: max over over < IF swap THEN drop ; 3 7 max . cr ; → 7
+: fact dup 1 > IF dup 1 - fact * THEN ;
+5 fact . cr ;                                        → 120
+10 fact . cr ;                                       → 3628800
+: recsum dup 1 > IF dup 1 - recsum + THEN ;
+3 recsum . cr ;                                      → 6
+10 recsum . cr ;                                     → 55
+: fib dup 1 > IF dup 1 - fib swap 2 - fib + THEN ;
+10 fib . cr ;                                        → 55
+: countdown BEGIN dup . cr 1 - dup 0= UNTIL drop ;
+3 countdown ;                                        → 3 2 1
+```
+
+This experiment proves the x86-64 port can handle arbitrary control flow,
+including deep recursion. The REX prefix bug is a cautionary tale about
+x86-64 instruction encoding: r15 requires both REX.R (for the reg field)
+and REX.B (for the r/m field) to be set in the same instruction. Missing
+either one silently targets a different register.
+
+---
