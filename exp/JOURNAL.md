@@ -371,3 +371,61 @@ and REX.B (for the r/m field) to be set in the same instruction. Missing
 either one silently targets a different register.
 
 ---
+
+## Experiment 011: Memory Access, Arithmetic, and Stack Operations
+
+**Goal**: Extend the x86-64 Forth with memory access (`@`, `!`, `c@`, `c!`,
+`+!`), division and modulus (`/`, `mod`, `/mod`), bitwise operations (`and`,
+`or`, `xor`, `not`), shift operations (`lshift`, `rshift`), more stack words
+(`rot`, `nip`, `tuck`, `depth`), memory compilation (`here`, `allot`, `,`,
+`c,`), and comment handling (`(` and `\`).
+
+**New runtime words (26 total)**:
+
+| Category | Words |
+|----------|-------|
+| Memory | `@ ! c@ c! +!` |
+| Arithmetic | `/ mod /mod` |
+| Bitwise | `and or xor not` |
+| Shifts | `lshift rshift` |
+| Stack | `rot nip tuck depth` |
+| Memory compilation | `here allot , c,` |
+| Literals | `2` |
+| Comments (ct=1) | `( \` |
+
+**Division implementation note**: x86-64 `idiv` takes the dividend in `rdx:rax`
+and the divisor as an operand. Since `rdx` is our NOS register (the dividend
+in Forth's `a b /`), and `cqo` overwrites `rdx` with the sign extension, the
+divisor must first be saved to `rcx`. The sequence is:
+```
+mov rcx, rbx    ; save divisor (TOS)
+mov rax, rdx    ; load dividend (NOS)
+cqo             ; sign-extend rax → rdx:rax
+idiv rcx        ; quotient in rax, remainder in rdx
+```
+
+**Bug found and fixed**: `_tuck` had an unnecessary `xchg rbx,rdx` that
+swapped TOS/NOS after pushing. Since `tuck ( a b -- b a b )` only needs to
+push a copy of TOS below NOS, just `sub r15,8; mov [r15],rbx` suffices —
+rbx (b) and rdx (a) are already in the right positions.
+
+**Result**: ✅ Pass. All 26 new words work correctly alongside the existing
+set from experiment 010.
+```
+10 3 / . cr ;                          → 3
+10 3 mod . cr ;                        → 1
+10 3 /mod . . cr ;                     → 3 1
+$FF $0F and . cr ;                     → 15
+$F0 $0F or . cr ;                      → 255
+1 8 lshift . cr ;                      → 256
+256 2 rshift . cr ;                    → 64
+1 2 3 rot . . . cr ;                   → 1 3 2
+1 2 tuck . . . cr ;                    → 2 1 2
+here dup 42 swap ! here @ . cr ;       → 42
+here dup $41 swap c! c@ . cr ;         → 65
+: fact dup 1 > IF dup 1 - fact * THEN ;
+10 fact . cr ;                         → 3628800
+( this is a comment ) 3 4 + . cr ;     → 7
+```
+
+---
