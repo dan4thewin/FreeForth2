@@ -10,4 +10,7 @@ clean:
 	rm -f codegen64 codegen64.o
 
 test: codegen64
-	./codegen64
+	@echo -n "003-codegen64: "
+	@./codegen64 | grep -q "42" && echo "PASS" || echo "FAIL"
+
+.PHONY: all clean test

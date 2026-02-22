@@ -10,4 +10,7 @@ clean:
 	rm -f regswap64 regswap64.o
 
 test: regswap64
-	./regswap64
+	@echo -n "005-regswap64: "
+	@test "$$(./regswap64)" = "$$(printf '30\n30')" && echo "PASS" || echo "FAIL"
+
+.PHONY: all clean test

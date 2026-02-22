@@ -10,4 +10,7 @@ clean:
 	rm -f subrthread64 subrthread64.o
 
 test: subrthread64
-	./subrthread64
+	@echo -n "004-subrthread64: "
+	@./subrthread64 | grep -q "42" && echo "PASS" || echo "FAIL"
+
+.PHONY: all clean test

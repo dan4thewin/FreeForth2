@@ -10,4 +10,7 @@ clean:
 	rm -f hello64 hello64.o
 
 test: hello64
-	./hello64
+	@echo -n "001-hello64: "
+	@./hello64 | grep -q "Hello, 64-bit FreeForth2!" && echo "PASS" || echo "FAIL"
+
+.PHONY: all clean test
