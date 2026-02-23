@@ -1813,3 +1813,106 @@ Following FreeForth's compositional philosophy:
 **Files:** `ff64.asm` (+1 line: WORD64 ">S0"),
 `ff64.boot` (+12 lines: 2r`, 2xchg`, 3dup`, /%`, /`, %`),
 `exp/028-stackdivmod64/{macros.ff,Makefile}`
+
+---
+
+## Experiment 029: place`/cmove` and shift arithmetic
+
+**Goal:** Port the remaining shift-based arithmetic (2*, 2/, 4+, 4*,
+4/, 8*, 8/) and the critical string/memory copy operations (place`,
+cmove`).
+
+**Date:** 2026-02-23
+
+### Shift arithmetic — the i386 pattern scales cleanly
+
+The i386 shift ops follow a uniform pattern: `$XXYY, s01` where the
+litcomma value is a 2-byte instruction (like `D1 E3` = shl ebx,1)
+and s01 toggles bit 0 of the ModRM byte to switch between rbx and rdx.
+
+For x86-64, the only change is prepending REX.W ($48):
+
+```
+i386:  : 2*` $E3D1, s01 ;           ( D1 E3 = shl ebx, 1 )
+x64:   : 2*` $48, ,1 $E3D1, s01 ;   ( 48 D1 E3 = shl rbx, 1 )
+```
+
+The s01 XOR ($E3↔$E2) works identically because the ModRM byte
+encoding is the same — only the REX prefix changes the operand size
+from 32 to 64 bits.
+
+### place` — the two-level revelation deepens
+
+Understanding place` required cracking the two-level litcomma/s08
+interaction. The i386 version:
+
+```
+: place` $D189DF89, s08 s08 >C1 $5AA4F35E, ,3 s1 ;
+```
+
+The `s08 s08` sequence initially seemed like a no-op (XOR twice =
+cancel). But s08 does TWO things: it advances the caller's rbp by 2
+AND conditionally XORs [rbp-1]. The two s08 calls advance past the
+4-byte litcomma data in 2-byte steps, applying SWAPbit adjustments
+to each `mov` instruction independently.
+
+When place`'s body runs (during compilation of the calling word):
+1. Litcomma writes `89 DF 89 D1` (mov edi,ebx; mov ecx,edx) at the
+   caller's [rbp]
+2. First s08: advance rbp+2, adjust `89 DF` → `89 D7` if SWAPbit
+3. Second s08: advance rbp+2, adjust `89 D1` → `89 D9` if SWAPbit
+
+This is the macro body acting as a "program that writes programs" —
+the compile-time SWAPbit state determines which registers get used
+in the runtime code, decided at the moment the macro is invoked.
+
+### x86-64 place` — simpler without the xchg trick
+
+The i386 version uses >C1 (xchg eax,esp) to temporarily make the
+hardware stack pointer serve as the data stack pointer, enabling
+`pop esi` to read the source address. This CALLbit dance doesn't
+exist in x86-64 where r15 is the data stack pointer.
+
+Instead, we load directly from [r15]:
+
+```
+: place` >S0
+    $DF8948, ,3 $D18948, ,3 $378B49, ,3
+    $08578B49, ,4 $10C78349, ,4 $A4F3, ,2 ;
+```
+
+The 19-byte sequence:
+- `48 89 DF`       mov rdi, rbx     (dest from TOS)
+- `48 89 D1`       mov rcx, rdx     (count from NOS)
+- `49 8B 37`       mov rsi, [r15]   (src from data stack)
+- `49 8B 57 08`    mov rdx, [r15+8] (restore NOS from below)
+- `49 83 C7 10`    add r15, 16      (pop 2 cells)
+- `F3 A4`          rep movsb        (copy)
+
+Using >S0 instead of per-instruction s08 adjustments is a pragmatic
+choice: since we hardcode all the register assignments (rdi, rcx,
+rsi are not part of the TOS/NOS pair), we need rbx and rdx in known
+positions. The >S0 approach is 3 bytes more (for the potential xchg)
+but avoids complex SWAPbit choreography.
+
+place` leaves dest in TOS. cmove` wraps it:
+```
+: cmove` swap` place` drop` ;
+```
+
+### Comment syntax gotcha
+
+FreeForth's `(` comment parses to the next `)` on the same line.
+Nested parentheses in comments (like stack diagrams) close the
+comment early, causing subsequent words to be parsed as code.
+Use `\` line comments for anything containing parentheses.
+
+### Tests (12 total, all PASS)
+
+Shift: 2* (25→50), 2/ (50→25, -7→-4), 4+ (100→104),
+       4* (10→40), 4/ (40→10), 8* (10→80), 8/ (80→10)
+place: 5-byte copy with verification
+cmove: 3-byte copy, 2-byte different data, zero-count edge case
+
+**Files:** `ff64.boot` (+16 lines: shift ops, place`, cmove`),
+`exp/029-placeshifts64/{macros.ff,Makefile}`

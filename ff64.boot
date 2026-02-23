@@ -48,6 +48,13 @@
 : 1+` $48, ,1 $C3FF, s01 ;
 : 1-` $48, ,1 $CBFF, s01 ;
 : 2+` 1+` 1+` ;
+: 4+` $48, ,1 $C383, s01 $04, ,1 ;
+: 2*` $48, ,1 $E3D1, s01 ;
+: 2/` $48, ,1 $FBD1, s01 ;
+: 4*` $48, ,1 $E3C1, s01 $02, ,1 ;
+: 4/` $48, ,1 $FBC1, s01 $02, ,1 ;
+: 8*` $48, ,1 $E3C1, s01 $03, ,1 ;
+: 8/` $48, ,1 $FBC1, s01 $03, ,1 ;
 : bswap` $48, ,1 $CB0F, s01 ;
 : flip` $FB86, s09 ;
 : 8+` $48, ,1 $C383, s01 $08, ,1 ;
@@ -141,6 +148,13 @@
 
 \ Address arithmetic
 : bounds` over+` swap` ;
+
+\ String/memory copy (rep movsb)
+\ place` ( src count dest -- dest ): >S0 forces rbx=dest, rdx=count
+: place` >S0
+    $DF8948, ,3 $D18948, ,3 $378B49, ,3
+    $08578B49, ,4 $10C78349, ,4 $A4F3, ,2 ;
+: cmove` swap` place` drop` ;
 
 \ Compile literal: lit` takes value from TOS, emits push code
 \ off`/on` use lit` to compile 0/-1 then store

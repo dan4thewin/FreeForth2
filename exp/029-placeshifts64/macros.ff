@@ -1,0 +1,25 @@
+( Exp 029: place/cmove and shift arithmetic )
+
+( Shift-based multiply/divide )
+: 2*` $48, ,1 $E3D1, s01 ;
+: 2/` $48, ,1 $FBD1, s01 ;
+: 4+` $48, ,1 $C383, s01 $04, ,1 ;
+: 4*` $48, ,1 $E3C1, s01 $02, ,1 ;
+: 4/` $48, ,1 $FBC1, s01 $02, ,1 ;
+: 8*` $48, ,1 $E3C1, s01 $03, ,1 ;
+: 8/` $48, ,1 $FBC1, s01 $03, ,1 ;
+
+\ place` src count dest -- : copy count bytes from src to dest
+\ >S0 forces rbx=TOS=dest, rdx=NOS=count
+\ Emits: mov rdi,rbx; mov rcx,rdx; mov rsi,[r15]; mov rdx,[r15+8]; add r15,16; rep movsb
+\ Leaves dest in TOS — caller must drop
+: place` >S0
+    $DF8948, ,3
+    $D18948, ,3
+    $378B49, ,3
+    $08578B49, ,4
+    $10C78349, ,4
+    $A4F3, ,2 ;
+
+\ cmove` src dest count -- : standard Forth memory copy
+: cmove` swap` place` drop` ;
