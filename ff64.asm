@@ -506,6 +506,49 @@ _comma3: add rbp, 3
 _comma4: add rbp, 4
         ret
 
+;; lit` — compile n as a literal ( n -- ; -- n )
+;; Takes value from TOS at compile time, emits code that pushes it at runtime.
+;; Step 1: emit under code (push NOS) + toggle SWAPbit
+;; Step 2: emit mov/push+pop depending on value size
+;; Step 3: drop n from compile-time stack
+_lit:
+        ;; Step 1: emit under code (7 bytes) + toggle SWAPbit
+        call _emit_dup_nos_s        ; lea r15,[r15-8]; mov [r15],rdx/rbx
+        xor byte [SC], 2            ; toggle SWAPbit (swap`)
+        ;; Step 2: check value size and emit appropriate code
+        ;; Use r8 for value — rcx is clobbered by _s01/_s08 (ch register)
+        mov r8, rbx                 ; save full 64-bit value
+        movsx rax, bl               ; sign-extend low byte
+        cmp rax, r8                 ; fits in signed byte (-128..127)?
+        jne .long
+        ;; Byte path: push imm8; pop rbx = 6A xx 5B (3 bytes)
+        mov dword [rbp], $005B006A  ; 6A 00 5B 00
+        mov byte [rbp+1], r8b       ; actual byte value
+        inc rbp                     ; rbp past 6A
+        add rbp, 2                  ; rbp past imm8 + pop
+        call _s01                   ; SWAPbit on pop: 5B↔5A
+        jmp _drop                   ; drop n
+.long:
+        mov eax, r8d                ; zero-extend to 32-bit
+        cmp rax, r8                 ; same as 64-bit? (positive, fits in 32 bits)
+        jne .big
+        ;; 32-bit path: mov ebx, imm32 = BB imm32 (5 bytes, zero-extends to rbx)
+        mov byte [rbp], $BB
+        inc rbp
+        call _s01                   ; SWAPbit on BB: BB↔BA
+        mov dword [rbp], r8d        ; 32-bit immediate
+        add rbp, 4
+        jmp _drop
+.big:
+        ;; 64-bit path: 48 BB imm64 (10 bytes)
+        mov byte [rbp], $48         ; REX.W
+        mov byte [rbp+1], $BB
+        add rbp, 2
+        call _s01                   ; SWAPbit on BB: BB↔BA
+        mov qword [rbp], r8         ; 64-bit immediate
+        add rbp, 8
+        jmp _drop
+
 ;; =====================================================================
 ;; Inline code generators (ct=2) — SWAPbit-aware
 ;;
@@ -1657,6 +1700,7 @@ WORD64 ">r", _tor, 0, 2
 
 ;; Compile-time words (ct=1)
 WORD64 "swap`", _swap_inline, 0, 5
+WORD64 "lit`", _lit, 0, 4
 WORD64 "s09", _s09_word, 0, 3
 WORD64 "s08", _s08_word, 0, 3
 WORD64 "s01", _s01_word, 0, 3

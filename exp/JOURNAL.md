@@ -1557,3 +1557,74 @@ negative), dup@/dupc@/dupw@ (4), bswap (1), flip (1), 8+/8- (2),
 c@+ (2: basic, chained), bounds (1), w! (1), 2!/2@ (1).
 
 **Files:** `exp/025-loadvariants64/{macros.ff,Makefile}` (uses production ff64)
+
+---
+
+## Experiment 026: Literal compiler (lit`) and off`/on`
+
+**Date:** 2026-02-23
+
+### Goal
+
+Implement `lit`` — the compile-time literal word that takes a value
+from the data stack and emits code to push it at runtime. Then use it
+to define `off`` and `on`` (store 0 or -1 at an address).
+
+### Implementation
+
+`lit`` is an assembly word in ff64.asm (not a Forth macro) because it
+requires conditional code generation with different instruction sizes:
+
+| Value range         | Generated code           | Bytes |
+|---------------------|--------------------------|-------|
+| -128 to 127         | `push imm8; pop rbx/rdx` | 3     |
+| 0 to $7FFFFFFF      | `mov ebx/edx, imm32`    | 5     |
+| anything else        | `48 BB/BA imm64`         | 10    |
+
+The byte path exploits the fact that `push imm8` sign-extends and
+`pop` loads the full 64-bit value — same 3 bytes as on i386.
+
+### Bug found: _s01/_s08/_s09 clobber ch (rcx bits 15:8)
+
+The internal SWAPbit functions `_s01`, `_s08`, `_s09` all do
+`mov ch, $XX` to load the XOR value before branching to `_sx`. This
+clobbers rcx! The initial implementation stored the literal value in
+rcx and got corrupted values (e.g., 1000000 became 983360).
+
+**Fix:** Use r8 instead of rcx for the saved literal value. The
+extended registers r8-r15 are not touched by the SWAPbit machinery.
+
+**Lesson for the future historian:** When working with FreeForth's
+SWAPbit internals, remember that `_s01`/`_s08`/`_s09` use the ch
+register. Any value in rcx/ecx/cx/ch will be destroyed. This applies
+to all assembly-level code that calls these functions.
+
+### How lit` works with macros
+
+`lit`` is designed to be used INSIDE other macro definitions, not
+directly in user code. When the user writes:
+
+```forth
+: off` 0 lit` swap` !` ;
+```
+
+The definition of `off`` contains:
+1. Literal code that pushes 0 onto the data stack
+2. A call to `lit``
+3. Code from `swap`` and `!``
+
+When `off`` is EXECUTED (at compile time of some outer word):
+1. The literal code runs, pushing 0 onto the compile-time data stack
+2. `lit`` takes 0, emits code to push 0 at runtime
+3. `swap`` toggles SWAPbit, `!`` emits store code
+
+This is a key FreeForth pattern: compile-time macros that manipulate
+the data stack to parameterize code generation.
+
+### Tests (12 total, all PASS)
+
+Literal sizes: byte (42, 0, 127, -128, -1), 32-bit (128, 1000000),
+64-bit ($100000000). Off/on: basic, cycle. Composition: lit`+arith.
+
+**Files:** `exp/026-lit64/{macros.ff,Makefile}`, `ff64.asm` (added
+`_lit` + WORD64 entry), `ff64.boot` (added `off``/`on``)

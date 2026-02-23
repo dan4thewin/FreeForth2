@@ -1,0 +1,15 @@
+( Experiment 026: lit` and off`/on` )
+( These test the lit` assembly word added to ff64.asm )
+( and the off`/on` macros added to ff64.boot )
+
+\ Test macro using lit` with byte-sized value
+: const42` 42 lit` ;
+
+\ Test macro using lit` with 32-bit value
+: biglit` 1000000 lit` ;
+
+\ Test macro using lit` with 64-bit value
+: hugelit` $100000000 lit` ;
+
+\ Test macro using lit` with negative byte value
+: neg1` -1 lit` ;

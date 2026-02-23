@@ -124,6 +124,11 @@
 \ Address arithmetic
 : bounds` over+` swap` ;
 
+\ Compile literal: lit` takes value from TOS, emits push code
+\ off`/on` use lit` to compile 0/-1 then store
+: off` 0 lit` swap` !` ;
+: on` -1 lit` swap` !` ;
+
 ( Stack manipulation )
 : 2swap rot >r rot r> ;
 : ?dup 0- 0<> IF dup THEN ;
