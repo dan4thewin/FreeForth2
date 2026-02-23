@@ -1053,3 +1053,113 @@ all the major categories from ff.boot except:
 - Dictionary manipulation (pvt`, alias`, create`, variable`, constant`)
 - State/control (execute, reverse`, [`, ]`, :^`)
 - Extended flow control (conditional compilation, etc.)
+
+---
+
+## Part 12: Macro Composition and Utility Words (Experiment 031)
+
+### The composition challenge
+
+Up to now, our backtick macros have been "leaf" macros — each one
+directly emits machine code bytes via litcomma. But Lavarenne's
+FreeForth builds higher-level macros FROM simpler ones:
+
+```forth
+: 0;` 0-` 0=` IF` drop` ;THEN` ;
+```
+
+This says: "define `0;` as a macro that, when invoked, calls `0-`
+(emit test), `0=` (set condition), `IF` (emit conditional jump),
+`drop` (emit drop code), and `;THEN` (emit ret + patch jump)."
+
+The problem: `IF`, `THEN`, `0-`, and friends have ct=2 in our
+dictionary. When the compiler encounters them during `0;``'s
+definition, it executes them immediately — writing code into `0;``'s
+body instead of compiling calls to them.
+
+### The dual-name solution
+
+The fix mirrors what Lavarenne's ff.boot implicitly achieves: each
+compile-time primitive gets a second dictionary entry with an explicit
+backtick in its name and ct=0:
+
+```fasm
+WORD64 "IF",  _if, 2, 2    ; user-facing: executed immediately
+WORD64 "IF`", _if, 0, 3    ; macro-facing: compiled as a call
+```
+
+When the compiler processes `IF`` inside `0;``'s definition:
+1. Backtick mangling tries `IF``` — not found
+2. Normal lookup finds `IF`` — ct=0, compiled as `call _if`
+3. Later when `0;`` runs, it calls `_if` which emits the conditional
+   jump into the user's code
+
+We added 21 such entries covering all conditions, comparisons, and
+flow control words.
+
+### Building `;;`` and `;THEN``
+
+The `;;`` (double-semicolon) macro compiles a `ret` instruction:
+
+```forth
+: ;;` >S0 $C3, ,1 ;
+```
+
+`>S0` reconciles the SWAPbit state (emitting `xchg rbx,rdx` if
+needed), then `$C3,` writes a ret byte via litcomma and `,1`
+advances past it.
+
+`;THEN`` combines `;; ` with forward-jump patching:
+
+```forth
+: ;THEN` ;;` THEN` ;
+```
+
+Note the use of `THEN`` (with explicit backtick) — the ct=0 entry.
+Using `THEN` (ct=2) here would execute the THEN logic during `;THEN``'s
+own compilation, not during the user's compilation. This was the source
+of an early segfault that took careful analysis to diagnose.
+
+### The 8-byte store bug
+
+An early `;THEN`` implementation tried:
+```forth
+: ;THEN` ;;` here over - 4 - swap ! ;
+```
+This calculates the jump offset manually and stores it with `!`.
+But `!` writes 8 bytes (a qword), while the JNZ instruction's rel32
+field is only 4 bytes. The extra 4 bytes corrupt the instruction
+stream. Using `THEN`` (which does proper 32-bit patching internally)
+fixes this cleanly.
+
+### Practical utility words
+
+With the macro infrastructure working, we added useful runtime words:
+
+**`type`** (addr n --) prints a string character by character:
+```forth
+: type BEGIN 0- 0> WHILE swap dup c@ emit 1 + swap 1 - REPEAT 2drop ;
+```
+This is pure Forth — no inline assembly, no macros. It demonstrates
+that the compiler, flow control, and runtime primitives are all working
+together for practical string output.
+
+**`fill`** (addr n c --) uses triple rotation to maintain the fill
+character, address, and count through a loop:
+```forth
+: fill rot rot BEGIN 0- 0> WHILE 1 - -rot 2dup c! 1 + rot REPEAT drop 2drop ;
+```
+
+**`reverse``** pops the return address and calls it — turning a
+`call` into what's effectively a `jmp`. Same 3-byte encoding on
+both i386 and x86-64: `pop rcx; call rcx` ($59 $FF $D1).
+
+### Current state (after exp 031)
+
+~121 words/macros ported. The macro library now includes composable
+flow control macros (`;;``, `;THEN``, `0;``, `0<>;``, `?dup``),
+string output (`type`, `count`), memory operations (`fill`, `erase`),
+and the `reverse`` control flow primitive.
+
+Next: dictionary manipulation words, state/control primitives, and
+the remaining ff.boot infrastructure.

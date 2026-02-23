@@ -188,6 +188,27 @@
 : off 0 swap ! ;
 : space $20 emit ;
 : spaces BEGIN 0- 0> WHILE space 1 - REPEAT drop ;
+: type BEGIN 0- 0> WHILE swap dup c@ emit 1 + swap 1 - REPEAT 2drop ;
+: count dup 1 + swap c@ ;
+
+( Memory )
+: fill rot rot BEGIN 0- 0> WHILE 1 - -rot 2dup c! 1 + rot REPEAT drop 2drop ;
+: erase 0 fill ;
+
+( Flow control macros — composable backtick versions )
+: ;;` >S0 $C3, ,1 ;
+: ;THEN` ;;` THEN` ;
+: 0;` 0-` 0=` IF` drop` ;THEN` ;
+: 0<>;` 0-` 0<>` IF` drop` ;THEN` ;
+: ?dup` 0-` 0<>` IF` dup` THEN` ;
+
+( Inline macros — miscellaneous )
+\ reverse` pops return address and calls it (turns call into jmp)
+: reverse` $D1FF59, ,3 ;
+
+( Utilities )
+: bl $20 ;
+: noop ;
 
 ( Boolean constants )
 -1 constant TRUE

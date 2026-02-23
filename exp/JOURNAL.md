@@ -2014,3 +2014,105 @@ um*: unsigned (5*7→0:35)
 **Files:** `ff64.asm` (+8 lines: w, word + dictionary entry),
 `ff64.boot` (+12 lines: _m/mod, m/mod`, um/mod`, _m*, m*`, um*`,
 */mod`, */`), `exp/030-extarith64/{macros.ff,Makefile}`
+
+---
+
+## Experiment 031: Utility Words and Flow Control Macros
+
+**Goal:** Add practical utility colon definitions and — critically —
+composable flow-control macros that let backtick macros build on
+IF/THEN/ELSE from within Forth definitions.
+
+### The macro composition problem
+
+FreeForth's inline code generators (backtick macros) are the heart of
+the system. A macro like `0;`` needs to compose `0-``, `0=``, `IF``,
+`drop``, and a new `;THEN`` — calling them as subroutines to emit
+machine code into the caller's definition.
+
+The problem: words like `IF`, `THEN`, `0-` are defined in ff64.asm
+with ct=2 (compile-time). When the compiler encounters them inside
+a backtick macro's definition, it executes them immediately rather
+than compiling them as calls. This breaks composition.
+
+**Example:** `: 0;` 0-` 0=` IF` drop` ;THEN` ;`
+When compiled, the compiler sees `0-`` as a backtick-name lookup.
+It first tries backtick mangling (appending another `): `0-``` — not
+found. Then normal lookup: `0-`` — found, but ct=2 → executed
+immediately during the definition of `0;``, which is wrong.
+
+### The solution: backtick-named dictionary entries (ct=0)
+
+Added 21 new WORD64 entries in ff64.asm — each points to the same
+code as the ct=2 original but with an explicit backtick in the name
+and ct=0:
+
+```
+WORD64 "0-`", _0minus_inline, 0, 3
+WORD64 "IF`", _if, 0, 3
+WORD64 "THEN`", _then, 0, 5
+...etc for all conditions and flow control words
+```
+
+Now `: 0;` 0-` 0=` IF` drop` ;THEN` ;` works:
+- `0-`` found via normal lookup with ct=0 → compiled as a call
+- When `0;`` is later called at compile time, it calls these
+  functions which emit code into the user's definition
+
+### The `!` vs 32-bit store bug
+
+Initial `;THEN`` implementation used `here over - 4 - swap !` to
+patch the forward jump offset. But `!` stores a QWORD (8 bytes),
+overwriting 4 bytes past the 4-byte rel32 offset — corrupting the
+instruction stream. The fix: use `THEN`` (the ct=0 backtick entry
+for `_then`) which does proper 32-bit patching internally.
+
+### New macros
+
+| Macro | Description | Depends on |
+|-------|-------------|------------|
+| `;;`` | compile `ret` with SWAPbit sync | `>S0`, litcomma |
+| `;THEN`` | compile `ret`, patch IF's jump | `;;``, `THEN`` |
+| `0;`` | if zero: drop and return | `0-``, `0=``, `IF``, `drop``, `;THEN`` |
+| `0<>;`` | if non-zero: drop and return | `0-``, `0<>``, `IF``, `drop``, `;THEN`` |
+| `?dup`` | dup if non-zero (inline) | `0-``, `0<>``, `IF``, `dup``, `THEN`` |
+| `reverse`` | pop return addr, call it | litcomma ($59 $FF $D1) |
+
+### New colon definitions
+
+| Word | Stack | Description |
+|------|-------|-------------|
+| `type` | addr n -- | print string |
+| `count` | caddr -- addr n | counted string to addr+len |
+| `fill` | addr n c -- | fill n bytes with c |
+| `erase` | addr n -- | zero n bytes |
+| `bl` | -- 32 | space character |
+| `noop` | -- | do nothing |
+
+### Generated code analysis: `0;`
+
+When a user writes `0;` in their definition, the macro emits:
+```
+48 85 DB           test rbx, rbx      (0-: test TOS)
+0F 85 xx xx xx xx  jnz .past          (IF: skip if non-zero)
+49 8B 1F           mov rbx, [r15]     (drop: start of drop sequence)
+4D 8D 7F 08        lea r15, [r15+8]   (drop: adjust stack)
+48 87 DA           xchg rbx, rdx      (>S0: reconcile SWAPbit)
+C3                 ret                 (;;: early return)
+                   .past:             (;THEN: join point)
+```
+
+Total: 20 bytes of inline code. The `xchg rbx,rdx` comes from
+`>S0` inside `;;`` because the preceding `drop`` (which is
+`swap` nip``) leaves SWAPbit=1.
+
+### Tests (18 total, all PASS)
+
+Flow control: ;;(mid-def), 0;(zero/nonzero/mixed×2), 0<>;(×2), ?dup(×2)
+String: type(ABC/empty/single), count(counted string)
+Memory: fill(5 bytes), erase(3 bytes)
+Utilities: bl, noop, reverse
+
+**Files:** `ff64.asm` (+21 WORD64 entries for macro composition),
+`ff64.boot` (+18 lines: macros and colon definitions),
+`exp/031-utility64/{macros.ff,Makefile}`

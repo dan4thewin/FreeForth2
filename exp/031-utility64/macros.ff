@@ -1,0 +1,39 @@
+\ Exp 031: Utility words and flow control macros
+
+\ ;;` — compile ret with SWAPbit reconciliation (for macro composition)
+: ;;` >S0 $C3, ,1 ;
+
+\ ;THEN` — compile ret and patch IF's forward reference
+\ Uses THEN` (ct=0 backtick entry) to avoid THEN's ct=2 immediate execution
+: ;THEN` ;;` THEN` ;
+
+\ 0;` — if TOS=0, drop and return; otherwise continue
+: 0;` 0-` 0=` IF` drop` ;THEN` ;
+
+\ 0<>;` — if TOS≠0, drop and return; otherwise continue
+: 0<>;` 0-` 0<>` IF` drop` ;THEN` ;
+
+\ ?dup` — dup if non-zero (inline macro version)
+: ?dup` 0-` 0<>` IF` dup` THEN` ;
+
+\ type — print string at addr with length n ( addr n -- )
+: type BEGIN 0- 0> WHILE swap dup c@ emit 1 + swap 1 - REPEAT 2drop ;
+
+\ count — counted string to addr+length ( caddr -- addr n )
+: count dup 1 + swap c@ ;
+
+\ fill — fill n bytes at addr with char c ( addr n c -- )
+: fill rot rot BEGIN 0- 0> WHILE 1 - -rot 2dup c! 1 + rot REPEAT drop 2drop ;
+
+\ erase — zero n bytes at addr ( addr n -- )
+: erase 0 fill ;
+
+\ bl — push space character
+: bl $20 ;
+
+\ noop — do nothing
+: noop ;
+
+\ reverse` — pop return address and call it (turns call into jmp)
+\ 59 = pop rcx; FF D1 = call rcx (same encoding on i386 and x86-64)
+: reverse` $D1FF59, ,3 ;

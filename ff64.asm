@@ -1663,6 +1663,31 @@ WORD64 "c@", _cfetch_inline, 2, 2
 WORD64 "rot", _rot_inline, 2, 3
 WORD64 "tuck", _tuck_inline, 2, 4
 
+;; Backtick-named versions (ct=0) for macro composition
+;; These let macros compile calls to compile-time primitives.
+;; E.g.: `: 0;` 0-` 0=` IF` drop` ;THEN` ;`
+WORD64 "REPEAT`", _repeat, 0, 7
+WORD64 "WHILE`", _while, 0, 6
+WORD64 "UNTIL`", _until, 0, 6
+WORD64 "AGAIN`", _again, 0, 6
+WORD64 "BEGIN`", _begin, 0, 6
+WORD64 "ELSE`", _else, 0, 5
+WORD64 "THEN`", _then, 0, 5
+WORD64 "IF`", _if, 0, 3
+WORD64 "0>=`", _zge_flags, 0, 4
+WORD64 "0<=`", _zle_flags, 0, 4
+WORD64 "0>`", _zgt_flags, 0, 3
+WORD64 "0<`", _zlt_flags, 0, 3
+WORD64 "0<>`", _zneq_flags, 0, 4
+WORD64 "0=`", _zeq_flags, 0, 3
+WORD64 ">=`", _ge_flags, 0, 3
+WORD64 "<=`", _le_flags, 0, 3
+WORD64 "<>`", _neq_flags, 0, 3
+WORD64 ">`", _gt_flags, 0, 2
+WORD64 "<`", _lt_flags, 0, 2
+WORD64 "=`", _eq_flags, 0, 2
+WORD64 "0-`", _0minus_inline, 0, 3
+
 ;; FLAGS-based comparison words (ct=2)
 WORD64 "0-", _0minus_inline, 2, 2
 WORD64 "0>=", _zge_flags, 2, 3
