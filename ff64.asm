@@ -399,6 +399,33 @@ _wcomma: mov [rbp], bx          ; w, ( w -- ) compile 16-bit word
         add r15, 8
         ret
 
+;; Internal state accessors — push addresses of compiler variables
+_H_addr:                        ; H ( -- addr ) header pointer variable
+        sub r15, 8
+        mov [r15], rdx
+        mov rdx, rbx
+        lea rbx, [H]
+        ret
+
+_anon_addr:                     ; anon ( -- addr ) anonymous def start
+        sub r15, 8
+        mov [r15], rdx
+        mov rdx, rbx
+        lea rbx, [anon]
+        ret
+
+_SC_addr:                       ; SC ( -- addr ) SWAPbit/condition state
+        sub r15, 8
+        mov [r15], rdx
+        mov rdx, rbx
+        lea rbx, [SC]
+        ret
+
+_anon_colon:                    ; anon:` ( -- ) start new anonymous definition
+        mov [anon], rbp
+        mov byte [SC], 0
+        ret
+
 _ccomma: mov [rbp], bl          ; c, ( c -- ) compile byte
         add rbp, 1
         mov rbx, rdx
@@ -1715,6 +1742,9 @@ WORD64 "c,", _ccomma, 0, 2
 WORD64 ",", _comma, 0, 1
 WORD64 "allot", _allot, 0, 5
 WORD64 "here", _here, 0, 4
+WORD64 "SC", _SC_addr, 0, 2
+WORD64 "anon", _anon_addr, 0, 4
+WORD64 "H", _H_addr, 0, 1
 WORD64 "depth", _depth, 0, 5
 WORD64 "/mod", _divmod, 0, 4
 WORD64 "mod", _mod, 0, 3
@@ -1751,6 +1781,9 @@ WORD64 "BEGIN", _begin, 2, 5
 WORD64 "ELSE", _else, 2, 4
 WORD64 "THEN", _then, 2, 4
 WORD64 "IF", _if, 2, 2
+WORD64 "anon:`", _anon_colon, 0, 6
+WORD64 ";`", _semi, 0, 2
+WORD64 ":`", _colon, 0, 2
 WORD64 "\", _backslash, 2, 1
 WORD64 "(", _paren, 2, 1
 WORD64 '."', _dotquote, 2, 2

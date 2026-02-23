@@ -1218,3 +1218,99 @@ to the next case. The final default drops the switch key. Each
 ~125 words/macros ported. The flow control macro system now includes
 BOOL` (flags→boolean), SKIP` (unconditional jump), ELSE` (if/else),
 and CASE` (switch/case pattern).
+
+---
+
+## Part 14: Peering Into the Dictionary (Exp 033)
+
+### From assembly to Forth
+
+Up to now, our dictionary has been opaque — words go in, headers are
+created, but we had no way to inspect or modify them from Forth.
+Experiment 033 opens the hood by exposing header layout constants
+and accessor words.
+
+### Header anatomy
+
+Every word in the dictionary has a header that grows downward from
+the header space pointer `H`:
+
+```
+offset 0:  xt     (8 bytes) — execution token (code address or value)
+offset 8:  ct     (1 byte)  — compile-time flags
+offset 9:  sz     (1 byte)  — name length
+offset 10: nm...  (N bytes) — name characters + null terminator
+```
+
+The constants `h.ct` (8), `h.sz` (9), and `h.nm` (10) give these
+offsets. Given a header address, you can reach any field:
+
+```forth
+H@ 8 + c@    \ read the ct byte of the most recent word
+H@ 9 + c@    \ read the name length
+H@ 10 + c@   \ read the first character of the name
+```
+
+### The suffix problem and our workaround
+
+In the original i386 FreeForth, `H@` is not a defined word — it's a
+single token parsed by the literal compiler's suffix mechanism. The
+compiler strips the trailing `@`, finds `H` (a variable), and applies
+fetch. This gives "free" compound words: `H@`, `h.ct+`, `anon!`, etc.
+
+Our x86-64 port doesn't have this suffix mechanism yet, so we define
+explicit helper words:
+
+```forth
+: H@ H @ ;         \ push the header pointer value
+: anon@ anon @ ;   \ push the anonymous definition start address
+```
+
+### Modifying headers: ct|!
+
+The `ct|!` word ORs a bitmask into a header's ct byte:
+
+```forth
+: ct|! 8 + dupc@ rot | swap c! ;   ( mask hdr-addr -- )
+```
+
+This is a beautiful example of FreeForth idiom. The `dupc@` macro
+(which was itself defined using litcomma in Part 10) duplicates the
+address and byte-fetches in one inline operation. The familiar
+Forth sequence `rot | swap c!` does the read-modify-write.
+
+### Marking words private
+
+With `ct|!` in hand, `pvt'` is trivially:
+
+```forth
+: pvt` 8 H@ ct|! ;
+```
+
+Push 8 (bit 3), push the latest header address, OR it in. The
+private bit prevents words from being visible in dictionary searches.
+
+### The ct byte's many roles
+
+The ct byte packs several flags:
+
+| Bits | Meaning |
+|------|---------|
+| 0-2  | Compile class (0=call, 1=literal, 2+=compile-time) |
+| 3    | Private flag (word hidden from search) |
+| 5    | Alias flag ($20 = word is an alias) |
+
+This is why tests mask with `7 and` (bits 0-2) or `8 and` (bit 3)
+when checking specific flags.
+
+### What comes next
+
+With header access working, we can build the remaining dictionary
+operations: `alias'` (create named aliases), `create'` (generic word
+creation), and the bracket words `['` / `]'` for switching compiler
+state. These are the building blocks for higher-level constructs like
+structures, object systems, and the `:^'` push-address pattern.
+
+### Current state (after exp 033)
+
+~130 words/macros ported. 107 tests across 33 experiments, all passing.

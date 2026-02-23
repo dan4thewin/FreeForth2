@@ -2189,3 +2189,105 @@ BOOL mixed: 0> sequence (positive/zero/negative)
 
 **Files:** `ff64.boot` (+4 lines: BOOL`, SKIP`, ELSE`, CASE`),
 `exp/032-flowmacros64/{macros.ff,Makefile}`
+
+---
+
+## Experiment 033: Dictionary Manipulation
+
+**Date:** 2025-07-16
+**Goal:** Expose dictionary header access from Forth — enable inspection
+and modification of word headers (ct flags, name bytes) needed for
+dictionary ops like `pvt'`, `alias'`, `create'`, etc.
+
+### Motivation
+
+The original FreeForth implements most dictionary operations in ff.boot,
+not in assembly. Words like `pvt'`, `alias'`, `create'` rely on reading
+and writing header fields from Forth. For this to work, we need:
+
+1. Header layout constants (offsets to ct, sz, nm fields)
+2. Accessor words for compiler state variables (H, anon, SC)
+3. A mechanism to OR values into ct flags (`ct|!`)
+
+### Header Layout (x86-64)
+
+```
+offset 0:        xt (8 bytes, qword) — execution token
+offset 8  h.ct:  ct (1 byte) — compile-time flags
+offset 9  h.sz:  name length (1 byte)
+offset 10 h.nm:  name bytes (variable) + null terminator
+```
+
+Headers grow DOWNWARD from `[H]`. `[H]` points to offset 0 of the
+most recent header.
+
+### The Suffix Problem
+
+The i386 FreeForth has a clever literal compiler that supports suffix
+operators. When the compiler encounters `H@` as a single token, the
+literal compiler strips the trailing `@`, looks up `H` (found — a
+variable), and applies the `@` (fetch) operation. This gives
+`H@`, `h.ct+`, `anon!` etc. as "free" compound words.
+
+Our x86-64 port doesn't have this suffix mechanism yet. So we define
+explicit helper words: `H@` = `H @`, etc. This is more verbose but
+transparent. The suffix mechanism can be added later as an optimization.
+
+### Implementation
+
+**Constants** (in ff64.boot):
+```forth
+8 constant h.ct    \ offset to compile-time flags byte
+9 constant h.sz    \ offset to name length byte
+10 constant h.nm   \ offset to name characters
+```
+
+**Accessor words**:
+```forth
+: H@ H @ ;         \ push header pointer value
+: anon@ anon @ ;   \ push anonymous def start address
+```
+
+**Dictionary manipulation**:
+```forth
+: ct|! 8 + dupc@ rot | swap c! ;   \ ( mask hdr-addr -- )
+: pvt` 8 H@ ct|! ;                 \ mark most recent word as private
+```
+
+`ct|!` takes a bitmask and header address, reads the ct byte (at
+offset 8), ORs the mask in, and writes it back. `pvt'` uses this
+to set bit 3 (the private flag) on the most recent header.
+
+### What `dupc@` Does in ct|!
+
+The `dupc@` backtick macro is critical here. Inside `ct|!`:
+1. `8 +` — advance from header base to ct byte address
+2. `dupc@` — duplicate the ct-addr AND byte-fetch from it
+   (stack: mask ct-addr ct-value)
+3. `rot` — bring mask to top (stack: ct-addr ct-value mask)
+4. `|` — OR them (stack: ct-addr new-ct-value)
+5. `swap c!` — store back (stack: empty)
+
+This inline macro approach is classic FreeForth: the byte-fetch
+and store happen through compiled inline code, making dictionary
+manipulation efficient despite being written in pure Forth.
+
+### Assembly Infrastructure (added in prior session)
+
+The assembly side (ff64.asm) already had:
+- `_H_addr` / `_anon_addr` / `_SC_addr` — push addresses of variables
+- `_anon_colon` — start new anonymous definition
+- WORD64 entries for `H`, `anon`, `SC`, `anon:'`, `:'`, `:'`
+
+### Tests (12 total, all PASS)
+
+Constants: h.ct=8, h.sz=9, h.nm=10
+H@: returns non-zero address
+anon@: returns without error
+Header inspection: ct of variable (1), ct of colon def (0)
+Name access: h.sz gives correct length (2, 5), h.nm gives first char
+ct|!: ORs 4 into ct byte
+pvt: sets bit 3 in ct byte
+
+**Files:** `ff64.boot` (+8 lines: h.ct, h.sz, h.nm, H@, anon@, ct|!, pvt'),
+`exp/033-dictops64/{macros.ff,Makefile}`

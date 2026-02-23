@@ -217,3 +217,14 @@
 ( Boolean constants )
 -1 constant TRUE
 0 constant FALSE
+
+( Header layout constants )
+8 constant h.ct
+9 constant h.sz
+10 constant h.nm
+
+( Dictionary access )
+: H@ H @ ;
+: anon@ anon @ ;
+: ct|! 8 + dupc@ rot | swap c! ;
+: pvt` 8 H@ ct|! ;

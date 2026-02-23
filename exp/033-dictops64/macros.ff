@@ -1,0 +1,17 @@
+\ Exp 033: Dictionary manipulation and compiler state access
+
+\ Header layout constants
+8 constant h.ct
+9 constant h.sz
+10 constant h.nm
+
+\ Convenience accessors for compiler state
+: H@ H @ ;
+: anon@ anon @ ;
+
+\ ct|! — OR a value into the ct byte of a header
+\ ( mask hdr-addr -- )
+: ct|! 8 + dupc@ rot | swap c! ;
+
+\ pvt` — mark the most recent definition as private (set bit 3)
+: pvt` 8 H@ ct|! ;

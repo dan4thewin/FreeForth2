@@ -11,7 +11,8 @@ EXPERIMENTS = 001-hello64 002-stack64 003-codegen64 004-subrthread64 \
               029-placeshifts64 \
               030-extarith64 \
               031-utility64 \
-              032-flowmacros64
+              032-flowmacros64 \
+              033-dictops64
 
 test:
 	@for d in $(EXPERIMENTS); do \
