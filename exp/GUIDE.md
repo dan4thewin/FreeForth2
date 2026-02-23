@@ -215,7 +215,21 @@ For large numbers (needs full 64 bits):
 
 ### IF / THEN
 
-`IF` compiles a conditional forward jump. At compile time:
+`IF` compiles a conditional forward jump. It supports two paths:
+
+**Flags-based path** (when `cond_jmp` is set by a preceding comparison):
+
+1. Read the stored condition from `cond_jmp` and clear it
+2. Invert the condition (XOR 1) — e.g., jl ($7C) becomes jge ($7D)
+3. Emit a long conditional jump: `0F 8x rel32` (6 bytes)
+4. Push the placeholder's address onto the compile-time data stack
+
+The inversion is needed because IF must jump PAST the body when the
+condition is FALSE. For example, `< IF ...` means "if less than, do the
+body." The `<` stores jl (jump if less). IF inverts to jge (skip body
+if NOT less).
+
+**Fallback path** (when no comparison precedes IF — backward compat):
 
 1. Emit `test rbx, rbx` (is TOS zero?)
 2. Emit DROP1 (remove the flag from the stack) using flag-preserving
@@ -225,9 +239,10 @@ For large numbers (needs full 64 bits):
 
 `THEN` patches the placeholder:
 
-1. Pop the placeholder address
-2. Calculate: offset = current_position - placeholder - 4
-3. Write the offset into the placeholder
+1. Call `_rst` to reconcile SWAPbit at the join point
+2. Pop the placeholder address
+3. Calculate: offset = current_position - placeholder - 4
+4. Write the offset into the placeholder
 
 **Critical encoding detail (the REX prefix bug):** The flag-preserving
 DROP1 uses `lea r15, [r15+8]`, encoded as `4D 8D 7F 08`. The REX
@@ -240,7 +255,9 @@ error caused days of debugging during phase 1.
 ### BEGIN / UNTIL
 
 `BEGIN` pushes the current compilation address onto the data stack.
-`UNTIL` compiles a conditional backward jump to that address.
+`UNTIL` compiles a conditional backward jump to that address. Like IF,
+it checks `cond_jmp` first (flags-based path) and falls back to
+test+DROP1+jz if no condition was set.
 
 ### WHILE / REPEAT
 
@@ -253,6 +270,23 @@ backward jump to BEGIN, then patches WHILE's forward jump.
 
 The boot file defines higher-level Forth words using the built-in
 primitives. Each definition is explained below.
+
+### Reading stack diagrams
+
+Stack effect comments use the notation `( before -- after )` where the
+**rightmost** item is the Top Of Stack (TOS). Items are consumed from
+the left side and produced on the right side. For example:
+
+- `( a b -- a+b )` means: takes two values, produces their sum
+- `( a b -- a b a b )` means: the two values remain, plus copies on top
+- `( a b -- )` means: both values are consumed, nothing is left
+- `( -- x )` means: nothing is consumed, one value is produced
+- `( a b c d -- c d a b )` means: four items rearranged
+
+In a stack diagram, `a` is always deeper than `b`, `b` deeper than `c`,
+and so on. The rightmost item on either side is TOS. When you see
+`. . . .` in Forth, it prints TOS first (rightmost), so the printed
+order appears "reversed" compared to the diagram.
 
 ### Stack manipulation
 
@@ -271,56 +305,43 @@ primitives. Each definition is explained below.
 : 2swap rot >r rot r> ;
 ```
 **2swap** ( a b c d -- c d a b ) — Swaps the top two pairs.
-`rot` brings `a` to the top, `>r` hides it on the return stack,
-`rot` brings `b` to the top (now under c d), `r>` restores `a`.
+First `rot` brings `b` (third from top) to TOS: `a c d b`. Then `>r`
+saves `b` on the return stack: `a c d`. Second `rot` brings `a` (third
+from top) to TOS: `c d a`. Finally `r>` restores `b`: `c d a b`.
 
 ```forth
-: ?dup dup 0<> IF dup THEN ;
+: ?dup 0- 0<> IF dup THEN ;
 ```
 **?dup** ( x -- x x | 0 ) — Duplicates TOS only if it's nonzero.
-Used before `IF` to avoid consuming the value when testing it.
+`0-` emits `test rbx,rbx` to set FLAGS from TOS (without consuming it).
+`0<>` stores the "not zero" condition. `IF` uses that condition. If
+nonzero, `dup` copies TOS. If zero, nothing happens — the zero remains.
 
 ### Arithmetic
 
 ```forth
-: abs dup 0< IF negate THEN ;
+: abs 0- 0< IF negate THEN ;
 ```
-**abs** ( n -- |n| ) — Absolute value. If negative, negate it.
+**abs** ( n -- |n| ) — Absolute value. `0-` sets FLAGS from TOS.
+`0<` stores the "negative" condition. If TOS is negative, `negate` it.
+Note: unlike standard Forth `dup 0< IF negate THEN`, the flags-based
+version doesn't need `dup` because `0-` doesn't consume TOS.
 
 ```forth
-: max 2dup < IF swap THEN drop ;
+: max > IF swap THEN nip ;
 ```
 **max** ( a b -- max ) — Keeps the larger of two values.
-`2dup` preserves both values, `<` compares copies. If a < b, `swap`
-puts b on top. `drop` removes the smaller value.
+`>` emits `cmp NOS,TOS` and stores the "greater than" condition.
+The stack is unchanged: still `( a b )`. If NOS > TOS (a > b), `swap`
+puts a on top. `nip` removes NOS (the smaller value). Unlike standard
+Forth `over over < IF swap THEN drop`, the flags-based version needs no
+`over over` (comparison doesn't consume values) and uses `nip` instead
+of `drop`.
 
 ```forth
-: min 2dup > IF swap THEN drop ;
+: min < IF swap THEN nip ;
 ```
 **min** ( a b -- min ) — Same logic, opposite comparison.
-
-```forth
-: within over - >r - r> < ;
-```
-**within** ( x lo hi -- flag ) — Tests if lo ≤ x < hi.
-Transforms to `(x-lo) < (hi-lo)` using unsigned comparison.
-
-### Comparison
-
-```forth
-: >= < not ;
-```
-**>=** ( a b -- flag ) — Greater than or equal. Equivalent to NOT less-than.
-
-```forth
-: <= > not ;
-```
-**<=** ( a b -- flag ) — Less than or equal.
-
-```forth
-: <> = not ;
-```
-**<>** ( a b -- flag ) — Not equal.
 
 ### Memory
 
@@ -347,10 +368,13 @@ Transforms to `(x-lo) < (hi-lo)` using unsigned comparison.
 **space** ( -- ) — Print a single space character (ASCII 0x20).
 
 ```forth
-: spaces BEGIN dup 0 > WHILE space 1 - REPEAT drop ;
+: spaces BEGIN 0- 0> WHILE space 1 - REPEAT drop ;
 ```
-**spaces** ( n -- ) — Print n spaces. Loops: while n > 0, print space,
-decrement. `drop` removes the zero counter at the end.
+**spaces** ( n -- ) — Print n spaces. At each iteration, `0-` tests
+TOS (the counter) and `0>` stores the "positive" condition. `WHILE`
+uses that condition to continue or exit. `space` prints a space, `1 -`
+decrements the counter. When the counter reaches 0, `0>` is false
+and `WHILE` exits. `drop` removes the zero counter.
 
 ### Constants
 
@@ -365,9 +389,6 @@ correctly: `TRUE AND x = x`, `TRUE OR x = TRUE`.
 ---
 
 ## Part 6: The SWAPbit — FreeForth's Signature Innovation
-
-*This section describes the original i386 mechanism. The x86-64 port has
-the infrastructure but not yet the deep integration.*
 
 In most Forth systems, `swap` generates a runtime instruction to exchange
 the top two stack items. In FreeForth, `swap` generates **nothing**. Instead,
