@@ -702,151 +702,27 @@ _zge_flags:
         mov byte [cond_jmp], $7D
         ret
 
-;; =====================================================================
-;; DOTTED COMPARISONS: produce boolean values on the stack
-;; =====================================================================
-
-;; =. ( a b -- flag )
-_eq_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DA39
-        add rbp, 3
-        call _s09
-        mov byte [rbp], $0F
-        mov word [rbp+1], $C194
-        add rbp, 3
-        mov byte [rbp], $0F
-        mov word [rbp+1], $D9B6
-        add rbp, 3
-        call _s01
-        mov byte [rbp], $48
-        mov word [rbp+1], $DBF7
-        add rbp, 3
-        call _s01
-        jmp _emit_drop_nos_s
-
-;; <. ( a b -- flag )
-_lt_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DA39
-        add rbp, 3
-        call _s09
-        mov byte [rbp], $0F
-        mov word [rbp+1], $C19C
-        add rbp, 3
-        mov byte [rbp], $0F
-        mov word [rbp+1], $D9B6
-        add rbp, 3
-        call _s01
-        mov byte [rbp], $48
-        mov word [rbp+1], $DBF7
-        add rbp, 3
-        call _s01
-        jmp _emit_drop_nos_s
-
-;; >. ( a b -- flag )
-_gt_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DA39
-        add rbp, 3
-        call _s09
-        mov byte [rbp], $0F
-        mov word [rbp+1], $C19F
-        add rbp, 3
-        mov byte [rbp], $0F
-        mov word [rbp+1], $D9B6
-        add rbp, 3
-        call _s01
-        mov byte [rbp], $48
-        mov word [rbp+1], $DBF7
-        add rbp, 3
-        call _s01
-        jmp _emit_drop_nos_s
-
-;; 0=. ( n -- flag )
-_zeq_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DB85
-        add rbp, 3
-        call _s09
-        mov byte [rbp], $0F
-        mov word [rbp+1], $C194
-        add rbp, 3
-        mov byte [rbp], $0F
-        mov word [rbp+1], $D9B6
-        add rbp, 3
-        call _s01
-        mov byte [rbp], $48
-        mov word [rbp+1], $DBF7
-        add rbp, 3
-        jmp _s01
-
-;; 0<>. ( n -- flag )
-_zneq_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DB85
-        add rbp, 3
-        call _s09
-        mov byte [rbp], $0F
-        mov word [rbp+1], $C195
-        add rbp, 3
-        mov byte [rbp], $0F
-        mov word [rbp+1], $D9B6
-        add rbp, 3
-        call _s01
-        mov byte [rbp], $48
-        mov word [rbp+1], $DBF7
-        add rbp, 3
-        jmp _s01
-
-;; 0<. ( n -- flag ): boolean sign test
-_zlt_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $FBC1
-        add rbp, 3
-        call _s01
-        mov byte [rbp], $3F
-        inc rbp
-        ret
-
 ;; Compile-time words (ct=2): executed during compilation
 ;; These use the data stack (rbx/rdx/r15) to track patch addresses.
 ;; rbp = compilation pointer.
 ;; =====================================================================
 
 ;; IF: use FLAGS set by preceding comparison/test.
-;; If cond_jmp is set: emit conditional jump using stored condition.
-;; If cond_jmp is 0: fallback to test TOS + DROP1 + jz (backward compat).
+;; Requires an explicit condition (< > = 0< 0= etc.) before IF.
+;; Error if no condition precedes — use IF. for stack booleans.
 _if:
         call _rst
         movzx eax, byte [cond_jmp]
         mov byte [cond_jmp], 0
         test al, al
-        jz .fallback
+        jz _err_nocond
         ;; FLAGS-based: invert condition, emit long conditional jump
         xor al, 1
         mov byte [rbp], $0F
         add al, $10
         mov byte [rbp+1], al
         add rbp, 2
-        jmp .push_patch
-.fallback:
-        ;; Boolean fallback: test rbx, rbx + DROP1 + jz
-        mov byte [rbp], $48
-        mov word [rbp+1], $DB85
-        add rbp, 3
-        mov byte [rbp], $48
-        mov word [rbp+1], $D389
-        add rbp, 3
-        mov byte [rbp], $49
-        mov word [rbp+1], $178B
-        add rbp, 3
-        mov dword [rbp], $087F8D4D
-        add rbp, 4
-        mov byte [rbp], $0F
-        mov byte [rbp+1], $84
-        add rbp, 2
-.push_patch:
+        ;; Push patch address onto data stack
         sub r15, 8
         mov [r15], rdx
         mov rdx, rbx
@@ -914,37 +790,19 @@ _again:
         add r15, 8
         ret
 
-;; UNTIL: use FLAGS to loop. Same dual-path as IF but backward jump.
+;; UNTIL: use FLAGS to loop. Requires preceding condition.
 _until:
         call _rst
         movzx eax, byte [cond_jmp]
         mov byte [cond_jmp], 0
         test al, al
-        jz .fallback
+        jz _err_nocond
         ;; FLAGS-based: invert condition, emit long conditional backward jump
         xor al, 1
         mov byte [rbp], $0F
         add al, $10
         mov byte [rbp+1], al
         add rbp, 2
-        jmp .calc_offset
-.fallback:
-        ;; Boolean fallback: test + DROP1 + jz
-        mov byte [rbp], $48
-        mov word [rbp+1], $DB85
-        add rbp, 3
-        mov byte [rbp], $48
-        mov word [rbp+1], $D389
-        add rbp, 3
-        mov byte [rbp], $49
-        mov word [rbp+1], $178B
-        add rbp, 3
-        mov dword [rbp], $087F8D4D
-        add rbp, 4
-        mov byte [rbp], $0F
-        mov byte [rbp+1], $84
-        add rbp, 2
-.calc_offset:
         ;; Calculate backward offset: target - (here + 4)
         mov rax, rbx
         lea rcx, [rbp + 4]
@@ -1471,6 +1329,31 @@ _compiler:
         jmp _compiler
 .done:  ret
 
+;; Error: IF/UNTIL/WHILE used without preceding condition
+_err_nocond:
+        add rsp, 8              ; pop return addr from 'call rax' in compiler
+        mov rax, 1
+        mov rdi, 1
+        lea rsi, [err_nocond_msg]
+        mov rdx, err_nocond_len
+        syscall
+        ;; Skip remaining input on this line
+        mov rax, [tp]
+        mov [tin], rax
+        ;; Reset data stack
+        lea r15, [dstack_top]
+        xor ebx, ebx
+        xor edx, edx
+        ;; Clear SWAPbit
+        and byte [SC], $FD
+        ;; Reset compilation pointer if in anonymous context
+        mov rax, [anon]
+        test rax, rax
+        jz .skip_reset
+        mov rbp, rax
+.skip_reset:
+        jmp _compiler
+
 ;; =====================================================================
 ;; I/O
 ;; =====================================================================
@@ -1631,14 +1514,6 @@ WORD64 "<>", _neq_flags, 2, 2
 WORD64 ">", _gt_flags, 2, 1
 WORD64 "<", _lt_flags, 2, 1
 WORD64 "=", _eq_flags, 2, 1
-
-;; DOTTED comparisons (ct=2): produce boolean values on stack
-WORD64 "0<>.", _zneq_inline, 2, 4
-WORD64 "0=.", _zeq_inline, 2, 3
-WORD64 "0<.", _zlt_inline, 2, 3
-WORD64 ">.", _gt_inline, 2, 2
-WORD64 "<.", _lt_inline, 2, 2
-WORD64 "=.", _eq_inline, 2, 2
 
 ;; Runtime words (ct=0) — still called via compiled CALL instruction
 WORD64 "cr", _cr, 0, 2
@@ -1811,6 +1686,8 @@ err_open_msg: db "error: cannot open file", 10
 err_open_len = $ - err_open_msg
 err_read_msg: db "error: cannot read file", 10
 err_read_len = $ - err_read_msg
+err_nocond_msg: db "error: requires preceding condition", 10
+err_nocond_len = $ - err_nocond_msg
 minus_char    db '-'
 nl_char       db 10
 numbuf        rb 21

@@ -480,7 +480,6 @@ at `[rbp-1]`, changing `add rbx,rdx` to `add rdx,rbx` if needed.
 | Bitwise | `and or xor not` | Same as arithmetic |
 | Memory | `@ c@` | Unary: `mov rbx,[rbx]` |
 | **Flags-based** | `< > = <> <= >= 0- 0< 0= 0<> 0> 0<= 0>=` | Emit cmp/test, store condition |
-| **Dotted** | `<. >. =. 0<. 0=. 0<>.` | Boolean: cmp + setcc + movzx + neg |
 
 ### FLAGS-based conditionals (FreeForth approach)
 
@@ -502,9 +501,6 @@ preserves the data stack, enabling the elegant FreeForth idioms:
 : min < IF swap THEN nip ;       ( vs standard: over over > IF swap THEN drop )
 : abs 0- 0< IF negate THEN ;    ( vs standard: dup 0< IF negate THEN )
 ```
-
-The "dotted" versions (`<.`, `>.`, `=.`, etc.) produce actual boolean
-values (-1/0) on the stack for when they're needed.
 
 **Flags-preserving stack ops:** All inline code generators use
 `lea r15, [r15±8]` instead of `sub/add r15, 8`. The LEA instruction
