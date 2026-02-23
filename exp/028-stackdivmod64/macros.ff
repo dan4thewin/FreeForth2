@@ -1,0 +1,21 @@
+( Exp 028: Stack ops and divmod — 2xchg`, 2r`, 3dup`, /%`, /`, %` )
+
+( 2xchg — swap TOS with third item: a b c → c b a )
+: 2xchg` swap` >rswapr>` swap` ;
+
+( 2r@ — read two items from return stack )
+( Non-fall-through version: inlines both reads )
+: 2r` over` $48, ,1 $5C8B, s08 $24, ,1 $08, ,1
+       over` $48, ,1 $1C8B, s08 $24, ,1 ;
+
+( 3dup — triplicate top 3 stack items )
+( After 2dup: TOS=c NOS=b [r15]=c,b,a )
+( Then: lea r15,[r15-8]; mov rax,[r15+24]; mov [r15],rax )
+: 3dup` 2dup` $F87F8D4D, ,4 $18478B49, ,4 $078949, ,3 ;
+
+( /%` — divmod: a b → a%b a/b )
+( >S0 ensures rbx=TOS edx=NOS )
+( mov rax,rdx; cqo; idiv rbx; mov rbx,rax )
+: /%` >S0 $48D08948, ,4 $FBF74899, ,4 $C38948, ,3 ;
+: /` /%` nip` ;
+: %` /%` drop` ;

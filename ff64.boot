@@ -36,6 +36,12 @@
 : |` over|` nip` ;
 : ^` over^` nip` ;
 
+\ Division — >S0 forces rbx=TOS, rdx=NOS before hardcoded register ops
+\ /%` ( a b -- a%b a/b ): mov rax,rdx; cqo; idiv rbx; mov rbx,rax
+: /%` >S0 $48D08948, ,4 $FBF74899, ,4 $C38948, ,3 ;
+: /` /%` nip` ;
+: %` /%` drop` ;
+
 \ Unary ops
 : negate` $48, ,1 $DBF7, s01 ;
 : ~` $48, ,1 $D3F7, s01 ;
@@ -89,12 +95,15 @@
 : rdrop` $48, ,1 $C483, ,2 $08, ,1 ;
 : 2rdrop` $48, ,1 $C483, ,2 $10, ,1 ;
 \ r@ inline: mov rbx,[rsp] = 48 8B 1C 24
+\ 2r@ inline: read [rsp+8] then fall through to r`
+: 2r` over` $48, ,1 $5C8B, s08 $24, ,1 $08, ,1
 : r` over` $48, ,1 $1C8B, s08 $24, ,1 ;
 
 \ Rotation via xchg [r15],reg
 : -rot` swap`
 : >rswapr>` $49, ,1 $1787, s08 ;
 : rot` >rswapr>` swap` ;
+: 2xchg` swap` >rswapr>` swap` ;
 
 \ Shift ops
 : <<` $48, ,1 $D989, s08 $48, ,1 $E2D3, s01 drop` ;
@@ -114,6 +123,7 @@
 
 \ Composed operations
 : 2dup` over` over` ;
+: 3dup` 2dup` $F87F8D4D, ,4 $18478B49, ,4 $078949, ,3 ;
 : 2drop` drop` drop` ;
 : 2dup+` over` over+` ;
 : 2r>` 2dup` dropr>` swap` dropr>` swap` ;

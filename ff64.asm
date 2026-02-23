@@ -1701,6 +1701,7 @@ WORD64 ">r", _tor, 0, 2
 ;; Compile-time words (ct=1)
 WORD64 "swap`", _swap_inline, 0, 5
 WORD64 "lit`", _lit, 0, 4
+WORD64 ">S0", _rst, 0, 3
 WORD64 "s09", _s09_word, 0, 3
 WORD64 "s08", _s08_word, 0, 3
 WORD64 "s01", _s01_word, 0, 3

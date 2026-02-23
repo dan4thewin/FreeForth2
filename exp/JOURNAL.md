@@ -1691,3 +1691,125 @@ w,: advance (2 bytes), value (4660)
 ,: advance (8 bytes), value (42), big value (1000000)
 
 **Files:** `exp/027-compilemacros64/{macros.ff,Makefile}`, `ff64.boot`
+
+---
+
+## Experiment 028: Stack ops and divmod (2xchg`, 2r`, 3dup`, /%`)
+
+**Goal:** Port the remaining stack manipulation macros (2xchg, 2r@,
+3dup) and the critical divmod operation (/%`) that enables integer
+division and modulo.
+
+**Date:** 2026-02-23
+
+### 2xchg` — swap TOS with third item
+
+The simplest of the four: `swap` >rswapr>` swap``. The first swap`
+toggles SWAPbit, causing >rswapr>` to emit `xchg rbx,[r15]` instead
+of `xchg rdx,[r15]`. The final swap` restores SWAPbit. Net effect:
+TOS exchanges with the third stack item, leaving NOS untouched.
+
+`( a b c → c b a )` — a single 3-byte xchg instruction.
+
+### 2r` — double return stack read with fall-through
+
+In i386, `2r`` falls through to `r``:
+```
+: 2r` over` $04588B, s08 ,1
+: r` over` $188B, s08 ;
+```
+
+Understanding the i386 encoding required grappling with the xchg
+eax,esp trick and CALLbit state — concepts that don't exist in
+x86-64. For our port, the encoding is clearer:
+
+```
+: 2r` over` $48, ,1 $5C8B, s08 $24, ,1 $08, ,1
+: r` over` $48, ,1 $1C8B, s08 $24, ,1 ;
+```
+
+`2r``: over` + `mov rbx,[rsp+8]` (48 8B 5C 24 08) with s08 on
+ModRM $5C. Falls through to `r``: over` + `mov rbx,[rsp]`
+(48 8B 1C 24) with s08 on $1C.
+
+The SWAPbit handling is elegant: s08 toggles bit 3 of ModRM, which
+is exactly the bit that selects between rbx (reg=011) and rdx
+(reg=010). So `$5C XOR $08 = $54` gives `mov rdx,[rsp+8]`, and
+`$1C XOR $08 = $14` gives `mov rdx,[rsp]`.
+
+### 3dup` — deep stack access via r15
+
+The i386 version uses `push [esp+8]`, a single instruction that
+pushes from the data stack (via eax/esp). With r15, there's no
+equivalent single instruction.
+
+Strategy: after `2dup`` gives us `TOS=c, NOS=b, [r15]=c,b,a`, we
+allocate one more cell and copy `a` from deep in the stack:
+
+```
+: 3dup` 2dup` $F87F8D4D, ,4 $18478B49, ,4 $078949, ,3 ;
+```
+
+The three litcomma groups emit:
+- `4D 8D 7F F8` = lea r15,[r15-8]  (allocate one cell)
+- `49 8B 47 18` = mov rax,[r15+24] (load `a` from depth)
+- `49 89 07`    = mov [r15],rax    (store at new top)
+
+This uses rax as a scratch register — safe because rax isn't part
+of our TOS/NOS register pair. The 11-byte sequence is purely
+mechanical and doesn't interact with SWAPbit at all.
+
+### /%` — divmod and the >S0 word
+
+The most architecturally interesting macro. x86-64's `idiv`
+instruction divides rdx:rax by the operand, leaving quotient in
+rax and remainder in rdx. This happens to align perfectly with
+our register convention: rdx (NOS) becomes the remainder, and we
+just need to move the quotient from rax to rbx (TOS).
+
+```
+: /%` >S0 $48D08948, ,4 $FBF74899, ,4 $C38948, ,3 ;
+```
+
+The 11-byte sequence:
+- `48 89 D0` = mov rax,rdx     (NOS → dividend)
+- `48 99`    = cqo              (sign-extend rax → rdx:rax)
+- `48 F7 FB` = idiv rbx        (rdx:rax / TOS)
+- `48 89 C3` = mov rbx,rax     (quotient → TOS)
+
+The `>S0` word is crucial: since the emitted code hardcodes
+register names (rax, rdx, rbx), SWAPbit MUST be zero at the point
+these instructions are emitted. `>S0` tests SWAPbit and, if set,
+emits `xchg rbx,rdx` to physically swap the registers before
+clearing the bit. This "reconciliation" pattern — force a known
+register state before emitting register-specific code — is exactly
+how the i386 version works.
+
+The `_rst` function in ff64.asm already implements this logic
+(emit xchg + clear SWAPbit). We simply exposed it as the Forth
+word `>S0` via a WORD64 dictionary entry.
+
+Contrast with i386, where /%` needed push/pop eax around the
+division to save the data stack pointer. With r15 as a dedicated
+register untouched by idiv, the x86-64 version is cleaner.
+
+### / and % — consuming wrappers
+
+Following FreeForth's compositional philosophy:
+```
+: /` /%` nip` ;    ( a b -- a/b )
+: %` /%` drop` ;   ( a b -- a%b )
+```
+
+### Tests (12 total, all PASS)
+
+2xchg: basic swap, different values
+2r@: read two return stack items, different values
+3dup: triplicate, sum check (5+6+7+5+6+7=36)
+/%: positive (17/5=3r2), negative (-17/5=-3r-2), exact (20/4=5r0)
+/: positive (100/7=14), negative (-20/3=-6)
+%: positive (100/7=2)
+
+**Files:** `ff64.asm` (+1 line: WORD64 ">S0"),
+`ff64.boot` (+12 lines: 2r`, 2xchg`, 3dup`, /%`, /`, %`),
+`exp/028-stackdivmod64/{macros.ff,Makefile}`
