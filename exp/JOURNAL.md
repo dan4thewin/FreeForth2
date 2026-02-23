@@ -1037,3 +1037,47 @@ FLAGS, enabling patterns like:
 | 19 | BEGIN..UNTIL countdown | 3 2 1 | 0- 0= UNTIL |
 
 **Files:** `exp/020-flagscond64/{flagscond64.asm,Makefile}`
+
+---
+
+## Production Update: Require explicit conditions
+
+**Date:** 2026-02-23
+
+### Goal
+
+Align the 64-bit port with FreeForth2's design philosophy:
+1. `IF`, `UNTIL`, `WHILE` require an explicit preceding condition — no fallback.
+2. Remove dotted comparison generators (`=.`, `<.`, `>.`, `0=.`, `0<>.`, `0<.`)
+   and `IF.`/`WHILE.`/`UNTIL.` from assembly. These belong in Forth, not assembly.
+3. Preserve the character of the original: assembly is intentionally minimal;
+   most things are implemented in Forth.
+
+### Reasoning
+
+The README states: "requires explicit conditions before IF — avoids source of
+faulty assumptions." The fallback path (test+DROP+jz) was a backward-compat
+shim that contradicted this design. Dotted comparisons and IF./WHILE./UNTIL.
+are legitimate words but belong in ff64.boot once FreeForth macros are stable,
+following Lavarenne's principle of keeping assembly short and implementing as
+much as possible in Forth.
+
+### Changes
+
+- `IF`/`UNTIL`/`WHILE` now error with "requires preceding condition" when no
+  comparison word precedes them
+- Error handler resets data stack, SWAPbit, and compilation pointer for clean
+  recovery in the REPL
+- Removed ~130 lines of dotted comparison assembly code
+- Removed IF./WHILE./UNTIL. assembly implementations
+- `ff64.boot` unchanged — already uses FLAGS-based idioms exclusively
+- `GUIDE.md` updated to remove dotted comparison references
+
+### Lesson
+
+Lavarenne's choice to implement `dup` as `under` `nipdup` (in Forth, not
+assembly) reveals a deep principle: the assembly kernel should be the smallest
+possible set of primitives. Everything else builds on those primitives using
+Forth itself. The dotted comparisons and boolean-conditional words will return
+as Forth definitions once the macro system (`s01`, `s08`, `s09`, `c,`, `,`)
+is available from the boot source.
