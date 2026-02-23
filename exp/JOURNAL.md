@@ -1376,3 +1376,92 @@ work without ff64.boot. But with the boot file loaded, the Forth macros
 shadow them via the backtick dispatch. This dual-layer approach means
 the binary is self-contained while the boot file extends it in the
 spirit of the original.
+
+---
+
+## Experiment 024: Store ops, return stack, rotation, shifts
+
+**Date:** 2026-02-23
+
+### Goal
+
+Extend the Forth-defined macro library with store operations, return
+stack inline macros, rotation via the elegant `xchg [r15],reg`
+instruction, shift operators, and compilation helpers — bringing the
+total from 27 to 55+ macros.
+
+### New macros (28 additional)
+
+**Memory store** (12):
+```forth
+: 2dup!` $48, ,1 $1389, s09 ;     ( mov [rbx],rdx )
+: 2dupc!` $1388, s09 ;             ( mov [rbx],dl — no REX for bytes )
+: 2dup+!` $48, ,1 $1301, s09 ;    ( add [rbx],rdx )
+: 2dup-!` $48, ,1 $1329, s09 ;    ( sub [rbx],rdx )
+: tuck!` 2dup!` nip` ;  : !` tuck!` drop` ;
+: tuckc!` 2dupc!` nip` ;  : c!` tuckc!` drop` ;
+: tuck+!` 2dup+!` nip` ;  : +!` tuck+!` drop` ;
+: tuck-!` 2dup-!` nip` ;  : -!` tuck-!` drop` ;
+```
+
+**Return stack** (6):
+```forth
+: dup>r` $53, s1 ;     ( push rbx — 1 byte, no REX needed )
+: r>` over`            ( fall-through to dropr>` )
+: dropr>` $5B, s1 ;    ( pop rbx — 1 byte )
+: >r` dup>r` drop` ;
+: rdrop` $48, ,1 $C483, ,2 $08, ,1 ;    ( add rsp,8 )
+: r` over` $48, ,1 $1C8B, s08 $24, ,1 ; ( mov rbx,[rsp] — needs SIB )
+```
+
+**Rotation** (3) — the x86-64 version is cleaner than i386:
+```forth
+: -rot` swap`
+: >rswapr>` $49, ,1 $1787, s08 ;   ( xchg [r15],rdx — only 3 bytes! )
+: rot` >rswapr>` swap` ;
+```
+
+The i386 version needed SIB bytes, `-1 allot`, and the `c04` CALLbit
+helper. x86-64 is simpler: `xchg [r15],rdx` = `49 87 17` (3 bytes,
+REX.B for r15). The `>rswapr>`` macro swaps the NOS register with the
+top of the explicit data stack, then `swap`` toggles the SWAPbit.
+
+**Shifts** (2):
+```forth
+: <<` $48, ,1 $D989, s08 $48, ,1 $E2D3, s01 drop` ;
+: >>` $48, ,1 $D989, s08 $48, ,1 $EAD3, s01 drop` ;
+```
+
+**Compilation helpers** (2):
+```forth
+: here` over` $48, ,1 $EB89, s01 ;   ( mov rbx,rbp )
+: allot` $48, ,1 $DD01, s08 drop` ;  ( add rbp,rbx )
+```
+
+**Composed** (6): 2dup`, 2drop`, 2dup+`, 2r>`, 2dup>r`, 2>r`
+
+### Key discovery: fall-through definitions
+
+FreeForth uses a "fall-through" idiom where `:` starts a new named
+definition WITHOUT terminating the previous one. The code is laid out
+contiguously, so calling the first word executes through both. Example:
+
+```forth
+: r>` over`        ( r>` starts with over`, then falls through )
+: dropr>` $5B, s1 ; ( dropr>` starts here, shared by r>` )
+```
+
+When `r>`` is called, it executes `over`` then continues into `dropr>``'s
+code. This means `r>` = over` + dropr>`` — push NOS to make room, then
+pop the return stack into TOS. Beautiful composition.
+
+### Tests (19 total, all PASS)
+
+Store: !, c!, +!, -!, 2dup!
+Return stack: >r/r>, dup>r/r>, r@, rdrop
+Rotation: rot, -rot, rot/-rot identity
+Shifts: <<, >>
+Compilation: here/allot
+Composition: tuck, 2dup, 2swap, nip-via-swap-drop
+
+**Files:** `exp/024-moremacros64/{moremacros64.asm,macros.ff,Makefile}`

@@ -1,18 +1,8 @@
-( ff64.boot — FreeForth2 x86-64 boot source )
-( Provides standard Forth words using ff64 built-in primitives )
+\ Forth-defined inline code generators for x86-64 FreeForth2
+\ Extends the base macros from exp 023 with store ops, return stack,
+\ rot, shifts, and more stack/memory operations.
 
-( Inline code generators — Forth-defined macros using litcomma )
-( The compiler's backtick name mangling finds these when the user )
-( writes "dup", "drop", etc. during compilation. )
-(                                                               )
-( x86-64 opcodes [REX.W = $48]:                                )
-(   lea r15,[r15-8]  = 4D 8D 7F F8  push-NOS: allocate slot    )
-(   lea r15,[r15+8]  = 4D 8D 7F 08  pop-NOS: release slot      )
-(   mov [r15],rdx    = 49 89 17     store NOS to data stack     )
-(   mov rdx,[r15]    = 49 8B 17     load NOS from data stack    )
-(   mov rdx,rbx      = 48 89 DA     copy TOS to NOS            )
-
-\ Core stack macros (swap` is an assembly primitive)
+\ === Core stack macros (swap` is an assembly primitive) ===
 : under` $F87F8D4D, ,4 $49, ,1 $1789, s08 ;
 : nip` $49, ,1 $178B, s08 $087F8D4D, ,4 ;
 : nipdup` $48, ,1 $DA89, s09 ;
@@ -21,14 +11,13 @@
 : over` under` swap` ;
 : tuck` swap` over` ;
 
-\ Binary arithmetic — "over" variants preserve NOS
+\ === Binary arithmetic ===
 : over+` $48, ,1 $D301, s09 ;
 : over-` $48, ,1 $D329, s09 ;
 : over&` $48, ,1 $D321, s09 ;
 : over|` $48, ,1 $D309, s09 ;
 : over^` $48, ,1 $D331, s09 ;
 : over*` $48, ,1 $0F, ,1 $DAAF, s09 ;
-\ Consuming binary ops
 : +` over+` nip` ;
 : -` swap` over-` nip` ;
 : *` over*` nip` ;
@@ -36,23 +25,27 @@
 : |` over|` nip` ;
 : ^` over^` nip` ;
 
-\ Unary ops
+\ === Unary ops ===
 : negate` $48, ,1 $DBF7, s01 ;
 : ~` $48, ,1 $D3F7, s01 ;
 : 1+` $48, ,1 $C3FF, s01 ;
 : 1-` $48, ,1 $CBFF, s01 ;
 : 2+` 1+` 1+` ;
 
-\ Memory load
+\ === Memory load ===
 : @` $48, ,1 $1B8B, s09 ;
 : c@` $48, ,1 $0F, ,1 $1BB6, s09 ;
 
-\ Memory store (2dup variants preserve both operands)
+\ === Memory store (2dup variants preserve both operands) ===
+\ 2dup!` ( addr val -- addr val ): mov [rbx],rdx / mov [rdx],rbx
 : 2dup!` $48, ,1 $1389, s09 ;
+\ 2dupc!` ( addr val -- addr val ): mov [rbx],dl / mov [rdx],bl
 : 2dupc!` $1388, s09 ;
+\ 2dup+!` ( addr val -- addr val ): add [rbx],rdx / add [rdx],rbx
 : 2dup+!` $48, ,1 $1301, s09 ;
+\ 2dup-!` ( addr val -- addr val ): sub [rbx],rdx / sub [rdx],rbx
 : 2dup-!` $48, ,1 $1329, s09 ;
-\ Consuming store ops
+\ Consuming store ops (chained via fall-through in original)
 : tuck!` 2dup!` nip` ;
 : !` tuck!` drop` ;
 : tuckc!` 2dupc!` nip` ;
@@ -66,53 +59,46 @@
 : over+!` swap` tuck+!` ;
 : over-!` swap` tuck-!` ;
 
-\ Return stack inline macros
+\ === Return stack inline macros ===
+\ push rbx ($53) / push rdx ($52) — s1 swaps bit 0
 : dup>r` $53, s1 ;
+\ pop rbx ($5B) / pop rdx ($5A) — s1 swaps bit 0
 : r>` over`
 : dropr>` $5B, s1 ;
 : >r` dup>r` drop` ;
+\ rdrop` ( -- ): add rsp,8 — discard top of return stack
 : rdrop` $48, ,1 $C483, ,2 $08, ,1 ;
+\ 2rdrop` ( -- ): add rsp,16 — discard two return stack items
 : 2rdrop` $48, ,1 $C483, ,2 $10, ,1 ;
-\ r@ inline: mov rbx,[rsp] = 48 8B 1C 24
+\ r` (r@): copy [rsp] to data stack
+\ mov rbx,[rsp] = 48 8B 1C 24 (needs SIB because r/m=100=SIB)
 : r` over` $48, ,1 $1C8B, s08 $24, ,1 ;
 
-\ Rotation via xchg [r15],reg
+\ === Rotation via xchg [r15],reg ===
+\ >rswapr>` swaps NOS register with top of data stack [r15]
+\ xchg [r15],rdx = 49 87 17 (REX.B because r15)
 : -rot` swap`
 : >rswapr>` $49, ,1 $1787, s08 ;
 : rot` >rswapr>` swap` ;
 
-\ Shift ops
+\ === Shift ops ===
+\ <<` ( val n -- val<<n ): mov rcx,TOS; shl NOS,cl; drop
 : <<` $48, ,1 $D989, s08 $48, ,1 $E2D3, s01 drop` ;
+\ >>` ( val n -- val>>n ): mov rcx,TOS; shr NOS,cl; drop
 : >>` $48, ,1 $D989, s08 $48, ,1 $EAD3, s01 drop` ;
 
-\ Compilation helpers
+\ === Compilation helpers ===
+\ here` ( -- addr ): push compilation pointer as new TOS
+\ mov rbx,rbp = 48 89 EB
 : here` over` $48, ,1 $EB89, s01 ;
+\ allot` ( n -- ): advance rbp by TOS, drop
+\ add rbp,rbx = 48 01 DD (s08 for SWAPbit on source reg)
 : allot` $48, ,1 $DD01, s08 drop` ;
 
-\ Composed operations
+\ === Composed operations ===
 : 2dup` over` over` ;
 : 2drop` drop` drop` ;
 : 2dup+` over` over+` ;
 : 2r>` 2dup` dropr>` swap` dropr>` swap` ;
 : 2dup>r` swap` dup>r` swap` dup>r` ;
 : 2>r` 2dup>r` 2drop` ;
-
-( Stack manipulation )
-: 2swap rot >r rot r> ;
-: ?dup 0- 0<> IF dup THEN ;
-
-( Arithmetic )
-: abs 0- 0< IF negate THEN ;
-: max > IF swap THEN nip ;
-: min < IF swap THEN nip ;
-
-( Output )
-: ? @ . ;
-: on -1 swap ! ;
-: off 0 swap ! ;
-: space $20 emit ;
-: spaces BEGIN 0- 0> WHILE space 1 - REPEAT drop ;
-
-( Boolean constants )
--1 constant TRUE
-0 constant FALSE
