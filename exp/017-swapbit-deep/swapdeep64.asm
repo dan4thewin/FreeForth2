@@ -1,14 +1,26 @@
-;;; ff64.asm — FreeForth2 x86-64 kernel
+;;; 017-swapbit-deep: Deep SWAPbit integration — swap emits zero code
 ;;;
-;;; A subroutine-threaded Forth compiler for Linux x86-64.
-;;; Ported from Christophe Lavarenne's i386 FreeForth2.
+;;; In the original FreeForth, `swap` doesn't generate any machine code.
+;;; Instead, it toggles a compile-time flag (the SWAPbit) that tells
+;;; subsequent code generators which register is "logically" TOS.
 ;;;
-;;; Key features:
-;;;   - Inline code generation: core primitives emit machine code directly
-;;;   - SWAPbit optimization: swap emits zero code (compile-time register rename)
-;;;   - s01/s08/s09: register-swap via single-bit XOR on ModR/M bytes
-;;;   - Dedicated data stack pointer (r15) instead of xchg eax,esp trick
-;;;   - Command-line -f <file> support for loading boot files
+;;; On x86-64, rbx (register 3) and rdx (register 2) differ by exactly
+;;; one bit in their register encoding. By XORing specific bits in the
+;;; ModR/M byte of each emitted instruction, we can switch between
+;;; registers at compile time:
+;;;
+;;;   XOR $01 → swap r/m field (destination register)
+;;;   XOR $08 → swap reg field (source register)
+;;;   XOR $09 → swap both fields
+;;;
+;;; The functions s01, s08, s09 apply these XORs when the SWAPbit is set.
+;;; Result: `swap` compiles to ZERO bytes of machine code.
+;;;
+;;; This experiment builds on 016-inline64 by:
+;;;   - Adding s01/s08/s09 register-swap functions
+;;;   - Making all inline code generators SWAPbit-aware
+;;;   - Changing swap from 3-byte xchg to zero-cost SWAPbit toggle
+;;;   - Adding _rst calls to IF/UNTIL to sync before register-dependent code
 
 format elf64
 section '.flat' writeable executable
@@ -609,10 +621,7 @@ _if:
         ret
 
 ;; THEN: resolve forward jump. TOS = patch address.
-;; Calls _rst to reconcile SWAPbit: if swap was used inside the IF body,
-;; emits xchg on the taken path before the join point.
 _then:
-        call _rst               ; sync SWAPbit at join point
         ;; Calculate offset: here - (patch_addr + 4)
         mov rax, rbp
         sub rax, rbx
@@ -625,9 +634,7 @@ _then:
         ret
 
 ;; ELSE: compile jmp <fwd>, resolve IF, push new patch address
-;; Calls _rst to reconcile SWAPbit at end of IF body.
 _else:
-        call _rst               ; sync before ELSE jump
         ;; Compile: jmp rel32 → E9 xx xx xx xx
         mov byte [rbp], $E9
         inc rbp
@@ -644,9 +651,7 @@ _else:
         ret
 
 ;; BEGIN: push here (loop target address)
-;; Calls _rst to ensure loop starts with SWAPbit=0.
 _begin:
-        call _rst
         sub r15, 8
         mov [r15], rdx
         mov rdx, rbx
@@ -655,7 +660,6 @@ _begin:
 
 ;; AGAIN: compile unconditional jump back to BEGIN address
 _again:
-        call _rst               ; sync before backward jump
         ;; Compile: jmp rel32 → E9 xx xx xx xx
         mov byte [rbp], $E9
         inc rbp
@@ -711,7 +715,6 @@ _while:
 
 ;; REPEAT: compile jmp <back to BEGIN>, then resolve WHILE
 _repeat:
-        call _rst               ; sync before backward jump
         ;; TOS = WHILE's patch addr, NOS = BEGIN's target
         ;; First: compile jmp back to BEGIN (NOS)
         mov byte [rbp], $E9
@@ -1427,80 +1430,6 @@ _start:
 
         lea rax, [filebuf]
         mov [filebuf_ptr], rax
-
-        ;; Process command-line arguments: -f <file> loads file
-        mov r13, [rsp]          ; argc
-        lea r14, [rsp+8]        ; argv[0]
-        mov r12, 1              ; current arg index (skip argv[0])
-.argloop:
-        cmp r12, r13
-        jge .repl
-        mov rdi, [r14 + r12*8]
-        cmp word [rdi], $662D   ; "-f" (little-endian: 0x2D='-', 0x66='f')
-        jne .nextarg
-        cmp byte [rdi+2], 0     ; must be exactly "-f"
-        jne .nextarg
-        inc r12
-        cmp r12, r13
-        jge .repl
-        ;; Load file at argv[r12]
-        mov rdi, [r14 + r12*8]  ; filename
-        push r12
-        push r13
-        push r14
-        ;; Save input state
-        push qword [tin]
-        push qword [tp]
-        push qword [filebuf_ptr]
-        ;; Open file
-        xor esi, esi            ; O_RDONLY
-        xor edx, edx
-        mov rax, 2              ; sys_open
-        syscall
-        test rax, rax
-        js .argfile_err
-        mov r12, rax            ; save fd
-        ;; Read file
-        xor eax, eax            ; sys_read
-        mov rdi, r12
-        mov rsi, [filebuf_ptr]
-        mov rdx, 16384
-        syscall
-        push rax
-        mov rax, 3              ; sys_close
-        mov rdi, r12
-        syscall
-        pop rax
-        test rax, rax
-        jle .argfile_done
-        ;; Set up input and compile
-        mov rcx, [filebuf_ptr]
-        mov [tin], rcx
-        lea rcx, [rcx + rax]
-        mov [tp], rcx
-        lea rcx, [rcx + 16]
-        mov [filebuf_ptr], rcx
-        call _compiler
-.argfile_done:
-        pop qword [filebuf_ptr]
-        pop qword [tp]
-        pop qword [tin]
-        pop r14
-        pop r13
-        pop r12
-.nextarg:
-        inc r12
-        jmp .argloop
-.argfile_err:
-        ;; Print error and skip
-        push rax
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [err_open_msg]
-        mov rdx, err_open_len
-        syscall
-        pop rax
-        jmp .argfile_done
 
 .repl:
         mov rax, 1

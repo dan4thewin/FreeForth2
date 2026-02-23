@@ -1,14 +1,24 @@
-;;; ff64.asm — FreeForth2 x86-64 kernel
+;;; 016-inline64: Inline code generation for core primitives
+;;; Proves: primitives can emit machine code directly (no CALL overhead)
 ;;;
-;;; A subroutine-threaded Forth compiler for Linux x86-64.
-;;; Ported from Christophe Lavarenne's i386 FreeForth2.
+;;; In the original FreeForth, most primitives are NOT callable functions.
+;;; Instead, they are compile-time words that emit a few bytes of machine
+;;; code directly into the code buffer. This produces smaller, faster code.
 ;;;
-;;; Key features:
-;;;   - Inline code generation: core primitives emit machine code directly
-;;;   - SWAPbit optimization: swap emits zero code (compile-time register rename)
-;;;   - s01/s08/s09: register-swap via single-bit XOR on ModR/M bytes
-;;;   - Dedicated data stack pointer (r15) instead of xchg eax,esp trick
-;;;   - Command-line -f <file> support for loading boot files
+;;; For example, "+" in the original emits "01 D3" (add ebx,edx) inline
+;;; instead of compiling "call _add" (E8 xx xx xx xx — 5 bytes + the
+;;; called function's body).
+;;;
+;;; This experiment converts 10 core primitives from ct=0 (runtime call)
+;;; to ct=2 (compile-time, inline code generation):
+;;;   dup, drop, swap, over, nip, +, -, *, negate, not
+;;;
+;;; The runtime function bodies are kept as internal helpers but are no
+;;; longer registered in the dictionary.
+;;;
+;;; Inline bytes per word (vs 5-byte CALL):
+;;;   negate, not: 3 bytes     swap: 3 bytes       nip: 7 bytes
+;;;   dup, drop, over, +: 10 bytes    *: 11 bytes    -: 13 bytes
 
 format elf64
 section '.flat' writeable executable
@@ -415,159 +425,136 @@ _rshift: mov rcx, rbx           ; rshift ( a n -- a>>n )
         ret
 
 ;; =====================================================================
-;; SWAPbit register-swap functions: s01, s08, s09
+;; Inline code generators (ct=2)
 ;;
-;; These implement FreeForth's signature compile-time optimization.
-;; rbx (register 3, binary 011) and rdx (register 2, binary 010)
-;; differ by exactly one bit. By XORing the ModR/M byte of emitted
-;; instructions, we swap which register plays TOS vs NOS.
+;; These functions are called at COMPILE TIME when the compiler sees
+;; the word. Instead of emitting a "call <address>" (5 bytes), they
+;; write the operation's machine code directly into the code buffer.
 ;;
-;; s01: XOR bit 0 of ModR/M — swap the r/m field (destination)
-;; s08: XOR bit 3 of ModR/M — swap the reg field (source)
-;; s09: XOR bits 0 and 3     — swap both fields
+;; Each function writes bytes at rbp (the compilation pointer) and
+;; advances rbp past the emitted code.
 ;;
-;; Each function checks the SWAPbit (bit 1 of SC). If clear, it does
-;; nothing. If set, it XORs [rbp-1] (the last emitted ModR/M byte).
+;; Example: when the compiler sees "+", it calls _add_inline, which
+;; writes the 10 bytes of "add rbx,rdx; mov rdx,[r15]; add r15,8"
+;; directly into the code buffer.
 ;; =====================================================================
 
-_s09:   mov ch, $09
-        jmp _sx
-_s08:   mov ch, $08
-        jmp _sx
-_s01:   mov ch, $01
-_sx:    test byte [SC], 2
-        jz .done
-        xor byte [rbp-1], ch
-.done:  ret
-
-;; =====================================================================
-;; Inline code generators (ct=2) — SWAPbit-aware
-;;
-;; Each generator emits machine code at rbp using the "default" register
-;; assignment (rbx=TOS, rdx=NOS), then calls s01/s08/s09 to flip the
-;; register bits if the SWAPbit is set.
-;;
-;; The SWAPbit is preserved through all operations except swap itself.
-;; Before CALL and RET instructions, _rst syncs the registers by
-;; emitting xchg rbx,rdx if needed and clearing the SWAPbit.
-;; =====================================================================
-
-;; Helper: emit DROP_NOS with SWAPbit awareness (7 bytes)
-;; Default: mov rdx,[r15]; add r15,8   (pop into NOS=rdx)
-;; Swapped: mov rbx,[r15]; add r15,8   (pop into NOS=rbx)
-_emit_drop_nos_s:
+;; Helper: emit DROP_NOS (7 bytes at rbp)
+;; Writes: 49 8B 17       mov rdx, [r15]    -- pop new NOS from stack
+;;         49 83 C7 08    add r15, 8         -- shrink data stack
+_emit_drop_nos:
         mov byte [rbp], $49
-        mov word [rbp+1], $178B     ; mov rdx, [r15] (default)
+        mov word [rbp+1], $178B
         add rbp, 3
-        call _s08                   ; swap reg field: rdx↔rbx
-        mov dword [rbp], $08C78349  ; add r15, 8 (always same)
+        mov dword [rbp], $08C78349
         add rbp, 4
         ret
 
-;; Helper: emit DUP_NOS with SWAPbit awareness (7 bytes)
-;; Default: sub r15,8; mov [r15],rdx   (push NOS=rdx)
-;; Swapped: sub r15,8; mov [r15],rbx   (push NOS=rbx)
-_emit_dup_nos_s:
-        mov dword [rbp], $08EF8349  ; sub r15, 8 (always same)
+;; Helper: emit DUP_NOS (7 bytes at rbp)
+;; Writes: 49 83 EF 08    sub r15, 8         -- grow data stack
+;;         49 89 17       mov [r15], rdx     -- save current NOS
+_emit_dup_nos:
+        mov dword [rbp], $08EF8349
         add rbp, 4
         mov byte [rbp], $49
-        mov word [rbp+1], $1789     ; mov [r15], rdx (default)
+        mov word [rbp+1], $1789
         add rbp, 3
-        jmp _s08                    ; swap reg field: rdx↔rbx
+        ret
 
 ;; dup ( x -- x x ): push NOS, copy TOS to NOS (10 bytes)
-;; Default: sub r15,8; mov [r15],rdx; mov rdx,rbx
-;; Swapped: sub r15,8; mov [r15],rbx; mov rbx,rdx
+;; Emits: sub r15,8; mov [r15],rdx; mov rdx,rbx
 _dup_inline:
-        call _emit_dup_nos_s
-        mov byte [rbp], $48
-        mov word [rbp+1], $DA89     ; mov rdx, rbx (default)
+        call _rst
+        call _emit_dup_nos
+        mov byte [rbp], $48         ; mov rdx, rbx
+        mov word [rbp+1], $DA89
         add rbp, 3
-        jmp _s09                    ; swap both: rdx↔rbx in both fields
-
-;; drop ( x -- ): move NOS to TOS, pop new NOS (10 bytes)
-;; Default: mov rbx,rdx; mov rdx,[r15]; add r15,8
-;; Swapped: mov rdx,rbx; mov rbx,[r15]; add r15,8
-_drop_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $D389     ; mov rbx, rdx (default)
-        add rbp, 3
-        call _s09                   ; swap both fields
-        jmp _emit_drop_nos_s
-
-;; swap ( a b -- b a ): toggle SWAPbit — ZERO bytes emitted!
-;; This is the core of FreeForth's optimization: swap is free.
-_swap_inline:
-        xor byte [SC], 2           ; toggle SWAPbit
         ret
 
-;; over ( a b -- a b a ): push NOS, swap regs (10 bytes)
-;; Default: sub r15,8; mov [r15],rdx; xchg rbx,rdx
-;; Swapped: sub r15,8; mov [r15],rbx; xchg rbx,rdx
-;; Note: xchg is always the same — it swaps both registers regardless.
+;; drop ( x -- ): move NOS to TOS, pop new NOS (10 bytes)
+;; Emits: mov rbx,rdx; mov rdx,[r15]; add r15,8
+_drop_inline:
+        call _rst
+        mov byte [rbp], $48         ; mov rbx, rdx
+        mov word [rbp+1], $D389
+        add rbp, 3
+        jmp _emit_drop_nos
+
+;; swap ( a b -- b a ): exchange TOS and NOS (3 bytes)
+;; Emits: xchg rbx, rdx
+;; Note: in a future experiment, swap will toggle SWAPbit instead
+;; of emitting any code at all, making it zero-cost.
+_swap_inline:
+        call _rst
+        mov byte [rbp], $48         ; xchg rbx, rdx
+        mov word [rbp+1], $DA87
+        add rbp, 3
+        ret
+
+;; over ( a b -- a b a ): push NOS, swap top two (10 bytes)
+;; Emits: sub r15,8; mov [r15],rdx; xchg rbx,rdx
 _over_inline:
-        call _emit_dup_nos_s
-        mov byte [rbp], $48         ; xchg rbx, rdx (always same)
+        call _rst
+        call _emit_dup_nos
+        mov byte [rbp], $48         ; xchg rbx, rdx
         mov word [rbp+1], $DA87
         add rbp, 3
         ret
 
 ;; nip ( a b -- b ): pop NOS, keep TOS (7 bytes)
-;; Default: mov rdx,[r15]; add r15,8
-;; Swapped: mov rbx,[r15]; add r15,8
+;; Emits: mov rdx,[r15]; add r15,8
 _nip_inline:
-        jmp _emit_drop_nos_s
+        call _rst
+        jmp _emit_drop_nos
 
 ;; + ( a b -- a+b ): add NOS to TOS, pop (10 bytes)
-;; Default: add rbx,rdx; mov rdx,[r15]; add r15,8
-;; Swapped: add rdx,rbx; mov rbx,[r15]; add r15,8
+;; Emits: add rbx,rdx; mov rdx,[r15]; add r15,8
 _add_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $D301     ; add rbx, rdx (default)
+        call _rst
+        mov byte [rbp], $48         ; add rbx, rdx
+        mov word [rbp+1], $D301
         add rbp, 3
-        call _s09                   ; swap both fields
-        jmp _emit_drop_nos_s
+        jmp _emit_drop_nos
 
 ;; - ( a b -- a-b ): subtract TOS from NOS (13 bytes)
-;; Default: sub rdx,rbx; mov rbx,rdx; DROP_NOS
-;; Swapped: sub rbx,rdx; mov rdx,rbx; DROP_NOS_S
+;; Emits: sub rdx,rbx; mov rbx,rdx; mov rdx,[r15]; add r15,8
+;; Note: the subtraction order is NOS-TOS (a-b), matching Forth convention.
+;; We compute in rdx first, then move result to rbx (TOS).
 _sub_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DA29     ; sub rdx, rbx (default)
+        call _rst
+        mov byte [rbp], $48         ; sub rdx, rbx
+        mov word [rbp+1], $DA29
         add rbp, 3
-        call _s09
-        mov byte [rbp], $48
-        mov word [rbp+1], $D389     ; mov rbx, rdx (default)
+        mov byte [rbp], $48         ; mov rbx, rdx (result → TOS)
+        mov word [rbp+1], $D389
         add rbp, 3
-        call _s09
-        jmp _emit_drop_nos_s
+        jmp _emit_drop_nos
 
 ;; * ( a b -- a*b ): multiply TOS by NOS (11 bytes)
-;; Default: imul rbx,rdx; mov rdx,[r15]; add r15,8
-;; Swapped: imul rdx,rbx; mov rbx,[r15]; add r15,8
+;; Emits: imul rbx,rdx; mov rdx,[r15]; add r15,8
 _mul_inline:
-        mov dword [rbp], $DAAF0F48  ; imul rbx, rdx (default)
+        call _rst
+        mov dword [rbp], $DAAF0F48  ; imul rbx, rdx
         add rbp, 4
-        call _s09                   ; swap both fields
-        jmp _emit_drop_nos_s
+        jmp _emit_drop_nos
 
 ;; negate ( n -- -n ): two's complement negation (3 bytes)
-;; Default: neg rbx (48 F7 DB)
-;; Swapped: neg rdx (48 F7 DA) — XOR $01 on ModR/M
+;; Emits: neg rbx
 _negate_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DBF7     ; neg rbx (default)
+        call _rst
+        mov byte [rbp], $48         ; neg rbx
+        mov word [rbp+1], $DBF7
         add rbp, 3
-        jmp _s01                    ; swap r/m field only
+        ret
 
 ;; not ( a -- ~a ): bitwise complement (3 bytes)
-;; Default: not rbx (48 F7 D3)
-;; Swapped: not rdx (48 F7 D2) — XOR $01 on ModR/M
+;; Emits: not rbx
 _not_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $D3F7     ; not rbx (default)
+        call _rst
+        mov byte [rbp], $48         ; not rbx
+        mov word [rbp+1], $D3F7
         add rbp, 3
-        jmp _s01                    ; swap r/m field only
+        ret
 
 ;; =====================================================================
 ;; Compile-time words (ct=2): executed during compilation
@@ -576,10 +563,7 @@ _not_inline:
 ;; =====================================================================
 
 ;; IF: test TOS, drop, compile jz <fwd>. Push patch address.
-;; Calls _rst first to sync SWAPbit — the emitted test/drop code
-;; always operates on rbx (the default TOS register).
 _if:
-        call _rst
         ;; Compile: test rbx, rbx (48 85 DB)
         mov byte [rbp], $48
         mov word [rbp+1], $DB85
@@ -609,10 +593,7 @@ _if:
         ret
 
 ;; THEN: resolve forward jump. TOS = patch address.
-;; Calls _rst to reconcile SWAPbit: if swap was used inside the IF body,
-;; emits xchg on the taken path before the join point.
 _then:
-        call _rst               ; sync SWAPbit at join point
         ;; Calculate offset: here - (patch_addr + 4)
         mov rax, rbp
         sub rax, rbx
@@ -625,9 +606,7 @@ _then:
         ret
 
 ;; ELSE: compile jmp <fwd>, resolve IF, push new patch address
-;; Calls _rst to reconcile SWAPbit at end of IF body.
 _else:
-        call _rst               ; sync before ELSE jump
         ;; Compile: jmp rel32 → E9 xx xx xx xx
         mov byte [rbp], $E9
         inc rbp
@@ -644,9 +623,7 @@ _else:
         ret
 
 ;; BEGIN: push here (loop target address)
-;; Calls _rst to ensure loop starts with SWAPbit=0.
 _begin:
-        call _rst
         sub r15, 8
         mov [r15], rdx
         mov rdx, rbx
@@ -655,7 +632,6 @@ _begin:
 
 ;; AGAIN: compile unconditional jump back to BEGIN address
 _again:
-        call _rst               ; sync before backward jump
         ;; Compile: jmp rel32 → E9 xx xx xx xx
         mov byte [rbp], $E9
         inc rbp
@@ -672,9 +648,7 @@ _again:
         ret
 
 ;; UNTIL: test TOS, drop, compile jz <back> (loop while false)
-;; Calls _rst first to sync SWAPbit, same as IF.
 _until:
-        call _rst
         ;; Compile: test rbx, rbx (48 85 DB)
         mov byte [rbp], $48
         mov word [rbp+1], $DB85
@@ -711,7 +685,6 @@ _while:
 
 ;; REPEAT: compile jmp <back to BEGIN>, then resolve WHILE
 _repeat:
-        call _rst               ; sync before backward jump
         ;; TOS = WHILE's patch addr, NOS = BEGIN's target
         ;; First: compile jmp back to BEGIN (NOS)
         mov byte [rbp], $E9
@@ -1427,80 +1400,6 @@ _start:
 
         lea rax, [filebuf]
         mov [filebuf_ptr], rax
-
-        ;; Process command-line arguments: -f <file> loads file
-        mov r13, [rsp]          ; argc
-        lea r14, [rsp+8]        ; argv[0]
-        mov r12, 1              ; current arg index (skip argv[0])
-.argloop:
-        cmp r12, r13
-        jge .repl
-        mov rdi, [r14 + r12*8]
-        cmp word [rdi], $662D   ; "-f" (little-endian: 0x2D='-', 0x66='f')
-        jne .nextarg
-        cmp byte [rdi+2], 0     ; must be exactly "-f"
-        jne .nextarg
-        inc r12
-        cmp r12, r13
-        jge .repl
-        ;; Load file at argv[r12]
-        mov rdi, [r14 + r12*8]  ; filename
-        push r12
-        push r13
-        push r14
-        ;; Save input state
-        push qword [tin]
-        push qword [tp]
-        push qword [filebuf_ptr]
-        ;; Open file
-        xor esi, esi            ; O_RDONLY
-        xor edx, edx
-        mov rax, 2              ; sys_open
-        syscall
-        test rax, rax
-        js .argfile_err
-        mov r12, rax            ; save fd
-        ;; Read file
-        xor eax, eax            ; sys_read
-        mov rdi, r12
-        mov rsi, [filebuf_ptr]
-        mov rdx, 16384
-        syscall
-        push rax
-        mov rax, 3              ; sys_close
-        mov rdi, r12
-        syscall
-        pop rax
-        test rax, rax
-        jle .argfile_done
-        ;; Set up input and compile
-        mov rcx, [filebuf_ptr]
-        mov [tin], rcx
-        lea rcx, [rcx + rax]
-        mov [tp], rcx
-        lea rcx, [rcx + 16]
-        mov [filebuf_ptr], rcx
-        call _compiler
-.argfile_done:
-        pop qword [filebuf_ptr]
-        pop qword [tp]
-        pop qword [tin]
-        pop r14
-        pop r13
-        pop r12
-.nextarg:
-        inc r12
-        jmp .argloop
-.argfile_err:
-        ;; Print error and skip
-        push rax
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [err_open_msg]
-        mov rdx, err_open_len
-        syscall
-        pop rax
-        jmp .argfile_done
 
 .repl:
         mov rax, 1

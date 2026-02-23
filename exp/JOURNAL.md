@@ -631,3 +631,119 @@ integration into the code generator. This is a natural next step for anyone
 continuing Christophe's work.
 
 FreeForth2 lives on.
+
+---
+
+## Phase 2: Deep Integration
+
+Phase 2 moves beyond proving individual concepts to building a production-quality
+code generator. Where Phase 1 used runtime `call` instructions for every
+primitive, Phase 2 converts them to inline machine code — the technique that
+makes FreeForth distinctive.
+
+### Experiment 016: Inline Code Generation
+
+**Goal:** Convert 10 core primitives from runtime calls (ct=0, 5-byte `call`
+instructions) to inline code generators (ct=2, emit machine code directly).
+
+**Primitives converted:**
+
+| Word | Runtime bytes | Inline bytes | Savings |
+|------|:---:|:---:|:---:|
+| `negate` | 5 (call) + 4 (body) | 3 | 6 bytes |
+| `not` | 5 + 4 | 3 | 6 bytes |
+| `swap` | 5 + 4 | 3 | 6 bytes |
+| `nip` | 5 + 8 | 7 | 6 bytes |
+| `dup` | 5 + 8 | 10 | 3 bytes |
+| `drop` | 5 + 8 | 10 | 3 bytes |
+| `over` | 5 + 8 | 10 | 3 bytes |
+| `+` | 5 + 8 | 10 | 3 bytes |
+| `*` | 5 + 8 | 11 | 2 bytes |
+| `-` | 5 + 10 | 13 | 2 bytes |
+
+Each inline code generator is a function that writes machine code bytes
+at `rbp` (the compilation pointer). When the compiler sees `+`, it calls
+`_add_inline`, which writes these 10 bytes:
+
+```
+48 01 D3        add rbx, rdx       ; TOS += NOS
+49 8B 17        mov rdx, [r15]     ; new NOS from stack
+49 83 C7 08     add r15, 8         ; shrink data stack
+```
+
+Compare to the old approach, which compiled `E8 xx xx xx xx` (call _add)
+and at runtime executed the same instructions plus `call`/`ret` overhead.
+
+**Subtlety: subtraction order.** The `-` inline emits `sub rdx, rbx`
+(NOS minus TOS) rather than `sub rbx, rdx`, because Forth's `-` expects
+`( a b -- a-b )` where TOS=b and NOS=a. The result is then moved to rbx
+via `mov rbx, rdx`.
+
+**Result:** All 13 tests pass. The generated code is both smaller and faster.
+The runtime function bodies are preserved as internal helpers but are no
+longer registered in the dictionary.
+
+**Files:** `exp/016-inline64/{inline64.asm,Makefile}`
+
+---
+
+### Experiment 017: Deep SWAPbit Integration
+
+**Goal:** Make `swap` a zero-cost compile-time operation by deeply integrating
+the SWAPbit into all inline code generators.
+
+**How it works:**
+
+The SWAPbit is a single flag (bit 1 of SC). When clear, rbx=TOS and rdx=NOS
+(the normal assignment). When set, the registers are logically reversed:
+rdx=TOS and rbx=NOS.
+
+`swap` simply toggles this flag — it emits **zero bytes** of machine code.
+All subsequent inline code generators adjust their register encoding to match.
+
+Three functions implement the register swap:
+
+| Function | XOR mask | What it swaps |
+|----------|:--------:|---------------|
+| `s01` | `$01` | r/m field only (destination register) |
+| `s08` | `$08` | reg field only (source register) |
+| `s09` | `$09` | Both fields |
+
+They work because rbx (register 3, binary 011) and rdx (register 2, binary
+010) differ by exactly one bit. XORing the appropriate bit in the ModR/M
+byte switches between them.
+
+**Example: how `+` adapts to the SWAPbit**
+
+Normal (SWAPbit=0):
+```
+48 01 D3        add rbx, rdx       ; ModR/M = D3
+49 8B 17        mov rdx, [r15]     ; reg field = rdx (2)
+49 83 C7 08     add r15, 8
+```
+
+After swap (SWAPbit=1):
+```
+48 01 DA        add rdx, rbx       ; ModR/M = D3 XOR 09 = DA
+49 8B 1F        mov rbx, [r15]     ; reg field = rbx (3), 17 XOR 08 = 1F
+49 83 C7 08     add r15, 8
+```
+
+The generated code is different, but the result is identical: the sum
+goes into TOS (whichever register that is), and a new NOS is popped.
+
+**Sync points:** Before `call` and `ret` instructions, `_rst` emits
+`xchg rbx,rdx` (3 bytes) if the SWAPbit is set, then clears the flag.
+This ensures called functions always see the standard register assignment.
+IF and UNTIL also call `_rst` before emitting test/branch code.
+
+**Key test: `3 10 swap - . cr ;` → 7**
+
+Without swap, `3 10 -` = 3-10 = -7. With swap, `-` emits `sub rbx, rdx`
+instead of `sub rdx, rbx`, correctly computing 10-3 = 7.
+
+**Result:** All 16 tests pass, including swap+add, swap+sub, swap+dup+mul,
+double-swap cancellation, and swap within named definitions. This is the
+most significant optimization from the original FreeForth now ported to x86-64.
+
+**Files:** `exp/017-swapbit-deep/{swapdeep64.asm,Makefile}`
