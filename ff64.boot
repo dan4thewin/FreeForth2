@@ -42,14 +42,26 @@
 : 1+` $48, ,1 $C3FF, s01 ;
 : 1-` $48, ,1 $CBFF, s01 ;
 : 2+` 1+` 1+` ;
+: bswap` $48, ,1 $CB0F, s01 ;
+: flip` $FB86, s09 ;
+: 8+` $48, ,1 $C383, s01 $08, ,1 ;
+: 8-` $48, ,1 $EB83, s01 $08, ,1 ;
 
 \ Memory load
 : @` $48, ,1 $1B8B, s09 ;
 : c@` $48, ,1 $0F, ,1 $1BB6, s09 ;
+: cs@` $48, ,1 $0F, ,1 $1BBE, s09 ;
+: w@` $0F, ,1 $1BB7, s09 ;
+: ws@` $48, ,1 $0F, ,1 $1BBF, s09 ;
+\ Fetch preserving address: dup@` = over` + fetch through NOS
+: dup@`  over` $48, ,1 $1A8B, s09 ;
+: dupc@` over` $48, ,1 $0F, ,1 $1AB6, s09 ;
+: dupw@` over` $0F, ,1 $1AB7, s09 ;
 
 \ Memory store (2dup variants preserve both operands)
 : 2dup!` $48, ,1 $1389, s09 ;
 : 2dupc!` $1388, s09 ;
+: 2dupw!` $66, ,1 $1389, s09 ;
 : 2dup+!` $48, ,1 $1301, s09 ;
 : 2dup-!` $48, ,1 $1329, s09 ;
 \ Consuming store ops
@@ -57,12 +69,15 @@
 : !` tuck!` drop` ;
 : tuckc!` 2dupc!` nip` ;
 : c!` tuckc!` drop` ;
+: tuckw!` 2dupw!` nip` ;
+: w!` tuckw!` drop` ;
 : tuck+!` 2dup+!` nip` ;
 : +!` tuck+!` drop` ;
 : tuck-!` 2dup-!` nip` ;
 : -!` tuck-!` drop` ;
 : over!` swap` tuck!` ;
 : overc!` swap` tuckc!` ;
+: overw!` swap` tuckw!` ;
 : over+!` swap` tuck+!` ;
 : over-!` swap` tuck-!` ;
 
@@ -96,6 +111,18 @@
 : 2r>` 2dup` dropr>` swap` dropr>` swap` ;
 : 2dup>r` swap` dup>r` swap` dup>r` ;
 : 2>r` 2dup>r` 2drop` ;
+
+\ Fetch and advance (address on stack, returns value and advanced addr)
+: @+`  dup@`  swap` 8+` swap` ;
+: c@+` dupc@` swap` 1+` swap` ;
+: w@+` dupw@` swap` 2+` swap` ;
+
+\ Double-cell fetch/store
+: 2@` @+` swap` @` swap` ;
+: 2!` tuck!` 8+` !` ;
+
+\ Address arithmetic
+: bounds` over+` swap` ;
 
 ( Stack manipulation )
 : 2swap rot >r rot r> ;

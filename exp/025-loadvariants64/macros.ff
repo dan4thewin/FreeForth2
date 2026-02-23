@@ -1,0 +1,49 @@
+( Experiment 025: Load variants, byte swap, address arithmetic )
+( These macros extend ff64.boot with additional inline code generators )
+
+\ Sign-extend byte fetch: movsx rbx, byte [rbx] = 48 0F BE 1B
+: cs@` $48, ,1 $0F, ,1 $1BBE, s09 ;
+
+\ Zero-extend word (16-bit) fetch: movzx ebx, word [rbx] = 0F B7 1B
+\ No REX.W needed — zero-extends to 64-bit automatically
+: w@` $0F, ,1 $1BB7, s09 ;
+
+\ Sign-extend word (16-bit) fetch: movsx rbx, word [rbx] = 48 0F BF 1B
+: ws@` $48, ,1 $0F, ,1 $1BBF, s09 ;
+
+\ Fetch preserving address: over` + mov through other register
+\ dup@`: addr → addr [addr]   movsx rbx,[rdx] = 48 8B 1A
+: dup@`  over` $48, ,1 $1A8B, s09 ;
+\ dupc@`: addr → addr byte[addr]   movzx rbx,byte [rdx] = 48 0F B6 1A
+: dupc@` over` $48, ,1 $0F, ,1 $1AB6, s09 ;
+\ dupw@`: addr → addr word[addr]   movzx ebx,word [rdx] = 0F B7 1A
+: dupw@` over` $0F, ,1 $1AB7, s09 ;
+
+\ Byte swap: bswap rbx = 48 0F CB
+: bswap` $48, ,1 $CB0F, s01 ;
+
+\ Flip low 2 bytes: xchg bh,bl = 86 FB (no REX — 8-bit regs)
+: flip` $FB86, s09 ;
+
+\ Cell-size arithmetic: add rbx,8 = 48 83 C3 08
+: 8+` $48, ,1 $C383, s01 $08, ,1 ;
+: 8-` $48, ,1 $EB83, s01 $08, ,1 ;
+
+\ Fetch and advance
+: @+`  dup@`  swap` 8+` swap` ;
+: c@+` dupc@` swap` 1+` swap` ;
+: w@+` dupw@` swap` 2+` swap` ;
+
+\ Double-cell fetch/store (2 consecutive cells)
+: 2@` @+` swap` @` swap` ;
+: 2!` tuck!` 8+` !` ;
+
+\ over+` swap` = convert addr len to addr+len addr
+: bounds` over+` swap` ;
+
+\ 16-bit store: 2dupw!` = 66 prefix + 2dup!` pattern
+\ mov word [rbx],dx = 66 89 13
+: 2dupw!` $66, ,1 $1389, s09 ;
+: tuckw!` 2dupw!` nip` ;
+: w!` tuckw!` drop` ;
+: overw!` swap` tuckw!` ;

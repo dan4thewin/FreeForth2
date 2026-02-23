@@ -1465,3 +1465,95 @@ Compilation: here/allot
 Composition: tuck, 2dup, 2swap, nip-via-swap-drop
 
 **Files:** `exp/024-moremacros64/{moremacros64.asm,macros.ff,Makefile}`
+
+---
+
+## Experiment 025: Load variants, byte swap, address arithmetic
+
+**Date:** 2026-02-23
+
+### Goal
+
+Extend the inline macro library with the remaining load/store
+variants, byte manipulation, address arithmetic, and compound
+fetch/store operations — the building blocks needed before tackling
+compilation macros and flow control in Forth.
+
+### New macros (19 additional)
+
+**Load variants** (6):
+```forth
+: cs@` $48, ,1 $0F, ,1 $1BBE, s09 ;  ( movsx rbx, byte [rbx] )
+: w@`  $0F, ,1 $1BB7, s09 ;          ( movzx ebx, word [rbx] — no REX needed )
+: ws@` $48, ,1 $0F, ,1 $1BBF, s09 ;  ( movsx rbx, word [rbx] )
+: dup@`  over` $48, ,1 $1A8B, s09 ;  ( addr → addr [addr] )
+: dupc@` over` $48, ,1 $0F, ,1 $1AB6, s09 ;
+: dupw@` over` $0F, ,1 $1AB7, s09 ;
+```
+
+**Byte manipulation** (2):
+```forth
+: bswap` $48, ,1 $CB0F, s01 ;   ( 64-bit byte swap )
+: flip`  $FB86, s09 ;            ( swap low 2 bytes, no REX )
+```
+
+**Cell-size arithmetic** (2):
+```forth
+: 8+` $48, ,1 $C383, s01 $08, ,1 ;   ( add rbx, 8 )
+: 8-` $48, ,1 $EB83, s01 $08, ,1 ;   ( sub rbx, 8 )
+```
+
+**Fetch and advance** (3):
+```forth
+: @+`  dup@`  swap` 8+` swap` ;   ( addr → addr+8 [addr] )
+: c@+` dupc@` swap` 1+` swap` ;   ( addr → addr+1 byte[addr] )
+: w@+` dupw@` swap` 2+` swap` ;   ( addr → addr+2 word[addr] )
+```
+
+**Double-cell operations** (2):
+```forth
+: 2@` @+` swap` @` swap` ;   ( addr → [addr+8] [addr] )
+: 2!` tuck!` 8+` !` ;        ( x1 x2 addr → ; stores x2@addr, x1@addr+8 )
+```
+
+**Word-size store** (4):
+```forth
+: 2dupw!` $66, ,1 $1389, s09 ;   ( 16-bit store )
+: tuckw!` 2dupw!` nip` ;
+: w!` tuckw!` drop` ;
+: overw!` swap` tuckw!` ;
+```
+
+**Address arithmetic** (1):
+```forth
+: bounds` over+` swap` ;   ( addr len → addr addr+len )
+```
+
+### Key observations
+
+**REX prefix not always needed:** `movzx` to a 32-bit register (e.g.
+`movzx ebx, word [rbx]`) automatically zero-extends to 64-bit rbx on
+x86-64. No REX.W prefix required. Same for `flip`` — byte register
+operations (`xchg bh,bl`) must NOT have REX (it would reinterpret
+the register encoding).
+
+**SWAPbit persistence:** The SWAPbit is NOT consumed by s01/s08/s09.
+It persists until explicitly toggled by `swap``. This means macros
+that compose multiple s-operations must carefully track the toggle
+count. Example: `c@+`` has 3 `swap`` calls (1 from `over`` inside
+`dupc@``, plus 2 explicit), leaving SWAPbit toggled after the macro.
+This is correct — the next operation sees the toggled state and
+compensates automatically.
+
+**2!` doesn't need swap:** The i386 `2!`` definition `tuck!` 4+` !``
+works directly because `tuck!`` leaves `val2 addr` on the stack with
+addr as TOS. Adding 8 to TOS (the address) is correct without
+swapping first.
+
+**Tests (19 total, all PASS)**
+
+cs@ (3: positive, negative, sign-extend), w@ (1), ws@ (2: positive,
+negative), dup@/dupc@/dupw@ (4), bswap (1), flip (1), 8+/8- (2),
+c@+ (2: basic, chained), bounds (1), w! (1), 2!/2@ (1).
+
+**Files:** `exp/025-loadvariants64/{macros.ff,Makefile}` (uses production ff64)

@@ -5,7 +5,7 @@ EXPERIMENTS = 001-hello64 002-stack64 003-codegen64 004-subrthread64 \
               014-retstack64 015-swapbit64 016-inline64 \
               017-swapbit-deep 018-moreinline64 019-cmpinline64 020-flagscond64 \
               021-litcomma64 022-backtick64 023-forthmacros64 \
-              024-moremacros64
+              024-moremacros64 025-loadvariants64
 
 test:
 	@for d in $(EXPERIMENTS); do \
