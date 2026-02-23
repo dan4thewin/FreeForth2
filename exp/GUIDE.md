@@ -424,8 +424,6 @@ appear.
 
 ## Part 7: Inline Code Generation (Phase 2)
 
-*This section will be expanded as phase 2 experiments progress.*
-
 ### The goal
 
 Replace `call _add` (5 bytes, function call overhead) with inline
@@ -436,18 +434,62 @@ Replace `call _add` (5 bytes, function call overhead) with inline
 
 ### The approach
 
-Each primitive becomes a **compile-time word** that emits its machine code
-bytes directly into the code buffer. For example, `+` would be defined
-(conceptually) as:
+Each primitive becomes a **compile-time word** (ct=2) that emits its
+machine code bytes directly into the code buffer. For example, when the
+compiler sees `+`, it calls `_add_inline`:
 
-```
-; When the compiler sees "+", it runs this code:
-mov byte [rbp], $48        ; REX.W prefix
-mov word [rbp+1], $D301    ; add rbx, rdx (or XOR'd if SWAPbit set)
-add rbp, 3                 ; advance compilation pointer
+```asm
+_add_inline:
+    mov byte [rbp], $48         ; REX.W prefix
+    mov word [rbp+1], $D301     ; add rbx, rdx
+    add rbp, 3
+    call _s09                   ; XOR ModR/M if SWAPbit set
+    jmp _emit_drop_nos_s        ; pop new NOS from stack
 ```
 
-The `s09` function would then check the SWAPbit and XOR `$09` into
-the ModR/M byte at `[rbp-1]` if the flag is set.
+The `_s09` call checks the SWAPbit and XORs `$09` into the ModR/M byte
+at `[rbp-1]`, changing `add rbx,rdx` to `add rdx,rbx` if needed.
+
+### Current inline primitives (18 total)
+
+| Category | Words | Pattern |
+|----------|-------|---------|
+| Arithmetic | `+ - * negate` | Binary op + DROP_NOS, or unary |
+| Stack | `dup drop swap over nip rot tuck` | DUP_NOS/DROP_NOS combinations |
+| Bitwise | `and or xor not` | Same as arithmetic |
+| Memory | `@ c@` | Unary: `mov rbx,[rbx]` |
+| Comparison | `0<` | `sar rbx, 63` |
+
+### Words that remain as runtime calls (20)
+
+| Category | Words | Why |
+|----------|-------|-----|
+| I/O | `cr . emit` | Perform syscalls — must be called |
+| Comparison | `= < > 0= 0<>` | Complex (cmp+setcc+movzx+neg+DROP) |
+| Division | `/ mod /mod` | Use rdx:rax for idiv — conflict with NOS |
+| Shifts | `lshift rshift` | Need rcx for shift count |
+| Memory write | `! c! +!` | Consume 2-3 items, complex DROP |
+| Compilation | `here depth allot , c,` | Interact with rbp |
+| Bulk ops | `cmove fill erase zlen` | Loop-based, use rsi/rdi/rcx |
+| Return stack | `>r r> r@` | Interact with rsp |
+| Literals | `1 2` | Could be inlined but low priority |
+
+### Flow control and the SWAPbit
+
+A subtle issue arises when `swap` appears inside a conditional body:
+
+```forth
+: min 2dup > IF swap THEN drop ;
+```
+
+The `swap` toggles the SWAPbit at compile time (unconditionally), but
+at runtime the IF body may be skipped. This creates a mismatch: code
+after THEN would use the wrong register assignment for the not-taken path.
+
+The solution: **sync at join points.** Every flow control word that
+creates a join point (THEN, ELSE, BEGIN, AGAIN, REPEAT) calls `_rst`
+before emitting code. This inserts `xchg rbx,rdx` on the taken path
+if the SWAPbit was toggled, ensuring both paths arrive at the join
+point with the same register assignment (SWAPbit=0).
 
 ---

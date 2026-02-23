@@ -1,13 +1,14 @@
-;;; ff64.asm — FreeForth2 x86-64 kernel
+;;; 018-moreinline64: Complete the inline primitive set
 ;;;
-;;; A subroutine-threaded Forth compiler for Linux x86-64.
-;;; Ported from Christophe Lavarenne's i386 FreeForth2.
+;;; Converts 8 more primitives to SWAPbit-aware inline code generators:
+;;;   and, or, xor — binary bitwise (same pattern as +)
+;;;   @, c@        — memory fetch (simple unary)
+;;;   0<           — sign test (simple unary)
+;;;   rot, tuck    — remaining stack manipulation
 ;;;
-;;; Key features:
-;;;   - 18 inline code generators with SWAPbit-aware register selection
-;;;   - swap emits zero code (compile-time register rename via s01/s08/s09)
-;;;   - Dedicated data stack pointer (r15) instead of xchg eax,esp trick
-;;;   - Command-line -f <file> support for loading boot files
+;;; After this experiment, 18 of the most common primitives emit inline
+;;; machine code, and only complex words (I/O, division, comparisons)
+;;; remain as runtime calls.
 
 format elf64
 section '.flat' writeable executable
@@ -693,9 +694,7 @@ _if:
         ret
 
 ;; THEN: resolve forward jump. TOS = patch address.
-;; Calls _rst to reconcile SWAPbit at join point.
 _then:
-        call _rst
         ;; Calculate offset: here - (patch_addr + 4)
         mov rax, rbp
         sub rax, rbx
@@ -709,7 +708,6 @@ _then:
 
 ;; ELSE: compile jmp <fwd>, resolve IF, push new patch address
 _else:
-        call _rst
         ;; Compile: jmp rel32 → E9 xx xx xx xx
         mov byte [rbp], $E9
         inc rbp
@@ -727,7 +725,6 @@ _else:
 
 ;; BEGIN: push here (loop target address)
 _begin:
-        call _rst
         sub r15, 8
         mov [r15], rdx
         mov rdx, rbx
@@ -736,7 +733,6 @@ _begin:
 
 ;; AGAIN: compile unconditional jump back to BEGIN address
 _again:
-        call _rst
         ;; Compile: jmp rel32 → E9 xx xx xx xx
         mov byte [rbp], $E9
         inc rbp
@@ -792,7 +788,6 @@ _while:
 
 ;; REPEAT: compile jmp <back to BEGIN>, then resolve WHILE
 _repeat:
-        call _rst
         ;; TOS = WHILE's patch addr, NOS = BEGIN's target
         ;; First: compile jmp back to BEGIN (NOS)
         mov byte [rbp], $E9
@@ -1508,74 +1503,6 @@ _start:
 
         lea rax, [filebuf]
         mov [filebuf_ptr], rax
-
-        ;; Process command-line arguments: -f <file> loads file
-        mov r13, [rsp]          ; argc
-        lea r14, [rsp+8]        ; argv[0]
-        mov r12, 1              ; current arg index (skip argv[0])
-.argloop:
-        cmp r12, r13
-        jge .repl
-        mov rdi, [r14 + r12*8]
-        cmp word [rdi], $662D   ; "-f" (little-endian)
-        jne .nextarg
-        cmp byte [rdi+2], 0
-        jne .nextarg
-        inc r12
-        cmp r12, r13
-        jge .repl
-        mov rdi, [r14 + r12*8]  ; filename
-        push r12
-        push r13
-        push r14
-        push qword [tin]
-        push qword [tp]
-        push qword [filebuf_ptr]
-        xor esi, esi
-        xor edx, edx
-        mov rax, 2              ; sys_open
-        syscall
-        test rax, rax
-        js .argfile_err
-        mov r12, rax
-        xor eax, eax            ; sys_read
-        mov rdi, r12
-        mov rsi, [filebuf_ptr]
-        mov rdx, 16384
-        syscall
-        push rax
-        mov rax, 3              ; sys_close
-        mov rdi, r12
-        syscall
-        pop rax
-        test rax, rax
-        jle .argfile_done
-        mov rcx, [filebuf_ptr]
-        mov [tin], rcx
-        lea rcx, [rcx + rax]
-        mov [tp], rcx
-        lea rcx, [rcx + 16]
-        mov [filebuf_ptr], rcx
-        call _compiler
-.argfile_done:
-        pop qword [filebuf_ptr]
-        pop qword [tp]
-        pop qword [tin]
-        pop r14
-        pop r13
-        pop r12
-.nextarg:
-        inc r12
-        jmp .argloop
-.argfile_err:
-        push rax
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [err_open_msg]
-        mov rdx, err_open_len
-        syscall
-        pop rax
-        jmp .argfile_done
 
 .repl:
         mov rax, 1

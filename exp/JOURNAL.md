@@ -747,3 +747,44 @@ double-swap cancellation, and swap within named definitions. This is the
 most significant optimization from the original FreeForth now ported to x86-64.
 
 **Files:** `exp/017-swapbit-deep/{swapdeep64.asm,Makefile}`
+
+---
+
+### Experiment 018: More Inline Primitives
+
+**Goal:** Convert 8 more primitives to SWAPbit-aware inline code generators,
+completing the set of common operations.
+
+**Primitives converted:**
+
+| Word | Inline bytes | SWAPbit mask | Pattern |
+|------|:---:|:---:|---|
+| `and` | 10 | s09 | Same as `+`: binary op + DROP_NOS |
+| `or` | 10 | s09 | Same pattern |
+| `xor` | 10 | s09 | Same pattern |
+| `@` | 3 | s09 | `mov rbx,[rbx]` — address and result both in TOS |
+| `c@` | 3 | s09 | `movzx ebx,byte [rbx]` — no REX needed |
+| `0<` | 4 | s01 | `sar rbx,63` — split-emit for immediate byte |
+| `rot` | 6 | s08 | `xchg NOS,[r15]; xchg rbx,rdx` |
+| `tuck` | 7 | s08 | `sub r15,8; mov [r15],TOS` |
+
+**Notable encoding detail: `c@` without REX.** The `movzx ebx, byte [rbx]`
+instruction is 3 bytes (0F B6 1B) with no REX prefix. Writing to a 32-bit
+register (ebx) on x86-64 automatically zero-extends to 64 bits. This saves
+a byte compared to the `48 0F B6 1B` encoding that fasm generates for
+`movzx rbx, byte [rbx]`.
+
+**Notable: `0<` split-emit trick.** The `sar rbx, 63` instruction has an
+immediate byte ($3F) after the ModR/M byte. The s01 function XORs [rbp-1],
+which would target the immediate instead of the ModR/M. Solution: emit the
+opcode + ModR/M (3 bytes), call s01, then emit the immediate separately.
+
+**SWAPbit bug fix in ff64.asm:** Added `_rst` to THEN, ELSE, BEGIN, AGAIN,
+and REPEAT to sync the SWAPbit at flow control join points. Without this,
+`swap` inside IF bodies corrupted register assignments because the
+compile-time SWAPbit toggle always runs, but the runtime swap (which the
+SWAPbit replaces) is conditional on the IF branch.
+
+**Running tally:** 18 of 38 words are now inline code generators.
+
+**Files:** `exp/018-moreinline64/{moreinline64.asm,Makefile}`
