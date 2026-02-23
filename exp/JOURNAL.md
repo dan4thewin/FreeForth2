@@ -1081,3 +1081,71 @@ possible set of primitives. Everything else builds on those primitives using
 Forth itself. The dotted comparisons and boolean-conditional words will return
 as Forth definitions once the macro system (`s01`, `s08`, `s09`, `c,`, `,`)
 is available from the boot source.
+
+---
+
+## Experiment 021: Trailing-comma literal compiler
+
+**Date:** 2026-02-23
+
+### Goal
+
+Implement the FreeForth trailing-comma syntax (`$DA89,`) that is the
+foundation for all Forth-defined inline code generators (backtick macros).
+Also expose the SWAPbit helpers (`s01`, `s08`, `s09`, `s1`) and compilation
+pointer advancement words (`,1`, `,2`, `,3`, `,4`) as callable Forth words.
+
+### Background: How ff.boot macros work
+
+In the original FreeForth, most inline code generators are defined in Forth,
+not assembly. A "backtick macro" like `: nipdup` $DA89, s09 ;` defines a
+compile-time word that emits machine code. The trailing comma in `$DA89,` is
+not the `,` word — it's a special syntax handled by the compiler's number
+parser. When the compiler sees a number ending with `,`, it calls `litcomma`,
+which emits a `mov [ebp], value` instruction of the appropriate size
+(byte, word, or dword).
+
+The key insight: `litcomma` writes bytes at [ebp] (the compilation pointer)
+but does NOT advance it. The `s01`/`s08`/`s09` words handle advancement
+(by 2 bytes) AND apply the SWAPbit correction. The `s1` word advances by
+only 1 byte. The `,1` through `,4` words advance without SWAPbit action.
+
+### How it works in x86-64
+
+The trailing-comma handler (`_litcomma`) checks the value's magnitude and
+emits the smallest possible `mov [rbp], imm` instruction:
+
+| Value range | Instruction | Code bytes | Total |
+|------------|-------------|------------|-------|
+| ≤ $FF | `mov byte [rbp], imm8` | C6 45 00 xx | 4 |
+| ≤ $FFFF | `mov word [rbp], imm16` | 66 C7 45 00 xx xx | 6 |
+| ≤ $FFFFFFFF | `mov dword [rbp], imm32` | C7 45 00 xx xx xx xx | 7 |
+
+For x86-64, instructions need REX prefixes that the i386 version didn't.
+The 64-bit `nipdup` (= `mov rdx, rbx`) is 3 bytes: `48 89 DA`. This
+requires two litcomma steps:
+```forth
+: nipdup  $48, ,1  $DA89, s09 ;
+```
+The REX prefix ($48) is compiled with `,1` (advance by 1, no SWAPbit),
+then the opcode+ModR/M ($DA89) with `s09` (advance by 2, SWAPbit-aware).
+
+### Changes
+
+- Added `_litcomma` function (byte/word/dword size selection)
+- Modified compiler loop to detect trailing `,` on number literals
+- Added `_s01_word`, `_s08_word`, `_s09_word`, `_s1_word` (callable wrappers)
+- Added `_comma1` through `_comma4` (compilation pointer advancement)
+- Registered s01, s08, s09, s1, ,1, ,2, ,3, ,4 as WORD64 entries
+
+### Tests (5 total, all PASS)
+
+| # | Input | Expected | Tests |
+|---|-------|----------|-------|
+| 1 | 1 2 + . cr | 3 | Basic arithmetic unchanged |
+| 2 | nipdup ($48,,1 $DA89,,s09) bytes | 218 137 72 | 3-byte mov rdx,rbx |
+| 3 | $48,,1 byte + advancement | 72, advance 1 | Single byte litcomma |
+| 4 | $DA89,,2 word + advancement | 218 137, advance 2 | Word litcomma |
+| 5 | $04C38348,,4 dword + advancement | 4 72, advance 4 | Dword litcomma |
+
+**Files:** `exp/021-litcomma64/{litcomma64.asm,Makefile}`

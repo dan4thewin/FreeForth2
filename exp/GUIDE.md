@@ -544,3 +544,72 @@ Note: `xchg` does not affect FLAGS, so the _rst sync is safe even in
 the flags-based conditional path.
 
 ---
+
+## Part 8: The Trailing-Comma Literal Compiler
+
+### Why this matters
+
+In the original FreeForth, most inline code generators are **not** written
+in assembly. They're Forth words — "backtick macros" — defined in ff.boot.
+For example, `nipdup` is defined as:
+
+```forth
+: nipdup` $DA89, s09 ;        ( i386: mov edx, ebx — 2 bytes )
+```
+
+This single line replaces what would otherwise be an assembly routine.
+Lavarenne kept the assembly kernel minimal and built the rest in Forth.
+To port ff.boot to ff64.boot, we need the same mechanism in the 64-bit
+port.
+
+### The trailing-comma syntax
+
+When the compiler encounters a number token ending with `,`, it doesn't
+push the number as a literal. Instead, it calls `litcomma`, which emits
+a `mov [rbp], value` instruction into the code being compiled. When that
+code later runs (as part of a macro), it writes the value's bytes at the
+current compilation pointer — but does NOT advance it.
+
+This is the secret: **litcomma writes bytes, s01/s08/s09 advance past
+them.** The separation allows the SWAPbit fixup to happen in exactly
+the right place.
+
+### Size selection
+
+The literal compiler chooses the smallest instruction:
+
+| Value | Instruction emitted | Machine code |
+|-------|-------------------|--------------|
+| `$48,` (≤ $FF) | `mov byte [rbp], $48` | C6 45 00 48 |
+| `$DA89,` (≤ $FFFF) | `mov word [rbp], $DA89` | 66 C7 45 00 89 DA |
+| `$04C38348,` (≤ $FFFFFFFF) | `mov dword [rbp], $04C38348` | C7 45 00 48 83 C3 04 |
+
+### i386 vs x86-64 difference
+
+In i386, `mov edx, ebx` is 2 bytes: `89 DA`. One litcomma and one `s09`.
+
+In x86-64, `mov rdx, rbx` is 3 bytes: `48 89 DA`. The REX prefix ($48)
+must be emitted separately:
+
+```forth
+: nipdup  $48, ,1  $DA89, s09 ;     ( x86-64: 48 89 DA — 3 bytes )
+```
+
+- `$48,` — litcomma writes the REX prefix byte at [rbp]
+- `,1` — advance rbp by 1 (no SWAPbit action on the REX byte)
+- `$DA89,` — litcomma writes the opcode + ModR/M at [rbp]
+- `s09` — advance rbp by 2 AND apply SWAPbit to the ModR/M byte
+
+### The SWAPbit helpers
+
+| Word | Action | Use |
+|------|--------|-----|
+| `s09` | advance 2, XOR [rbp-1] with $09 | Both reg fields (most ops) |
+| `s08` | advance 2, XOR [rbp-1] with $08 | Source reg field only |
+| `s01` | advance 2, XOR [rbp-1] with $01 | Dest reg field only |
+| `s1` | advance 1, XOR [rbp-1] with $01 | Single-byte opcodes |
+| `,1` through `,4` | advance N, no XOR | Fixed bytes (REX prefixes) |
+
+The XOR values correspond to the bit positions that encode rbx vs rdx
+in the x86 ModR/M byte: bit 0 flips the r/m field (dest), bit 3 flips
+the reg field (source), and $09 = both.
