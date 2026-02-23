@@ -42,6 +42,14 @@
 : /` /%` nip` ;
 : %` /%` drop` ;
 
+\ Extended arithmetic helpers — parameterized via w, for the mul/div opcode
+: _m/mod >S0 $078B49, ,3 $08C78349, ,4 $48, ,1 w, $C38948, ,3 ;
+: m/mod` $FBF7 _m/mod ;
+: um/mod` $F3F7 _m/mod ;
+: _m* >S0 $D08948, ,3 $48, ,1 w, $D38948, ,3 $C28948, ,3 ;
+: m*` $EBF7 _m* ;
+: um*` $E3F7 _m* ;
+
 \ Unary ops
 : negate` $48, ,1 $DBF7, s01 ;
 : ~` $48, ,1 $D3F7, s01 ;
@@ -160,6 +168,10 @@
 \ off`/on` use lit` to compile 0/-1 then store
 : off` 0 lit` swap` !` ;
 : on` -1 lit` swap` !` ;
+
+\ Extended scale ops (need >r`/r>` defined above)
+: */mod` >r` m*` r>` m/mod` ;
+: */` */mod` nip` ;
 
 ( Stack manipulation )
 : 2swap rot >r rot r> ;

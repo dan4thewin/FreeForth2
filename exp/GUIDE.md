@@ -965,3 +965,91 @@ The ff64.boot file now contains ~93 inline code generators, covering:
 - String: place, cmove, bounds, bswap, flip
 - Compilation: here, allot, c,, w,, ,, lit, off, on
 - Composed: 2dup+, 2r>, 2dup>r, 2>r
+
+---
+
+## Part 11: Extended Arithmetic and the Parameterization Pattern (Experiment 030)
+
+### The problem: double-cell arithmetic
+
+Some operations need more precision than a single 64-bit cell.
+The `*/` word (pronounced "star-slash") multiplies two numbers and
+divides by a third, using a 128-bit intermediate to avoid overflow:
+
+```
+10 3 7 */    ( computes 10*3/7 = 4, no overflow even for large inputs )
+```
+
+This requires "mixed" multiply and divide operations that work with
+double-cell (128-bit) values.
+
+### Parameterized code generation
+
+Lavarenne's most elegant pattern: signed and unsigned variants share
+a single helper, with the caller passing raw opcode bytes:
+
+```forth
+: _m/mod >S0 $078B49, ,3 $08C78349, ,4 $48, ,1 w, $C38948, ,3 ;
+: m/mod`  $FBF7 _m/mod ;    ( $FBF7 = F7 FB = idiv rbx )
+: um/mod` $F3F7 _m/mod ;    ( $F3F7 = F7 F3 = div rbx  )
+```
+
+When `m/mod`` is invoked during compilation:
+1. `$FBF7` pushes the signed divide opcode onto the stack
+2. `_m/mod` runs, emitting setup code
+3. `$48, ,1` writes a REX.W prefix at the compilation pointer
+4. `w,` pops the opcode from the stack and writes it at [rbp]
+5. More code follows for the cleanup
+
+The `w,` word is the key — it's a runtime word (not a backtick macro)
+that writes 2 bytes at the compilation pointer. It acts as a "splice
+point" where caller-provided machine code gets inserted into the
+emitted instruction stream.
+
+This needed a new `w,` word in ff64.asm (the i386 kernel had one,
+but the x86-64 port initially only had `c,` and `,`).
+
+### The multiply helper
+
+The same pattern serves multiplication:
+
+```forth
+: _m* >S0 $D08948, ,3 $48, ,1 w, $D38948, ,3 $C28948, ,3 ;
+: m*`  $EBF7 _m* ;     ( $EBF7 = F7 EB = imul rbx )
+: um*` $E3F7 _m* ;     ( $E3F7 = F7 E3 = mul rbx  )
+```
+
+After `imul rbx`, the 128-bit result is in rdx:rax. Two moves
+distribute it: `mov rbx, rdx` (high → TOS), `mov rdx, rax`
+(low → NOS). The order matters — rdx must be read before
+it's overwritten.
+
+### Scale operations as pure composition
+
+With m* and m/mod as building blocks, */mod and */ are trivial:
+
+```forth
+: */mod` >r` m*` r>` m/mod` ;   ( a b c -- rem a*b/c )
+: */` */mod` nip` ;               ( a b c -- a*b/c )
+```
+
+This pushes the divisor to the return stack, multiplies a*b to
+get a double-cell result, retrieves the divisor, and divides.
+Pure Forth composition, no assembly needed.
+
+### Definition order in single-pass compilation
+
+A subtle issue: `*/mod`` references `>r`` and `r>`` (return stack
+macros), which must be defined earlier in ff64.boot. FreeForth's
+single-pass model means the definition order in the boot file IS
+the dependency order. The extended arithmetic helpers go near the
+top (with the other arithmetic), but */mod` and */ must be placed
+after the return stack section.
+
+### Current state (after exp 030)
+
+~103 words/macros ported. The ff64.boot macro library now covers
+all the major categories from ff.boot except:
+- Dictionary manipulation (pvt`, alias`, create`, variable`, constant`)
+- State/control (execute, reverse`, [`, ]`, :^`)
+- Extended flow control (conditional compilation, etc.)

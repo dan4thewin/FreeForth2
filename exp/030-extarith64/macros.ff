@@ -1,0 +1,29 @@
+\ Exp 030: Extended arithmetic — m/mod, um/mod, m*, um*, */mod, */
+
+\ _m/mod helper: d.lo d.hi n -- rem quot
+\ >S0 ensures rbx=n, rdx=d.hi
+\ mov rax,[r15]; add r15,8; REX.W + parameterized div; mov rbx,rax
+: _m/mod >S0 $078B49, ,3 $08C78349, ,4 $48, ,1 w, $C38948, ,3 ;
+
+\ m/mod — signed mixed division
+: m/mod` $FBF7 _m/mod ;
+
+\ um/mod — unsigned mixed division
+: um/mod` $F3F7 _m/mod ;
+
+\ _m* helper: a b -- d.lo d.hi
+\ >S0 ensures rbx=b, rdx=a
+\ mov rax,rdx; REX.W + parameterized mul; mov rbx,rdx; mov rdx,rax
+: _m* >S0 $D08948, ,3 $48, ,1 w, $D38948, ,3 $C28948, ,3 ;
+
+\ m* — signed mixed multiply
+: m*` $EBF7 _m* ;
+
+\ um* — unsigned mixed multiply
+: um*` $E3F7 _m* ;
+
+\ */mod — scale with remainder
+: */mod` >r` m*` r>` m/mod` ;
+
+\ */ — scale
+: */` */mod` nip` ;

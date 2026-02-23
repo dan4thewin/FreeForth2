@@ -392,6 +392,13 @@ _comma: mov [rbp], rbx          ; , ( x -- ) compile 8-byte cell
         add r15, 8
         ret
 
+_wcomma: mov [rbp], bx          ; w, ( w -- ) compile 16-bit word
+        add rbp, 2
+        mov rbx, rdx
+        mov rdx, [r15]
+        add r15, 8
+        ret
+
 _ccomma: mov [rbp], bl          ; c, ( c -- ) compile byte
         add rbp, 1
         mov rbx, rdx
@@ -1678,6 +1685,7 @@ WORD64 "1", _one, 0, 1
 WORD64 ".", _dot, 0, 1
 WORD64 "rshift", _rshift, 0, 6
 WORD64 "lshift", _lshift, 0, 6
+WORD64 "w,", _wcomma, 0, 2
 WORD64 "c,", _ccomma, 0, 2
 WORD64 ",", _comma, 0, 1
 WORD64 "allot", _allot, 0, 5

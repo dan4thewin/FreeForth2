@@ -8,7 +8,8 @@ EXPERIMENTS = 001-hello64 002-stack64 003-codegen64 004-subrthread64 \
               024-moremacros64 025-loadvariants64 \
               026-lit64 027-compilemacros64 \
               028-stackdivmod64 \
-              029-placeshifts64
+              029-placeshifts64 \
+              030-extarith64
 
 test:
 	@for d in $(EXPERIMENTS); do \

@@ -1916,3 +1916,101 @@ cmove: 3-byte copy, 2-byte different data, zero-count edge case
 
 **Files:** `ff64.boot` (+16 lines: shift ops, place`, cmove`),
 `exp/029-placeshifts64/{macros.ff,Makefile}`
+
+---
+
+## Experiment 030: Extended arithmetic (m/mod, um/mod, m*, um*, */mod, */)
+
+**Goal:** Port the mixed-precision arithmetic words that operate on
+double-cell values. These are essential for scaled arithmetic (*/),
+which avoids intermediate overflow by using a 128-bit intermediate
+product.
+
+**Date:** 2026-02-23
+
+### The parameterized helper pattern
+
+Lavarenne's design avoids duplicating code between signed and unsigned
+variants using a brilliant parameterization trick. Instead of writing
+separate m/mod and um/mod implementations, a single helper `_m/mod`
+accepts the divide opcode on the stack:
+
+```forth
+: _m/mod >S0 ... $48, ,1 w, ... ;    ( the helper )
+: m/mod`  $FBF7 _m/mod ;              ( pushes idiv opcode, calls helper )
+: um/mod` $F3F7 _m/mod ;              ( pushes div opcode, calls helper )
+```
+
+The `w,` inside `_m/mod` writes the 2-byte opcode (F7 FB for `idiv`
+or F7 F3 for `div`) at the compilation pointer. The preceding
+`$48, ,1` has already laid down the REX.W prefix. So the emitted
+code becomes either `48 F7 FB` (idiv rbx) or `48 F7 F3` (div rbx).
+
+This is code generation parameterized by machine code — the caller
+passes raw opcode bytes that get spliced into the output stream.
+The same pattern serves m* and um* (with imul vs mul opcodes).
+
+### Adding w, to the kernel
+
+The i386 kernel had `w,` (write 16-bit word at here) but the x86-64
+port only had `c,` (byte) and `,` (cell). Added `_wcomma` to
+ff64.asm — 7 lines mirroring `_ccomma` but writing `bx` instead of
+`bl` and advancing by 2 instead of 1.
+
+### x86-64 _m/mod — cleaner without the stack pointer dance
+
+The i386 version needed `>C1` (xchg eax,esp) to access d.lo from
+the data stack via `xchg eax,[esp]`, then `pop eax` to restore
+the stack pointer afterward. Four instructions just for register
+choreography.
+
+On x86-64 with r15, the data stack is always accessible:
+
+```forth
+: _m/mod >S0 $078B49, ,3 $08C78349, ,4 $48, ,1 w, $C38948, ,3 ;
+```
+
+- `49 8B 07`       mov rax, [r15]    (d.lo from stack)
+- `49 83 C7 08`    add r15, 8        (pop d.lo)
+- `48` + w,        REX.W + divide    (parameterized: idiv or div)
+- `48 89 C3`       mov rbx, rax      (quotient → TOS)
+
+rdx naturally holds d.hi on entry (it's NOS) and the remainder on
+exit. Clean 13-byte sequence.
+
+### x86-64 _m* — multiply is even simpler
+
+```forth
+: _m* >S0 $D08948, ,3 $48, ,1 w, $D38948, ,3 $C28948, ,3 ;
+```
+
+- `48 89 D0`       mov rax, rdx      (NOS=a → rax for multiply)
+- `48` + w,        REX.W + multiply  (parameterized: imul or mul)
+- `48 89 D3`       mov rbx, rdx      (d.hi → TOS)
+- `48 89 C2`       mov rdx, rax      (d.lo → NOS)
+
+The order matters: `mov rbx, rdx` must come before `mov rdx, rax`
+because the first reads rdx (the multiply's high result) before the
+second overwrites it.
+
+### Definition order matters
+
+The `*/mod`` and `*/`` words compose `m*`` and `m/mod`` with
+return-stack operations (`>r``, `r>``). Since `>r`` is defined in
+the return stack section of ff64.boot (after the arithmetic section),
+these scale words must be placed AFTER the return stack definitions.
+This is a consequence of FreeForth's single-pass compilation — words
+must be defined before use.
+
+### Tests (10 total, all PASS)
+
+m/mod: signed (10/3→3r1), negative (-10/3→-3r-1), exact (12/4→3r0)
+um/mod: unsigned (10/3→3r1)
+m*: positive (5*7→0:35), negative (-5*7→-1:-35)
+um*: unsigned (5*7→0:35)
+*/mod: scale with remainder (10*3/7→4r2)
+*/: scale (10*3/7→4), exact (10*6/3→20)
+
+**Files:** `ff64.asm` (+8 lines: w, word + dictionary entry),
+`ff64.boot` (+12 lines: _m/mod, m/mod`, um/mod`, _m*, m*`, um*`,
+*/mod`, */`), `exp/030-extarith64/{macros.ff,Makefile}`
