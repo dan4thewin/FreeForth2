@@ -699,3 +699,269 @@ conceptually swapped, and subsequent code generators account for it.
 The `\` comment word originally set the input pointer to the end of
 the buffer. This broke when input was piped (multiple lines read in
 one sys_read call). Fixed to scan forward to the next newline only.
+
+---
+
+## Part 10: The Macro Library Grows (Experiments 024–029)
+
+With the backtick mechanism stable, the work shifts from building
+infrastructure to porting ff.boot's inline code generators. Each
+macro teaches something about x86 encoding, the SWAPbit mechanism,
+or FreeForth's design philosophy.
+
+### Store operations and fall-through definitions (exp 024)
+
+FreeForth uses **fall-through definitions** — a definition that
+doesn't end with `;` continues into the next definition's code:
+
+```forth
+: r>` over`
+: dropr>` $5B, s1 ;
+```
+
+Here `r>`` executes `over`` then falls through to `dropr>``'s body.
+The `:` starts a new named definition WITHOUT terminating the
+previous one's code. This is how Lavarenne achieved code reuse
+without the overhead of a call — `r>`` and `dropr>`` share the
+`$5B, s1` instruction.
+
+The store operations follow a layered pattern:
+
+```forth
+: 2dup!`  $48, ,1 $1389, s09 ;      ( addr val -- addr val )
+: tuck!`  2dup!` nip` ;              ( addr val -- addr )
+: !`      tuck!` drop` ;             ( addr val -- )
+: over!`  swap` tuck!` ;             ( val addr -- val )
+```
+
+Each layer adds one operation — `nip`` to consume an argument,
+`drop`` to consume another, `swap`` to reorder. This is pure
+composition with zero redundancy.
+
+### The xchg [r15] rotation trick (exp 024)
+
+Rotation on a register-based stack is surprisingly elegant:
+
+```forth
+: -rot` swap`
+: >rswapr>` $49, ,1 $1787, s08 ;
+: rot` >rswapr>` swap` ;
+```
+
+`xchg rdx, [r15]` (3 bytes) exchanges the NOS register with the
+third stack item. Combined with SWAPbit toggles:
+
+- `rot` = xchg + swap`: exchange register with memory, then
+  conceptually swap the two registers
+- `-rot` = swap` + xchg: conceptually swap first, then exchange
+
+### Return stack macros
+
+On x86-64, the return stack IS the hardware call stack (rsp). The
+inline `push`/`pop` instructions are only 1–2 bytes:
+
+```forth
+: dup>r` $53, s1 ;     ( push rbx/rdx, 1 byte )
+: dropr>` $5B, s1 ;    ( pop rbx/rdx, 1 byte )
+```
+
+The `s1` helper advances rbp by 1 and conditionally XORs bit 0,
+switching between `$53` (push rbx) and `$52` (push rdx), or
+`$5B` (pop rbx) and `$5A` (pop rdx).
+
+Reading without popping requires an addressing mode with the SIB
+byte (because [rsp] requires it on x86-64):
+
+```forth
+: r` over` $48, ,1 $1C8B, s08 $24, ,1 ;   ( 48 8B 1C 24 = mov rbx,[rsp] )
+```
+
+### Load variants and addressing patterns (exp 025)
+
+The fetch operations reveal how x86-64's ModRM byte encoding
+interacts with the SWAPbit. The base pattern:
+
+```forth
+: @`  $48, ,1 $1B8B, s09 ;      ( 48 8B 1B = mov rbx,[rbx] )
+: c@` $48, ,1 $0F, ,1 $1BB6, s09 ;  ( 48 0F B6 1B = movzx rbx,byte[rbx] )
+```
+
+The `s09` XOR toggles both bit 0 and bit 3 of the ModRM byte,
+switching BOTH the source and destination registers simultaneously.
+For `@``: `$1B` (mod=00, reg=rbx, r/m=rbx) becomes `$12`
+(reg=rdx, r/m=rdx) — reading through NOS into NOS.
+
+The `dup@`` variant preserves the address:
+
+```forth
+: dup@` over` $48, ,1 $1A8B, s09 ;
+```
+
+After `over`` copies the address, the fetch uses cross-register
+addressing: `$1A` = mov rbx,[rdx] (read through NOS, result in TOS).
+
+### The lit` literal compiler (exp 026)
+
+`lit`` is the bridge between compile-time values and runtime code.
+It takes a number from the compile-time stack and emits instructions
+that push that number at runtime.
+
+The implementation in ff64.asm uses three size paths:
+- **Byte** (−128..127): `push imm8; pop rbx` = 3 bytes
+- **32-bit** (positive ≤ $7FFFFFFF): `mov ebx, imm32` = 5 bytes
+  (auto-zero-extends to 64-bit)
+- **64-bit**: `mov rbx, imm64` = 10 bytes (REX.W + full 64-bit)
+
+A critical bug was discovered: the internal `_s01`/`_s08`/`_s09`
+functions use `mov ch, $XX` which clobbers bits 15:8 of rcx. The
+lit` implementation initially stored the literal value in rcx — a
+value of 1000000 became 983360 because the middle bytes were
+corrupted. Fix: use r8 instead.
+
+### Compilation emit macros — c,`, w,`, ,` (exp 027)
+
+These macros store a value from a register to the compilation
+pointer and advance it. They are the runtime counterparts of
+litcomma.
+
+```forth
+: c,` $5D88, s08 $00, ,1 $C5FF48, ,3 drop` ;
+```
+
+This emits 6 bytes:
+- `88 5D 00` = mov byte [rbp], bl (store byte from TOS)
+- `48 FF C5` = inc rbp (advance compilation pointer)
+
+On i386, `inc ebp` was 1 byte ($45). On x86-64, `inc rbp` is 3
+bytes ($48 FF C5), making c,` grow from 4 to 6 bytes.
+
+### The litcomma two-level insight
+
+Understanding litcomma requires holding two levels in mind:
+
+**Level 1 — Definition time:** When you write `$5D88, s08` in a
+backtick macro definition, litcomma emits a `mov [rbp], imm`
+instruction INTO the macro's body. This is code that will run
+later (when the macro is invoked).
+
+**Level 2 — Invocation time:** When the macro is later invoked
+(during compilation of a user word), those mov instructions EXECUTE,
+writing their immediate values at the USER's [rbp]. The s08 call
+then adjusts the last written byte based on the current SWAPbit.
+
+The litcomma's VALUE is the machine code being generated. `$5D88,`
+doesn't mean "the number 0x5D88" — it means "the bytes 88 5D",
+which is the x86 opcode for `mov [rbp], bl`. Litcomma is a
+machine-code quoting mechanism.
+
+### The >S0 word and register reconciliation (exp 028)
+
+Some operations (like integer division) require specific registers
+in fixed roles — `idiv rbx` divides rdx:rax by rbx. This conflicts
+with SWAPbit, which may have TOS in rdx instead of rbx.
+
+The `>S0` word resolves this: it tests SWAPbit and, if set, emits
+`xchg rbx,rdx` (3 bytes on x86-64) to physically swap the
+registers, then clears SWAPbit. After >S0, rbx IS TOS regardless
+of prior SWAPbit state.
+
+The `_rst` function in ff64.asm already implemented this logic
+(used internally before CALL/RET instructions). Exposing it as
+`>S0` required only a single dictionary entry.
+
+### Division — /%` (exp 028)
+
+Integer division is remarkably clean on x86-64:
+
+```forth
+: /%` >S0 $48D08948, ,4 $FBF74899, ,4 $C38948, ,3 ;
+```
+
+The 11-byte sequence:
+- `48 89 D0` = mov rax, rdx (NOS → dividend)
+- `48 99`    = cqo (sign-extend rax → rdx:rax)
+- `48 F7 FB` = idiv rbx (rdx:rax / TOS)
+- `48 89 C3` = mov rbx, rax (quotient → TOS)
+
+The remainder lands in rdx (NOS) naturally. Contrast with i386,
+which needed push/pop eax around the division to preserve the
+data stack pointer.
+
+### 3dup` — deep stack access (exp 028)
+
+The i386 version used `push [esp+8]`, leveraging the hardware stack.
+With r15, there's no single-instruction equivalent. Instead:
+
+```forth
+: 3dup` 2dup` $F87F8D4D, ,4 $18478B49, ,4 $078949, ,3 ;
+```
+
+After `2dup`` places copies of TOS and NOS on the stack, three
+instructions copy the remaining deep item:
+- `lea r15,[r15-8]`  — allocate one cell
+- `mov rax,[r15+24]` — load the deep value (using rax as scratch)
+- `mov [r15],rax`    — store at the new top
+
+This bypasses SWAPbit entirely — rax is outside the TOS/NOS pair.
+
+### String/memory copy — place` (exp 029)
+
+The i386 place` is a masterclass in the two-level mechanism:
+
+```forth
+: place` $D189DF89, s08 s08 >C1 $5AA4F35E, ,3 s1 ;
+```
+
+The `s08 s08` sequence initially looks like a no-op (XOR twice on
+the same byte cancels). But each s08 also advances the caller's rbp
+by 2. The two calls advance past the 4-byte litcomma data in 2-byte
+steps, each applying SWAPbit adjustment to its respective `mov`
+instruction independently.
+
+This is the macro body as a "program that writes programs" — the
+litcomma deposits raw bytes, then s08 calls walk through those
+bytes applying register adjustments based on compile-time state.
+
+For x86-64, we use >S0 instead of per-instruction s08 adjustment:
+
+```forth
+: place` >S0
+    $DF8948, ,3 $D18948, ,3 $378B49, ,3
+    $08578B49, ,4 $10C78349, ,4 $A4F3, ,2 ;
+```
+
+The 19-byte sequence sets up rdi (dest), rcx (count), rsi (src from
+[r15]), restores NOS from below, pops 2 cells from r15, then
+executes `rep movsb`. Using >S0 is a pragmatic choice that trades
+3 bytes (for the potential xchg) against complex SWAPbit choreography.
+
+### Shift arithmetic (exp 029)
+
+The shift operations scale cleanly from i386 to x86-64 — only a
+REX.W prefix is needed:
+
+```forth
+: 2*` $48, ,1 $E3D1, s01 ;    ( shl rbx/rdx, 1 )
+: 4*` $48, ,1 $E3C1, s01 $02, ,1 ;  ( shl rbx/rdx, 2 )
+```
+
+The s01 XOR on the ModRM byte switches between rbx (r/m=011) and
+rdx (r/m=010), exactly as in i386.
+
+Note that `4+`` (add 4) exists alongside `8+`` (add 8 = cell size).
+On i386, `4+`` was the cell-size add. On x86-64, `8+`` fills that
+role, but `4+`` remains useful for 32-bit offset arithmetic.
+
+### Current state (after exp 029)
+
+The ff64.boot file now contains ~93 inline code generators, covering:
+- Stack: dup, drop, swap, over, nip, tuck, under, nipdup, rot, -rot,
+  2xchg, 2dup, 3dup, 2drop, 2swap
+- Arithmetic: +, -, *, /%, /, %, negate, ~, 1+, 1-, 2+, 4+, 8+, 8-,
+  2*, 2/, 4*, 4/, 8*, 8/, &, |, ^, <<, >>
+- Memory: @, c@, w@, cs@, ws@, dup@, dupc@, dupw@, !, c!, w!, +!, -!,
+  tuck/over/2dup variants, @+, c@+, w@+, 2@, 2!
+- Return stack: >r, r>, r@, 2r@, dup>r, dropr>, rdrop, 2rdrop
+- String: place, cmove, bounds, bswap, flip
+- Compilation: here, allot, c,, w,, ,, lit, off, on
+- Composed: 2dup+, 2r>, 2dup>r, 2>r
