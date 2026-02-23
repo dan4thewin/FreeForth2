@@ -1163,3 +1163,58 @@ and the `reverse`` control flow primitive.
 
 Next: dictionary manipulation words, state/control primitives, and
 the remaining ff.boot infrastructure.
+
+---
+
+## Part 13: Flow Control Macros (Experiment 032)
+
+### From flags to values: BOOL`
+
+FreeForth's comparison system is FLAGS-based — comparisons set CPU
+flags, and `IF`/`WHILE` consume them directly. This is efficient
+(no extra instructions to convert flags to values) but creates a
+gap: standard Forth idioms like `within` expect boolean values.
+
+`BOOL`` bridges this:
+```forth
+: BOOL` 0 lit` IF` ~` THEN` ;
+```
+
+After any condition (`<`, `>`, `=`, `0=`, etc.), `BOOL` converts
+the flags to a standard Forth boolean: -1 for true, 0 for false.
+
+```forth
+: t < BOOL . cr ;
+3 5 t    \ prints -1
+5 3 t    \ prints 0
+```
+
+### Long jumps vs short jumps
+
+The original ff.boot uses short jumps ($EB, 1-byte offset) for
+SKIP and ELSE. Our x86-64 port uses long jumps ($E9, 4-byte offset)
+consistently. This trades 4 extra bytes per jump for simpler code —
+no need for offset range checking or short-to-long promotion.
+
+### CASE as a pattern
+
+CASE` is elegant in its simplicity:
+```forth
+: CASE` =` drop` IF` drop` ;
+
+: t
+  1 CASE 65 emit ELSE
+  2 CASE 66 emit ELSE
+  67 emit drop
+  THEN THEN cr ;
+```
+
+Each `CASE` tests equality and opens an IF body. `ELSE` continues
+to the next case. The final default drops the switch key. Each
+`CASE` consumes one `THEN` at the end.
+
+### Current state (after exp 032)
+
+~125 words/macros ported. The flow control macro system now includes
+BOOL` (flags→boolean), SKIP` (unconditional jump), ELSE` (if/else),
+and CASE` (switch/case pattern).

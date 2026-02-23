@@ -2116,3 +2116,76 @@ Utilities: bl, noop, reverse
 **Files:** `ff64.asm` (+21 WORD64 entries for macro composition),
 `ff64.boot` (+18 lines: macros and colon definitions),
 `exp/031-utility64/{macros.ff,Makefile}`
+
+---
+
+## Experiment 032: Flow Control Macros
+
+**Goal:** Add higher-level flow control macros — BOOL`, SKIP`, ELSE`,
+CASE` — that compose from the primitives established in exp 031.
+
+### BOOL` — the bridge between flags and values
+
+FreeForth's comparison system is FLAGS-based: `<`, `>`, `=` etc. set
+CPU flags and store a condition code. The `IF`/`WHILE`/`UNTIL` words
+consume these flags directly. This is elegant and efficient, but
+standard Forth words like `within` expect boolean VALUES on the stack.
+
+`BOOL`` bridges this gap:
+```forth
+: BOOL` 0 lit` IF` ~` THEN` ;
+```
+Generated code:
+```
+<push 0 code>      ; from lit`
+0F 8x xx xx xx xx  ; conditional jump (from IF`, using preceding condition)
+<NOT code>         ; from ~` (turns 0 → -1)
+                   ; join point (from THEN`)
+```
+If the condition was true, 0 is NOTted to -1 (all bits set = Forth TRUE).
+If false, 0 remains (Forth FALSE). This matches standard Forth conventions.
+
+### SKIP` — long unconditional forward jump
+
+The original ff.boot SKIP` uses short jumps ($EB, 1-byte offset).
+Our x86-64 port consistently uses long jumps for simplicity:
+```forth
+: SKIP` >S0 $E9, ,1 here 4 allot ;
+```
+This emits `JMP rel32` (5 bytes) and pushes the 4-byte offset address
+for later patching by THEN`. The `>S0` reconciles SWAPbit before the
+jump, since both paths (jump and fall-through) must agree on register
+assignment.
+
+### ELSE` — clean decomposition
+
+```forth
+: ELSE` SKIP` swap THEN` ;
+```
+1. SKIP`: emit JMP, push patch_addr_else
+2. swap: bring IF's patch_addr to TOS
+3. THEN`: patch IF's conditional jump to land here
+
+Simpler than the original (which saved/restored SWAPbit state)
+because our system uses `_rst` calls for SWAPbit reconciliation
+at every join point.
+
+### CASE` — equality matching
+
+```forth
+: CASE` =` drop` IF` drop` ;
+```
+Tests TOS against a case value using `=``, drops the compared pair
+(one via `drop`` before IF, one via `drop`` inside the IF body),
+so the case body starts with a clean stack.
+
+### Tests (16 total, all PASS)
+
+BOOL: 0=/</=/>/ (true+false for each)
+SKIP: forward jump skips code
+ELSE: true path, false path, macro composition
+CASE: first match, second match, default path
+BOOL mixed: 0> sequence (positive/zero/negative)
+
+**Files:** `ff64.boot` (+4 lines: BOOL`, SKIP`, ELSE`, CASE`),
+`exp/032-flowmacros64/{macros.ff,Makefile}`

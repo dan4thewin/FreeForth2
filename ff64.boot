@@ -201,6 +201,10 @@
 : 0;` 0-` 0=` IF` drop` ;THEN` ;
 : 0<>;` 0-` 0<>` IF` drop` ;THEN` ;
 : ?dup` 0-` 0<>` IF` dup` THEN` ;
+: BOOL` 0 lit` IF` ~` THEN` ;
+: SKIP` >S0 $E9, ,1 here 4 allot ;
+: ELSE` SKIP` swap THEN` ;
+: CASE` =` drop` IF` drop` ;
 
 ( Inline macros — miscellaneous )
 \ reverse` pops return address and calls it (turns call into jmp)

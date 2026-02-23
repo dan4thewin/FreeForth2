@@ -1,0 +1,22 @@
+\ Exp 032: Flow control macros — composable from Forth
+
+\ BOOL` — convert FLAGS-based condition to boolean (-1/0) on stack
+\ Pushes 0, then if condition true, NOTs to -1.
+: BOOL` 0 lit` IF` ~` THEN` ;
+
+\ SKIP` — unconditional forward jump (long, E9 rel32)
+\ Pushes patch address for THEN` to resolve.
+: SKIP` >S0 $E9, ,1 here 4 allot ;
+
+\ ELSE` — IF-true path ends with JMP, then patch IF's forward ref
+: ELSE` SKIP` swap THEN` ;
+
+\ CASE` — test equality, enter body if match, else continue
+\ Usage: val  1 CASE body1  ELSE  2 CASE body2  ELSE  default drop  THEN THEN
+: CASE` =` drop` IF` drop` ;
+
+\ Test helper: macro that always pushes 65 (skipping 42 via SKIP`)
+: skiptest` SKIP` 42 lit` THEN` 65 lit` ;
+
+\ Test helper: macro using IF`/ELSE`/THEN` composition
+: ifelsetest` 0-` 0=` IF` 65 lit` ELSE` 66 lit` THEN` ;
