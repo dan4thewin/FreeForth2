@@ -1,0 +1,57 @@
+\ Forth-defined inline code generators for x86-64 FreeForth2
+\ These replace assembly ct=2 generators using litcomma + SWAPbit helpers.
+\
+\ Opcode reference for x86-64 (REX.W = $48, all 64-bit ops):
+\   lea r15,[r15-8]  = 4D 8D 7F F8  (push-NOS: allocate data stack slot)
+\   lea r15,[r15+8]  = 4D 8D 7F 08  (pop-NOS: release data stack slot)
+\   mov [r15],rdx    = 49 89 17     (store NOS to data stack)
+\   mov rdx,[r15]    = 49 8B 17     (load NOS from data stack)
+\   mov rdx,rbx      = 48 89 DA     (copy TOS to NOS)
+
+\ === Core stack macros (assembly primitive: swap`) ===
+: under` $F87F8D4D, ,4 $49, ,1 $1789, s08 ;
+: nip` $49, ,1 $178B, s08 $087F8D4D, ,4 ;
+: nipdup` $48, ,1 $DA89, s09 ;
+: drop` swap` nip` ;
+: dup` under` nipdup` ;
+: over` under` swap` ;
+: tuck` swap` over` ;
+
+\ === Binary arithmetic (over-op then nip for consuming version) ===
+\ over+` ( a b -- a a+b ): add rbx,rdx / add rdx,rbx
+: over+` $48, ,1 $D301, s09 ;
+\ over-` ( a b -- a b-a ): sub rbx,rdx / sub rdx,rbx
+: over-` $48, ,1 $D329, s09 ;
+\ over&` ( a b -- a a&b ): and rbx,rdx / and rdx,rbx
+: over&` $48, ,1 $D321, s09 ;
+\ over|` ( a b -- a a|b ): or rbx,rdx / or rdx,rbx
+: over|` $48, ,1 $D309, s09 ;
+\ over^` ( a b -- a a^b ): xor rbx,rdx / xor rdx,rbx
+: over^` $48, ,1 $D331, s09 ;
+\ over*` ( a b -- a a*b ): imul rbx,rdx / imul rdx,rbx
+: over*` $48, ,1 $0F, ,1 $DAAF, s09 ;
+\ Consuming binary ops: result replaces both operands
+: +` over+` nip` ;
+: -` swap` over-` nip` ;
+: *` over*` nip` ;
+: &` over&` nip` ;
+: |` over|` nip` ;
+: ^` over^` nip` ;
+
+\ === Unary ops ===
+\ negate` ( n -- -n ): neg rbx / neg rdx
+: negate` $48, ,1 $DBF7, s01 ;
+\ ~` ( n -- ~n ): not rbx / not rdx
+: ~` $48, ,1 $D3F7, s01 ;
+\ 1+` ( n -- n+1 ): inc rbx / inc rdx
+: 1+` $48, ,1 $C3FF, s01 ;
+\ 1-` ( n -- n-1 ): dec rbx / dec rdx
+: 1-` $48, ,1 $CBFF, s01 ;
+\ 2+` and 2-`
+: 2+` 1+` 1+` ;
+
+\ === Memory access ===
+\ @` ( addr -- val ): mov rbx,[rbx] / mov rdx,[rdx]
+: @` $48, ,1 $1B8B, s09 ;
+\ c@` ( addr -- byte ): movzx rbx,byte [rbx] / movzx rdx,byte [rdx]
+: c@` $48, ,1 $0F, ,1 $1BB6, s09 ;

@@ -1260,3 +1260,119 @@ language builds itself up through composition.
 This is what DG means by "preserving the character of FreeForth."
 
 **Files:** `exp/022-backtick64/{backtick64.asm,macros.ff,Makefile}`
+
+---
+
+## Experiment 023: Forth-defined inline code generators
+
+**Date:** 2026-02-23
+
+### Goal
+
+With the litcomma mechanism (exp 021) and backtick dispatch (exp 022)
+proven, define a comprehensive set of inline code generators entirely
+in Forth. This demonstrates that the x86-64 assembly kernel can remain
+minimal while building the full set of stack, arithmetic, and memory
+operations from Forth macros.
+
+### Macros defined (27 total)
+
+**Stack operations** (7):
+```forth
+: under` $F87F8D4D, ,4 $49, ,1 $1789, s08 ;
+: nip` $49, ,1 $178B, s08 $087F8D4D, ,4 ;
+: nipdup` $48, ,1 $DA89, s09 ;
+: drop` swap` nip` ;
+: dup` under` nipdup` ;
+: over` under` swap` ;
+: tuck` swap` over` ;
+```
+
+**Binary arithmetic** (12 — 6 "over" variants + 6 consuming):
+```forth
+: over+` $48, ,1 $D301, s09 ;    ( and similarly over-`, over&`, etc. )
+: +` over+` nip` ;               ( and -, *, &, |, ^ )
+```
+
+**Unary operations** (5):
+```forth
+: negate` $48, ,1 $DBF7, s01 ;
+: ~` $48, ,1 $D3F7, s01 ;
+: 1+` $48, ,1 $C3FF, s01 ;
+: 1-` $48, ,1 $CBFF, s01 ;
+: 2+` 1+` 1+` ;
+```
+
+**Memory access** (2):
+```forth
+: @` $48, ,1 $1B8B, s09 ;
+: c@` $48, ,1 $0F, ,1 $1BB6, s09 ;
+```
+
+### Production promotion
+
+All macros were promoted to ff64.boot, along with the production
+changes to ff64.asm:
+- `_litcomma` function (byte/word/dword size selection)
+- Trailing-comma detection in compiler loop
+- Callable s09/s08/s01/s1 + ,1-,4 as WORD64 entries
+- `swap`` as ct=0 assembly word
+- Backtick name mangling in compiler
+- `\` comment fix (scan to newline, not end of buffer)
+
+### The `\` comment fix
+
+A bug discovered in exp 022: the `\` comment word set the input pointer
+to the end of the ENTIRE buffer. When input is piped (common in our
+tests), sys_read may deliver multiple lines at once, so `\` would skip
+ALL remaining input. Fixed to scan forward to the next newline character.
+
+### x86-64 opcode patterns
+
+All binary arithmetic ops follow the same 3-byte pattern with REX.W:
+```
+$48, ,1 $xxxx, s09    (or s01 for unary ops)
+```
+
+The specific opcodes for the ModR/M+opcode word:
+| Operation | Opcode word | Instruction |
+|-----------|-------------|-------------|
+| add | $D301 | add rbx,rdx |
+| sub | $D329 | sub rbx,rdx |
+| and | $D321 | and rbx,rdx |
+| or  | $D309 | or rbx,rdx  |
+| xor | $D331 | xor rbx,rdx |
+| neg | $DBF7 | neg rbx |
+| not | $D3F7 | not rbx |
+| inc | $C3FF | inc rbx |
+| dec | $CBFF | dec rbx |
+
+The `s09`/`s01` call applies SWAPbit correction to the ModR/M byte,
+swapping rbx↔rdx when the SWAPbit is set.
+
+### Tests (23 total, all PASS)
+
+Stack: dup, drop, over, swap, nip, tuck
+Arithmetic: +, -, *, and, or, xor, negate, ~, 1+, 1-
+Memory: @, c@
+SWAPbit: swap+dup interaction
+Composition: abs, max, over+, 2dup+
+
+**Files:** `exp/023-forthmacros64/{forthmacros64.asm,macros.ff,Makefile}`
+
+### Reflection
+
+This experiment marks a turning point. We've now reproduced Lavarenne's
+key insight: define the machine in assembly, then build the language in
+itself. The ff64.boot file now contains 27 inline code generators that
+were previously hard-coded in ff64.asm. Each one is a tiny composition
+of litcomma calls, SWAPbit helpers, and other macros. The assembly
+kernel provides only the irreducible primitives: the compiler loop,
+the SWAPbit mechanism, litcomma, and the handful of operations that
+can't be expressed as inline code (I/O, flow control, _rst).
+
+The assembly inline generators (ct=2 words) remain as fallbacks — they
+work without ff64.boot. But with the boot file loaded, the Forth macros
+shadow them via the backtick dispatch. This dual-layer approach means
+the binary is self-contained while the boot file extends it in the
+spirit of the original.
