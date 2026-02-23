@@ -450,7 +450,7 @@ _add_inline:
 The `_s09` call checks the SWAPbit and XORs `$09` into the ModR/M byte
 at `[rbp-1]`, changing `add rbx,rdx` to `add rdx,rbx` if needed.
 
-### Current inline primitives (23 total)
+### Current inline primitives
 
 | Category | Words | Pattern |
 |----------|-------|---------|
@@ -458,9 +458,41 @@ at `[rbp-1]`, changing `add rbx,rdx` to `add rdx,rbx` if needed.
 | Stack | `dup drop swap over nip rot tuck` | DUP_NOS/DROP_NOS combinations |
 | Bitwise | `and or xor not` | Same as arithmetic |
 | Memory | `@ c@` | Unary: `mov rbx,[rbx]` |
-| Comparison | `= < > 0< 0= 0<>` | cmp/test + setcc + movzx + neg |
+| **Flags-based** | `< > = <> <= >= 0- 0< 0= 0<> 0> 0<= 0>=` | Emit cmp/test, store condition |
+| **Dotted** | `<. >. =. 0<. 0=. 0<>.` | Boolean: cmp + setcc + movzx + neg |
 
-### Words that remain as runtime calls (15)
+### FLAGS-based conditionals (FreeForth approach)
+
+A defining feature of FreeForth is that **comparison words do not produce
+boolean values**. Instead:
+
+1. Binary comparisons (`<`, `>`, `=`, etc.) emit `cmp rdx,rbx` (setting
+   CPU FLAGS) and store a conditional jump opcode in the `cond_jmp` variable.
+2. Unary conditions (`0<`, `0=`, etc.) just store the condition — they
+   expect a preceding `0-` (which emits `test rbx,rbx`) or any other
+   FLAGS-setting instruction.
+3. `IF`/`UNTIL`/`WHILE` read `cond_jmp`, invert the condition (XOR 1),
+   and emit a long conditional jump. No test, no DROP.
+
+This eliminates the setcc+movzx+neg+DROP sequence (~16 bytes) and
+preserves the data stack, enabling the elegant FreeForth idioms:
+
+```forth
+: min < IF swap THEN nip ;       ( vs standard: over over > IF swap THEN drop )
+: abs 0- 0< IF negate THEN ;    ( vs standard: dup 0< IF negate THEN )
+```
+
+The "dotted" versions (`<.`, `>.`, `=.`, etc.) produce actual boolean
+values (-1/0) on the stack for when they're needed.
+
+**Flags-preserving stack ops:** All inline code generators use
+`lea r15, [r15±8]` instead of `sub/add r15, 8`. The LEA instruction
+doesn't modify FLAGS, so stack operations between a comparison and IF
+preserve the condition. This is essential because our x86-64 port uses
+R15 for the data stack (unlike the original which uses ESP with push/pop,
+which naturally preserves FLAGS).
+
+### Words that remain as runtime calls
 
 | Category | Words | Why |
 |----------|-------|-----|
@@ -478,7 +510,7 @@ at `[rbp-1]`, changing `add rbx,rdx` to `add rdx,rbx` if needed.
 A subtle issue arises when `swap` appears inside a conditional body:
 
 ```forth
-: min 2dup > IF swap THEN drop ;
+: min < IF swap THEN nip ;
 ```
 
 The `swap` toggles the SWAPbit at compile time (unconditionally), but
@@ -490,5 +522,8 @@ creates a join point (THEN, ELSE, BEGIN, AGAIN, REPEAT) calls `_rst`
 before emitting code. This inserts `xchg rbx,rdx` on the taken path
 if the SWAPbit was toggled, ensuring both paths arrive at the join
 point with the same register assignment (SWAPbit=0).
+
+Note: `xchg` does not affect FLAGS, so the _rst sync is safe even in
+the flags-based conditional path.
 
 ---

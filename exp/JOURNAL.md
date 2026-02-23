@@ -891,3 +891,149 @@ Both paths end up with the same register assignment. All tests pass.
 **Running tally:** 23 of 38 words are now inline code generators.
 
 **Files:** `exp/019-cmpinline64/{cmpinline64.asm,Makefile}`
+
+---
+
+## Experiment 020: Flags-Based Conditionals
+
+**Goal:** Replace the stack-boolean conditional approach (standard Forth)
+with FreeForth's native FLAGS-based approach, where comparison words set
+CPU flags and store a conditional jump opcode rather than producing boolean
+values on the data stack.
+
+**Rationale:** FreeForth's defining innovation is that comparison words like
+`<`, `>`, `=` do NOT modify the data stack. Instead, they emit a CMP
+instruction (setting CPU FLAGS) and store the appropriate conditional jump
+opcode (e.g., $7C for jl) in a compiler variable called `?#` (implemented
+as `cond_jmp`). Then `IF`/`UNTIL`/`WHILE` read this variable and emit the
+correct conditional jump directly — no boolean creation, no test, no DROP.
+
+This eliminates ~16 bytes of inline code per comparison (the setcc+movzx+neg
++DROP_NOS sequence) and preserves the data stack across comparisons, enabling
+idioms like:
+```
+: min < IF swap THEN nip ;    ( no over over, no drop — elegant! )
+: abs 0- 0< IF negate THEN ;  ( 0- sets FLAGS, 0< stores condition )
+```
+
+### How the original FreeForth conditionals work
+
+In the original ff.boot, comparisons are defined as:
+```
+variable ?#
+:. _?1 ?# c! ;                    \ store condition byte in ?#
+:. _?2 _?1 $DA39, s09 ;           \ _?1 + emit cmp edx,ebx
+$7C ... : <` lit _?2 ;            \ push $7C, call _?2
+```
+
+And IF:
+```
+: cond ?@ ?nn 1^ ;                \ read ?#, validate, invert condition
+: IF` cond c, SC, ;               \ compile conditional jump byte
+```
+
+The `1^` (XOR 1) inverts the condition because IF must jump PAST the body
+when the condition is FALSE (e.g., `<` stores jl; IF inverts to jge to skip
+the body when NOT less-than).
+
+### How the x86-64 port implements this
+
+The `cond_jmp` variable (1 byte) replaces `?#`. Each comparison word is
+an assembly inline generator (ct=2) that stores the condition and optionally
+emits `cmp rdx,rbx`:
+
+```asm
+_lt_flags:                           ; <
+    mov byte [cond_jmp], $7C         ; store jl opcode
+    jmp _emit_cmp_s                  ; emit cmp rdx,rbx with SWAPbit
+
+_zlt_flags:                          ; 0<
+    mov byte [cond_jmp], $7C         ; store jl opcode (no cmp needed)
+    ret
+```
+
+IF checks `cond_jmp`:
+- If non-zero: invert condition (XOR 1), emit long conditional jump
+  (`0F 8x rel32`), clear `cond_jmp`. No test, no DROP — 6 bytes total.
+- If zero: fallback to boolean-on-stack (test+DROP1+jz) for backward
+  compatibility with code that doesn't use flags-based comparisons.
+
+The short-to-long opcode conversion: `$7x + $10 = $8x` (e.g., jl $7C →
+near jl = $0F $8C).
+
+### Critical change: flags-preserving stack operations
+
+The original FreeForth uses ESP (hardware stack pointer) for the data stack.
+Push/pop don't affect FLAGS, so stack operations between comparison and IF
+naturally preserve the condition.
+
+Our x86-64 port uses R15 as the data stack pointer with explicit arithmetic:
+`sub r15, 8` and `add r15, 8`. These MODIFY FLAGS, which would corrupt
+the condition between comparison and IF.
+
+**Fix:** All inline code generators now emit `lea r15, [r15±8]` instead
+of `sub/add r15, 8`. The LEA instruction computes addresses without
+modifying FLAGS. Both encodings are 4 bytes:
+```
+sub r15, 8      = 49 83 EF 08   → lea r15, [r15-8] = 4D 8D 7F F8
+add r15, 8      = 49 83 C7 08   → lea r15, [r15+8] = 4D 8D 7F 08
+```
+
+This means `drop`, `nip`, `dup`, `over`, and literal push all preserve
+FLAGS, enabling patterns like:
+```
+: fact dup 1 > drop nip IF ... ;    \ drop and nip preserve FLAGS from >
+```
+
+### Comparison word inventory
+
+| Word | Type | Emits | Stores | Stack effect |
+|------|------|-------|--------|-------------|
+| `<` | binary | `cmp rdx,rbx` | $7C (jl) | none |
+| `>` | binary | `cmp rdx,rbx` | $7F (jg) | none |
+| `=` | binary | `cmp rdx,rbx` | $74 (je) | none |
+| `<>` | binary | `cmp rdx,rbx` | $75 (jne) | none |
+| `<=` | binary | `cmp rdx,rbx` | $7E (jle) | none |
+| `>=` | binary | `cmp rdx,rbx` | $7D (jge) | none |
+| `0-` | unary | `test rbx,rbx` | — | none |
+| `0<` | cond | — | $7C (jl) | none |
+| `0=` | cond | — | $74 (je) | none |
+| `0<>` | cond | — | $75 (jne) | none |
+| `0>` | cond | — | $7F (jg) | none |
+| `0<=` | cond | — | $7E (jle) | none |
+| `0>=` | cond | — | $7D (jge) | none |
+| `<.` | dotted | boolean | — | ( a b -- flag ) |
+| `>.` | dotted | boolean | — | ( a b -- flag ) |
+| `=.` | dotted | boolean | — | ( a b -- flag ) |
+| `0<.` | dotted | boolean | — | ( n -- flag ) |
+| `0=.` | dotted | boolean | — | ( n -- flag ) |
+| `0<>.` | dotted | boolean | — | ( n -- flag ) |
+
+### Idiomatic FreeForth patterns vs standard Forth
+
+| Operation | Standard Forth | FreeForth (flags-based) |
+|-----------|---------------|------------------------|
+| min | `over over > IF swap THEN drop` | `< IF swap THEN nip` |
+| max | `over over < IF swap THEN drop` | `> IF swap THEN nip` |
+| abs | `dup 0< IF negate THEN` | `0- 0< IF negate THEN` |
+| ?dup | `dup IF dup THEN` | `0- 0<> IF dup THEN` |
+| fact guard | `dup 1 > ...` (bool consumes) | `dup 1 > drop nip IF ...` |
+
+### Tests (19 total, all PASS)
+
+| # | Input | Expected | Tests |
+|---|-------|----------|-------|
+| 1 | abs(-5) flags-based | 5 | 0- 0< IF negate THEN |
+| 2 | abs(5) flags-based | 5 | positive passthrough |
+| 3 | min(3,10) | 3 | < IF swap THEN nip |
+| 4 | min(10,3) | 3 | reverse order |
+| 5 | max(3,10) | 10 | > IF swap THEN nip |
+| 6 | max(10,3) | 10 | reverse order |
+| 7 | 10! | 3628800 | recursive with > drop nip |
+| 8 | fib(10) | 55 | recursive with < drop nip |
+| 9-14 | dotted comparisons | -1 | =. <. >. 0=. 0<>. 0<. |
+| 15-16 | fallback IF (no cond) | 0, 10 | dup IF dup + THEN |
+| 17-18 | <= and >= | 0, 77 | nip nip cleanup |
+| 19 | BEGIN..UNTIL countdown | 3 2 1 | 0- 0= UNTIL |
+
+**Files:** `exp/020-flagscond64/{flagscond64.asm,Makefile}`
