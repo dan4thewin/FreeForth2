@@ -1,0 +1,26 @@
+\ Forth macros for inline code generators
+\ These replace assembly ct=2 inline generators using litcomma + s09
+
+\ under` ( x y -- x x y ): push NOS onto data stack (7 bytes)
+\ Default: lea r15,[r15-8]; mov [r15],rdx
+\ Swapped: lea r15,[r15-8]; mov [r15],rbx
+: under` $F87F8D4D, ,4 $49, ,1 $1789, s08 ;
+
+\ nip` ( x y -- y ): pop NOS from data stack (7 bytes)
+\ Default: mov rdx,[r15]; lea r15,[r15+8]
+\ Swapped: mov rbx,[r15]; lea r15,[r15+8]
+: nip` $49, ,1 $178B, s08 $087F8D4D, ,4 ;
+
+\ nipdup` ( x y -- x y y ): copy TOS to NOS (3 bytes)
+\ Default: mov rdx,rbx
+\ Swapped: mov rbx,rdx
+: nipdup` $48, ,1 $DA89, s09 ;
+
+\ drop` ( x y -- x ): swap + pop NOS = move NOS to TOS, pop
+: drop` swap` nip` ;
+
+\ dup` ( x -- x x ): push NOS, copy TOS to NOS
+: dup` under` nipdup` ;
+
+\ over` ( x y -- x y x ): push NOS, toggle SWAPbit
+: over` under` swap` ;

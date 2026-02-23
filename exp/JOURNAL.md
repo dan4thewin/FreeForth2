@@ -1149,3 +1149,114 @@ then the opcode+ModR/M ($DA89) with `s09` (advance by 2, SWAPbit-aware).
 | 5 | $04C38348,,4 dword + advancement | 4 72, advance 4 | Dword litcomma |
 
 **Files:** `exp/021-litcomma64/{litcomma64.asm,Makefile}`
+
+---
+
+## Experiment 022: Backtick name mangling and Forth-defined macros
+
+**Date:** 2026-02-23
+
+### Goal
+
+Implement the backtick name mangling mechanism that is the heart of
+FreeForth's compile-time macro dispatch, then define the first set of
+inline code generators entirely in Forth — proving that the assembly
+kernel can stay minimal while building complex behavior in the language
+itself.
+
+### Background: How FreeForth dispatches macros
+
+In the original FreeForth, when the compiler encounters a word like `dup`
+during compilation, it first appends a backtick to create `dup`` and
+searches the dictionary. If a word named `dup`` exists, it is executed
+immediately — generating inline machine code for the operation. If no
+backtick version is found, the compiler falls back to the plain word
+and dispatches based on its ct (compile-time) flag: ct=0 compiles a call,
+ct=1 compiles a literal, ct≥2 executes immediately.
+
+This naming convention IS the dispatch mechanism. Any word can have a
+backtick counterpart that defines its compile-time behavior. The word
+`dup`` is just a regular ct=0 word that happens to emit machine code
+when called — it gets its compile-time behavior purely from the naming
+convention, not from any special ct flag.
+
+### The beauty of the design
+
+Consider the chain: When you write `dup` in a definition:
+1. Compiler appends backtick → finds `dup`` → executes it
+2. `dup`` calls `under`` and `nipdup``
+3. `under`` emits push-NOS code (7 bytes), `nipdup`` emits mov NOS←TOS (3 bytes)
+4. Your definition now contains 10 bytes of inline `dup` code
+
+When defining `dup`` itself: `: dup` under` nipdup` ;`
+1. `under`` is found via NORMAL lookup (ct=0) → compiled as a call
+2. `nipdup`` is found via NORMAL lookup (ct=0) → compiled as a call
+3. So `dup``'s body is just: call under` / call nipdup` / ret
+
+When used inside another MACRO definition: `: 2dup` over` over` ;`
+1. `over`` is found via normal lookup (ct=0) → compiled as a call
+2. At runtime, each call to `over`` emits 10 bytes of inline code
+
+The backtick is never consumed or transformed — it's literally part of
+the word's name. The compiler's temporary-append trick makes it invisible
+to the user.
+
+### Changes
+
+1. **Backtick name mangling in the compiler**: Before the normal dictionary
+   lookup, the compiler temporarily appends a backtick to the parsed word
+   (modifying the input buffer in-place, then restoring it). If the
+   backtick version is found, it's executed immediately.
+
+2. **`swap`` as an assembly primitive**: Registered as a ct=0 word that
+   toggles the SWAPbit. This is the one stack operation that MUST be in
+   assembly because it modifies the compile-time register naming state
+   rather than emitting code.
+
+3. **Forth macros defined in macros.ff**:
+   - `under`` — emit push-NOS (7 bytes: lea r15,[r15-8]; mov [r15],rdx)
+   - `nip`` — emit pop-NOS (7 bytes: mov rdx,[r15]; lea r15,[r15+8])
+   - `nipdup`` — emit copy TOS→NOS (3 bytes: mov rdx,rbx)
+   - `drop`` — swap` nip` (toggle SWAPbit + pop NOS)
+   - `dup`` — under` nipdup` (push NOS + copy TOS)
+   - `over`` — under` swap` (push NOS + toggle SWAPbit)
+
+4. **`\` comment fix**: Changed from "skip to end of buffer" to "skip to
+   next newline". The original behavior broke when input was piped (all
+   lines read in one sys_read), because `\` would skip ALL remaining input.
+
+### Tests (12 total, all PASS)
+
+| # | Input | Expected | Tests |
+|---|-------|----------|-------|
+| 1 | 1 2 + . cr ; | 3 | Basic arithmetic unchanged |
+| 2 | : t nipdup ; 7 t . cr ; | 7 | nipdup copies TOS to NOS |
+| 3 | : t under nip ; 10 20 t . cr ; | 20 | under+nip = identity |
+| 4 | : t dup ; 42 t . . cr ; | 42 42 | Forth-defined dup |
+| 5 | : t drop ; 10 20 t . cr ; | 10 | Forth-defined drop |
+| 6 | : t over ; 10 20 t . . . cr ; | 10 20 10 | Forth-defined over |
+| 7 | : t swap ; 10 20 t . . cr ; | 10 20 | Forth-defined swap |
+| 8 | : t nip ; 10 20 t . cr ; | 20 | Forth-defined nip |
+| 9 | : double dup + ; 21 double . cr ; | 42 | dup+add composition |
+| 10 | : diff over swap - ; 100 58 diff . cr ; | 42 | over+swap+sub |
+| 11 | : t swap dup ; 10 20 t . . . cr ; | 10 10 20 | SWAPbit interaction |
+| 12 | : abs dup 0< IF negate THEN ; 0 42 - abs . cr ; | 42 | Full macro + flow control |
+
+### Insight: Lavarenne's design philosophy revealed
+
+This experiment crystallizes something profound about FreeForth's design.
+The entire inline code generation system — the thing that makes FreeForth
+fast — is built from just a few assembly primitives:
+
+- `swap`` (toggle a bit)
+- `s01`/`s08`/`s09` (advance compilation pointer + SWAPbit fixup)
+- litcomma (write bytes at compilation pointer)
+
+Everything else — dup, drop, over, nip, all arithmetic operators, memory
+access, even flow control macros — is defined in Forth using these
+primitives. The assembly kernel stays astonishingly small while the
+language builds itself up through composition.
+
+This is what DG means by "preserving the character of FreeForth."
+
+**Files:** `exp/022-backtick64/{backtick64.asm,macros.ff,Makefile}`

@@ -613,3 +613,89 @@ must be emitted separately:
 The XOR values correspond to the bit positions that encode rbx vs rdx
 in the x86 ModR/M byte: bit 0 flips the r/m field (dest), bit 3 flips
 the reg field (source), and $09 = both.
+
+## Part 9: Backtick Name Mangling and Forth-Defined Macros
+
+### The backtick dispatch mechanism
+
+FreeForth's compiler has a unique approach to compile-time macros: it
+uses word naming conventions instead of special flags or syntax. When
+the compiler encounters any word during compilation, it first appends
+a backtick character (`\``) to the word and searches the dictionary.
+
+```
+User writes:    dup          (inside a definition)
+Compiler tries: dup`         (appends backtick)
+Found?          YES → execute immediately (emit inline code)
+                NO  → try "dup" normally (compile a call)
+```
+
+This means ANY word can have a compile-time macro variant. You just
+define a word with a backtick suffix. The compiler's name mangling
+makes the connection automatically.
+
+### How it works in the compiler
+
+```nasm
+lea rdi, [rax + rcx]    ; point past end of word
+push qword [rdi]        ; save whatever byte is there
+push rdi
+mov byte [rdi], '`'     ; temporarily append backtick
+inc ecx                 ; increase length
+call _find              ; search dictionary
+pop rdi
+pop qword [rdi]         ; restore original byte
+jc .no_backtick         ; not found → try without backtick
+call rax                ; found → execute the macro
+jmp _compiler           ; continue
+```
+
+The trick: the input buffer is modified in-place (temporarily overwriting
+the byte after the word with a backtick), then restored. This is a
+zero-allocation search — no string copying needed.
+
+### Defining Forth macros
+
+A backtick macro is just a regular word (ct=0) whose name ends with
+backtick. When called, it emits machine code using litcomma and the
+SWAPbit helpers:
+
+```forth
+: under` $F87F8D4D, ,4  $49, ,1  $1789, s08 ;
+: nip`   $49, ,1  $178B, s08  $087F8D4D, ,4 ;
+: nipdup` $48, ,1  $DA89, s09 ;
+: drop`  swap` nip` ;
+: dup`   under` nipdup` ;
+: over`  under` swap` ;
+```
+
+When `dup`` is defined, the compiler sees `under`` and `nipdup`` as
+plain ct=0 words and compiles calls to them. When `dup`` later
+EXECUTES (because the compiler found it via backtick search), those
+calls run and emit inline code:
+
+1. `under`` emits 7 bytes: `lea r15,[r15-8]; mov [r15],rdx` (push NOS)
+2. `nipdup`` emits 3 bytes: `mov rdx,rbx` (copy TOS to NOS)
+3. Result: 10 bytes of inline `dup` code in the user's definition
+
+### The one assembly primitive: `swap``
+
+Almost all macros are defined in Forth, but `swap`` must be in
+assembly because it modifies the compile-time SWAPbit state rather
+than emitting code:
+
+```nasm
+_swap_inline:
+    xor byte [SC], 2    ; toggle SWAPbit
+    ret
+```
+
+This is what makes `swap` "zero-cost" — it emits no code at all.
+The compiler just remembers that TOS and NOS registers are
+conceptually swapped, and subsequent code generators account for it.
+
+### The `\` comment fix
+
+The `\` comment word originally set the input pointer to the end of
+the buffer. This broke when input was piped (multiple lines read in
+one sys_read call). Fixed to scan forward to the next newline only.

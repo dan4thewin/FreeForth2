@@ -1208,6 +1208,90 @@ _constant:
         ret
 
 ;; =====================================================================
+;; Trailing-suffix literal compiler
+;;
+;; In FreeForth, a number token ending with ',' is a "compile comma":
+;; $DA89, emits code that writes the value $DA89 at [rbp] without
+;; advancing rbp. The s01/s08/s09 words handle advancement.
+;;
+;; litcomma emits a size-appropriate mov [rbp], imm instruction:
+;;   value ≤ $FF   → mov byte  [rbp], imm8   = C6 45 00 xx       (4 bytes)
+;;   value ≤ $FFFF → mov word  [rbp], imm16  = 66 C7 45 00 xx xx (6 bytes)
+;;   value ≤ $FFFFFFFF → mov dword [rbp], imm32 = C7 45 00 xx xx xx xx (7 bytes)
+;; =====================================================================
+
+;; litcomma: called with number value in rax.
+;; Emits code at [rbp] that stores the value at [rbp] (the runtime rbp).
+_litcomma:
+        cmp rax, $FF
+        ja .word
+        ;; Byte: C6 45 00 xx (4 bytes)
+        mov dword [rbp], $000045C6
+        mov byte [rbp+3], al
+        add rbp, 4
+        ret
+.word:  cmp rax, $FFFF
+        ja .dword
+        ;; Word: 66 C7 45 00 xx xx (6 bytes)
+        mov dword [rbp], $0045C766
+        mov word [rbp+4], ax
+        add rbp, 6
+        ret
+.dword:
+        ;; DWord: C7 45 00 xx xx xx xx (7 bytes)
+        mov word [rbp], $45C7
+        mov byte [rbp+2], 0
+        mov dword [rbp+3], eax
+        add rbp, 7
+        ret
+
+;; s01, s08, s09: SWAPbit-aware compilation pointer advancement.
+;; These advance rbp by 2 bytes past the just-written opcode, and
+;; XOR the ModR/M byte ([rbp-1]) to swap register encoding if
+;; the SWAPbit is set.
+;;
+;; s1: like s01 but advances only 1 byte (for single-byte opcodes).
+;;
+;; In the original FreeForth, these are callable from Forth boot code
+;; by backtick macros. Here we also expose them as WORD64 entries.
+;; (The assembly-internal versions _s01/_s08/_s09 are unchanged.)
+_s1_word:
+        inc rbp
+        jmp _s01_check
+_s01_word:
+        add rbp, 2
+_s01_check:
+        test byte [SC], 2
+        jz .done
+        xor byte [rbp-1], 1
+.done:  ret
+
+_s08_word:
+        add rbp, 2
+        test byte [SC], 2
+        jz .done
+        xor byte [rbp-1], 8
+.done:  ret
+
+_s09_word:
+        add rbp, 2
+        test byte [SC], 2
+        jz .done
+        xor byte [rbp-1], 9
+.done:  ret
+
+;; ,1 ,2 ,3 ,4: advance compilation pointer by N bytes (no SWAPbit).
+;; Used after litcomma to skip past REX prefixes or other fixed bytes.
+_comma1: inc rbp
+        ret
+_comma2: add rbp, 2
+        ret
+_comma3: add rbp, 3
+        ret
+_comma4: add rbp, 4
+        ret
+
+;; =====================================================================
 ;; Compiler main loop
 ;; =====================================================================
 
@@ -1322,8 +1406,30 @@ _compiler:
 .notfound:
         pop rcx
         pop rax
+        ;; Check for trailing comma: $DA89, syntax
+        cmp ecx, 2              ; need at least 2 chars (digit + comma)
+        jb .try_number
+        mov r10b, byte [rax + rcx - 1]  ; last char
+        cmp r10b, ','
+        jne .try_number
+        ;; Strip trailing comma and parse the number
+        dec ecx                 ; ecx = length without comma
         push rcx
         push rax
+        call _number
+        jz .got_litcomma
+        pop rax
+        pop rcx
+        inc ecx                 ; restore original length for error
+        jmp .try_number_with
+.got_litcomma:
+        add rsp, 16
+        call _litcomma
+        jmp _compiler
+.try_number:
+        push rcx
+        push rax
+.try_number_with:
         call _number
         jz .gotnum
         pop rax
@@ -1568,8 +1674,18 @@ WORD64 "r@", _rfetch, 0, 2
 WORD64 "r>", _rfrom, 0, 2
 WORD64 ">r", _tor, 0, 2
 
-;; Compile-time words (ct=1)
+;; SWAPbit-aware compilation helpers (ct=0, callable from Forth macros)
 WORD64 "swap`", _swap_inline, 0, 5
+WORD64 "s09", _s09_word, 0, 3
+WORD64 "s08", _s08_word, 0, 3
+WORD64 "s01", _s01_word, 0, 3
+WORD64 "s1", _s1_word, 0, 2
+WORD64 ",4", _comma4, 0, 2
+WORD64 ",3", _comma3, 0, 2
+WORD64 ",2", _comma2, 0, 2
+WORD64 ",1", _comma1, 0, 2
+
+;; Compile-time words (ct=1)
 WORD64 "REPEAT", _repeat, 2, 6
 WORD64 "WHILE", _while, 2, 5
 WORD64 "UNTIL", _until, 2, 5
