@@ -653,6 +653,100 @@ _tuck_inline:
         add rbp, 3
         jmp _s08                    ; swap reg field: rbx↔rdx
 
+;; = ( a b -- flag ): inline equality comparison (16 bytes)
+;; Emits: cmp rdx,rbx; sete cl; movzx ebx,cl; neg rbx; DROP_NOS
+_eq_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $DA39     ; cmp rdx, rbx
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C194     ; sete cl
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6     ; movzx ebx, cl
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7     ; neg rbx
+        add rbp, 3
+        call _s01
+        jmp _emit_drop_nos_s
+
+;; < ( a b -- flag ): inline signed less-than (16 bytes)
+_lt_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $DA39     ; cmp rdx, rbx
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C19C     ; setl cl
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6     ; movzx ebx, cl
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7     ; neg rbx
+        add rbp, 3
+        call _s01
+        jmp _emit_drop_nos_s
+
+;; > ( a b -- flag ): inline signed greater-than (16 bytes)
+_gt_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $DA39     ; cmp rdx, rbx
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C19F     ; setg cl
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6     ; movzx ebx, cl
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7     ; neg rbx
+        add rbp, 3
+        call _s01
+        jmp _emit_drop_nos_s
+
+;; 0= ( n -- flag ): inline zero-equal (12 bytes)
+_zeq_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $DB85     ; test rbx, rbx
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C194     ; sete cl
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6     ; movzx ebx, cl
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7     ; neg rbx
+        add rbp, 3
+        jmp _s01
+
+;; 0<> ( n -- flag ): inline nonzero test (12 bytes)
+_zneq_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $DB85     ; test rbx, rbx
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C195     ; setne cl
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6     ; movzx ebx, cl
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7     ; neg rbx
+        add rbp, 3
+        jmp _s01
+
 ;; =====================================================================
 ;; Compile-time words (ct=2): executed during compilation
 ;; These use the data stack (rbx/rdx/r15) to track patch addresses.
@@ -1448,11 +1542,11 @@ WORD64 "tuck", _tuck_inline, 2, 4
 
 ;; Runtime words (ct=0) — still called via compiled CALL instruction
 WORD64 "cr", _cr, 0, 2
-WORD64 "0<>", _zneq, 0, 3
-WORD64 "0=", _zeq, 0, 2
-WORD64 ">", _gt, 0, 1
-WORD64 "<", _lt, 0, 1
-WORD64 "=", _eq, 0, 1
+WORD64 "0<>", _zneq_inline, 2, 3
+WORD64 "0=", _zeq_inline, 2, 2
+WORD64 ">", _gt_inline, 2, 1
+WORD64 "<", _lt_inline, 2, 1
+WORD64 "=", _eq_inline, 2, 1
 WORD64 "2", _two, 0, 1
 WORD64 "1", _one, 0, 1
 WORD64 ".", _dot, 0, 1

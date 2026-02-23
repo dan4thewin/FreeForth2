@@ -450,7 +450,7 @@ _add_inline:
 The `_s09` call checks the SWAPbit and XORs `$09` into the ModR/M byte
 at `[rbp-1]`, changing `add rbx,rdx` to `add rdx,rbx` if needed.
 
-### Current inline primitives (18 total)
+### Current inline primitives (23 total)
 
 | Category | Words | Pattern |
 |----------|-------|---------|
@@ -458,14 +458,13 @@ at `[rbp-1]`, changing `add rbx,rdx` to `add rdx,rbx` if needed.
 | Stack | `dup drop swap over nip rot tuck` | DUP_NOS/DROP_NOS combinations |
 | Bitwise | `and or xor not` | Same as arithmetic |
 | Memory | `@ c@` | Unary: `mov rbx,[rbx]` |
-| Comparison | `0<` | `sar rbx, 63` |
+| Comparison | `= < > 0< 0= 0<>` | cmp/test + setcc + movzx + neg |
 
-### Words that remain as runtime calls (20)
+### Words that remain as runtime calls (15)
 
 | Category | Words | Why |
 |----------|-------|-----|
 | I/O | `cr . emit` | Perform syscalls — must be called |
-| Comparison | `= < > 0= 0<>` | Complex (cmp+setcc+movzx+neg+DROP) |
 | Division | `/ mod /mod` | Use rdx:rax for idiv — conflict with NOS |
 | Shifts | `lshift rshift` | Need rcx for shift count |
 | Memory write | `! c! +!` | Consume 2-3 items, complex DROP |

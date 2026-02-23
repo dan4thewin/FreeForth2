@@ -695,7 +695,7 @@ _if:
 
 ;; THEN: resolve forward jump. TOS = patch address.
 _then:
-        ;; Calculate offset: here - (patch_addr + 4)
+        call _rst        ;; Calculate offset: here - (patch_addr + 4)
         mov rax, rbp
         sub rax, rbx
         sub rax, 4
@@ -708,7 +708,7 @@ _then:
 
 ;; ELSE: compile jmp <fwd>, resolve IF, push new patch address
 _else:
-        ;; Compile: jmp rel32 → E9 xx xx xx xx
+        call _rst        ;; Compile: jmp rel32 → E9 xx xx xx xx
         mov byte [rbp], $E9
         inc rbp
         ;; Save new patch address
@@ -725,6 +725,7 @@ _else:
 
 ;; BEGIN: push here (loop target address)
 _begin:
+        call _rst
         sub r15, 8
         mov [r15], rdx
         mov rdx, rbx
@@ -733,7 +734,7 @@ _begin:
 
 ;; AGAIN: compile unconditional jump back to BEGIN address
 _again:
-        ;; Compile: jmp rel32 → E9 xx xx xx xx
+        call _rst        ;; Compile: jmp rel32 → E9 xx xx xx xx
         mov byte [rbp], $E9
         inc rbp
         ;; Calculate backward offset: target - (here + 4)
@@ -788,7 +789,7 @@ _while:
 
 ;; REPEAT: compile jmp <back to BEGIN>, then resolve WHILE
 _repeat:
-        ;; TOS = WHILE's patch addr, NOS = BEGIN's target
+        call _rst        ;; TOS = WHILE's patch addr, NOS = BEGIN's target
         ;; First: compile jmp back to BEGIN (NOS)
         mov byte [rbp], $E9
         inc rbp

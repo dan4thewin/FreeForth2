@@ -1,26 +1,20 @@
-;;; 017-swapbit-deep: Deep SWAPbit integration — swap emits zero code
+;;; 019-cmpinline64: Inline comparison operators
 ;;;
-;;; In the original FreeForth, `swap` doesn't generate any machine code.
-;;; Instead, it toggles a compile-time flag (the SWAPbit) that tells
-;;; subsequent code generators which register is "logically" TOS.
+;;; Converts the 5 comparison words to SWAPbit-aware inline code:
+;;;   = < > 0= 0<>
 ;;;
-;;; On x86-64, rbx (register 3) and rdx (register 2) differ by exactly
-;;; one bit in their register encoding. By XORing specific bits in the
-;;; ModR/M byte of each emitted instruction, we can switch between
-;;; registers at compile time:
+;;; Binary comparisons (= < >) follow a common pattern:
+;;;   cmp rdx, rbx        ; compare NOS with TOS
+;;;   setcc cl             ; set cl to 1 if condition met
+;;;   movzx ebx, cl        ; zero-extend result into TOS
+;;;   neg rbx              ; 0→0, 1→-1 (Forth TRUE = -1)
+;;;   DROP_NOS             ; pop new NOS
 ;;;
-;;;   XOR $01 → swap r/m field (destination register)
-;;;   XOR $08 → swap reg field (source register)
-;;;   XOR $09 → swap both fields
-;;;
-;;; The functions s01, s08, s09 apply these XORs when the SWAPbit is set.
-;;; Result: `swap` compiles to ZERO bytes of machine code.
-;;;
-;;; This experiment builds on 016-inline64 by:
-;;;   - Adding s01/s08/s09 register-swap functions
-;;;   - Making all inline code generators SWAPbit-aware
-;;;   - Changing swap from 3-byte xchg to zero-cost SWAPbit toggle
-;;;   - Adding _rst calls to IF/UNTIL to sync before register-dependent code
+;;; Unary comparisons (0= 0<>) test TOS against zero:
+;;;   test rbx, rbx
+;;;   setcc cl
+;;;   movzx ebx, cl
+;;;   neg rbx
 
 format elf64
 section '.flat' writeable executable
@@ -581,6 +575,200 @@ _not_inline:
         add rbp, 3
         jmp _s01                    ; swap r/m field only
 
+;; and ( a b -- a&b ): bitwise AND, pop (10 bytes)
+;; Default: and rbx,rdx (48 21 D3); DROP_NOS
+;; Swapped: and rdx,rbx (48 21 DA); DROP_NOS_S
+_and_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $D321     ; and rbx, rdx
+        add rbp, 3
+        call _s09
+        jmp _emit_drop_nos_s
+
+;; or ( a b -- a|b ): bitwise OR, pop (10 bytes)
+;; Default: or rbx,rdx (48 09 D3); DROP_NOS
+_or_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $D309     ; or rbx, rdx
+        add rbp, 3
+        call _s09
+        jmp _emit_drop_nos_s
+
+;; xor ( a b -- a^b ): bitwise XOR, pop (10 bytes)
+;; Default: xor rbx,rdx (48 31 D3); DROP_NOS
+_xor_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $D331     ; xor rbx, rdx
+        add rbp, 3
+        call _s09
+        jmp _emit_drop_nos_s
+
+;; @ ( addr -- val ): fetch 64-bit value from memory (3 bytes)
+;; Default: mov rbx,[rbx] (48 8B 1B)
+;; Swapped: mov rdx,[rdx] (48 8B 12) — XOR $09 on ModR/M
+_fetch_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $1B8B     ; mov rbx, [rbx]
+        add rbp, 3
+        jmp _s09
+
+;; c@ ( addr -- char ): fetch byte, zero-extend (3 bytes)
+;; Default: movzx ebx,byte [rbx] (0F B6 1B)
+;; Swapped: movzx edx,byte [rdx] (0F B6 12) — XOR $09
+;; Note: no REX prefix needed — 32-bit result zero-extends to 64-bit
+_cfetch_inline:
+        mov byte [rbp], $0F
+        mov word [rbp+1], $1BB6     ; movzx ebx, byte [rbx]
+        add rbp, 3
+        jmp _s09
+
+;; 0< ( n -- flag ): true if negative (4 bytes)
+;; Default: sar rbx,63 (48 C1 FB 3F) — sign bit fills all 64 bits
+;; Swapped: sar rdx,63 (48 C1 FA 3F) — XOR $01 on ModR/M
+;; Note: emit opcode+ModR/M first, call s01, then emit immediate.
+_zlt_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $FBC1     ; sar rbx, ... (opcode + ModR/M)
+        add rbp, 3
+        call _s01                   ; swap r/m field
+        mov byte [rbp], $3F         ; immediate: 63
+        inc rbp
+        ret
+
+;; rot ( a b c -- b c a ): rotate third to top (6 bytes)
+;; Default: xchg rdx,[r15] (49 87 17); xchg rbx,rdx (48 87 DA)
+;; Swapped: xchg rbx,[r15] (49 87 1F); xchg rbx,rdx (48 87 DA)
+;; Note: second xchg is always the same (symmetric operation).
+_rot_inline:
+        mov byte [rbp], $49
+        mov word [rbp+1], $1787     ; xchg rdx, [r15]
+        add rbp, 3
+        call _s08                   ; swap reg field: rdx↔rbx
+        mov byte [rbp], $48
+        mov word [rbp+1], $DA87     ; xchg rbx, rdx (always same)
+        add rbp, 3
+        ret
+
+;; tuck ( a b -- b a b ): push TOS under NOS (7 bytes)
+;; Default: sub r15,8 (49 83 EF 08); mov [r15],rbx (49 89 1F)
+;; Swapped: sub r15,8; mov [r15],rdx (49 89 17) — XOR $08
+_tuck_inline:
+        mov dword [rbp], $08EF8349  ; sub r15, 8
+        add rbp, 4
+        mov byte [rbp], $49
+        mov word [rbp+1], $1F89     ; mov [r15], rbx (default)
+        add rbp, 3
+        jmp _s08                    ; swap reg field: rbx↔rdx
+
+;; = ( a b -- flag ): equality comparison (16 bytes inline)
+;; Emits: cmp rdx,rbx; sete cl; movzx ebx,cl; neg rbx; DROP_NOS
+;; With SWAPbit: cmp rbx,rdx; sete cl; movzx edx,cl; neg rdx; DROP_NOS_S
+;; Note: cmp is symmetric for equality — both operand orders give same ZF.
+_eq_inline:
+        ;; cmp rdx, rbx  = 48 39 DA (s09: $DA^$09=$D3 → cmp rbx,rdx)
+        mov byte [rbp], $48
+        mov word [rbp+1], $DA39
+        add rbp, 3
+        call _s09
+        ;; sete cl = 0F 94 C1 (always cl, no swap needed)
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C194
+        add rbp, 3
+        ;; movzx ebx, cl = 0F B6 D9 (s01: $D9^$01=$D8 → movzx edx,cl)
+        ;; Wait: movzx ebx, cl → reg=ebx(3), r/m=cl(1)
+        ;; ModR/M = 11 011 001 = $D9
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6
+        add rbp, 3
+        call _s01
+        ;; neg rbx = 48 F7 DB (s01: $DB^$01=$DA → neg rdx)
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7
+        add rbp, 3
+        call _s01
+        jmp _emit_drop_nos_s
+
+;; < ( a b -- flag ): signed less-than (16 bytes inline)
+;; Tests if NOS < TOS, i.e. a < b.
+;; cmp rdx, rbx sets flags for rdx-rbx; setl tests SF≠OF.
+_lt_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $DA39     ; cmp rdx, rbx
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C19C     ; setl cl
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6     ; movzx ebx, cl
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7     ; neg rbx
+        add rbp, 3
+        call _s01
+        jmp _emit_drop_nos_s
+
+;; > ( a b -- flag ): signed greater-than (16 bytes inline)
+;; Tests if NOS > TOS, i.e. a > b.
+;; cmp rdx, rbx; setg tests (SF=OF and ZF=0).
+_gt_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $DA39     ; cmp rdx, rbx
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C19F     ; setg cl
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6     ; movzx ebx, cl
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7     ; neg rbx
+        add rbp, 3
+        call _s01
+        jmp _emit_drop_nos_s
+
+;; 0= ( n -- flag ): true if TOS is zero (12 bytes inline)
+;; Emits: test rbx,rbx; sete cl; movzx ebx,cl; neg rbx
+_zeq_inline:
+        ;; test rbx, rbx = 48 85 DB (s09: $DB^$09=$D2 → test rdx,rdx)
+        mov byte [rbp], $48
+        mov word [rbp+1], $DB85
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C194     ; sete cl
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6     ; movzx ebx, cl
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7     ; neg rbx
+        add rbp, 3
+        jmp _s01
+
+;; 0<> ( n -- flag ): true if TOS is nonzero (12 bytes inline)
+;; Same as 0= but uses setne instead of sete.
+_zneq_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $DB85     ; test rbx, rbx
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C195     ; setne cl
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6     ; movzx ebx, cl
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7     ; neg rbx
+        add rbp, 3
+        jmp _s01
+
 ;; =====================================================================
 ;; Compile-time words (ct=2): executed during compilation
 ;; These use the data stack (rbx/rdx/r15) to track patch addresses.
@@ -637,7 +825,8 @@ _then:
 
 ;; ELSE: compile jmp <fwd>, resolve IF, push new patch address
 _else:
-        call _rst        ;; Compile: jmp rel32 → E9 xx xx xx xx
+        call _rst
+        ;; Compile: jmp rel32 → E9 xx xx xx xx
         mov byte [rbp], $E9
         inc rbp
         ;; Save new patch address
@@ -663,7 +852,8 @@ _begin:
 
 ;; AGAIN: compile unconditional jump back to BEGIN address
 _again:
-        call _rst        ;; Compile: jmp rel32 → E9 xx xx xx xx
+        call _rst
+        ;; Compile: jmp rel32 → E9 xx xx xx xx
         mov byte [rbp], $E9
         inc rbp
         ;; Calculate backward offset: target - (here + 4)
@@ -718,7 +908,8 @@ _while:
 
 ;; REPEAT: compile jmp <back to BEGIN>, then resolve WHILE
 _repeat:
-        call _rst        ;; TOS = WHILE's patch addr, NOS = BEGIN's target
+        call _rst
+        ;; TOS = WHILE's patch addr, NOS = BEGIN's target
         ;; First: compile jmp back to BEGIN (NOS)
         mov byte [rbp], $E9
         inc rbp
@@ -1362,15 +1553,22 @@ WORD64 "nip", _nip_inline, 2, 3
 WORD64 "*", _mul_inline, 2, 1
 WORD64 "-", _sub_inline, 2, 1
 WORD64 "+", _add_inline, 2, 1
+WORD64 "and", _and_inline, 2, 3
+WORD64 "or", _or_inline, 2, 2
+WORD64 "xor", _xor_inline, 2, 3
+WORD64 "@", _fetch_inline, 2, 1
+WORD64 "c@", _cfetch_inline, 2, 2
+WORD64 "0<", _zlt_inline, 2, 2
+WORD64 "rot", _rot_inline, 2, 3
+WORD64 "tuck", _tuck_inline, 2, 4
 
 ;; Runtime words (ct=0) — still called via compiled CALL instruction
 WORD64 "cr", _cr, 0, 2
-WORD64 "0<", _zlt, 0, 2
-WORD64 "0<>", _zneq, 0, 3
-WORD64 "0=", _zeq, 0, 2
-WORD64 ">", _gt, 0, 1
-WORD64 "<", _lt, 0, 1
-WORD64 "=", _eq, 0, 1
+WORD64 "0<>", _zneq_inline, 2, 3
+WORD64 "0=", _zeq_inline, 2, 2
+WORD64 ">", _gt_inline, 2, 1
+WORD64 "<", _lt_inline, 2, 1
+WORD64 "=", _eq_inline, 2, 1
 WORD64 "2", _two, 0, 1
 WORD64 "1", _one, 0, 1
 WORD64 ".", _dot, 0, 1
@@ -1381,19 +1579,12 @@ WORD64 ",", _comma, 0, 1
 WORD64 "allot", _allot, 0, 5
 WORD64 "here", _here, 0, 4
 WORD64 "depth", _depth, 0, 5
-WORD64 "tuck", _tuck, 0, 4
-WORD64 "rot", _rot, 0, 3
-WORD64 "xor", _xor, 0, 3
-WORD64 "or", _or, 0, 2
-WORD64 "and", _and, 0, 3
 WORD64 "/mod", _divmod, 0, 4
 WORD64 "mod", _mod, 0, 3
 WORD64 "/", _div, 0, 1
 WORD64 "+!", _addstore, 0, 2
 WORD64 "c!", _cstore, 0, 2
-WORD64 "c@", _cfetch, 0, 2
 WORD64 "!", _store, 0, 1
-WORD64 "@", _fetch, 0, 1
 WORD64 "emit", _emit, 0, 4
 WORD64 "erase", _erase, 0, 5
 WORD64 "fill", _fill, 0, 4

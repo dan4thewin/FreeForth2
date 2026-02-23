@@ -788,3 +788,106 @@ SWAPbit replaces) is conditional on the IF branch.
 **Running tally:** 18 of 38 words are now inline code generators.
 
 **Files:** `exp/018-moreinline64/{moreinline64.asm,Makefile}`
+
+---
+
+## Experiment 019: Inline Comparison Operators
+
+**Goal:** Convert the five comparison words (`=`, `<`, `>`, `0=`, `0<>`)
+from runtime calls (ct=0) to inline code generators (ct=2).
+
+**Rationale:** These comparisons appear in nearly every conditional Forth
+word (`min`, `max`, `abs`, `within`, loop bounds). Each currently compiles
+a 5-byte CALL instruction. Inlining eliminates the call/ret overhead
+(~6 cycles) and enables the SWAPbit to track register state through
+comparisons without forced syncs.
+
+### How the original i386 `=` works (ff.asm)
+
+```asm
+_eq:  cmp edx, ebx      ; compare NOS to TOS
+      sete cl            ; cl = 1 if equal, 0 otherwise
+      movzx ebx, cl      ; zero-extend to 32 bits
+      neg ebx            ; 0 → 0, 1 → -1 (all-bits-set flag)
+      DROP_NOS           ; pop NOS from data stack
+      ret
+```
+
+All five comparisons follow this pattern: `cmp/test` + `setcc` + `movzx` +
+`neg` + optional `DROP_NOS`. The only variation is the `setcc` condition
+code: `sete` (=), `setl` (<), `setg` (>), `sete` (0=), `setne` (0<>).
+
+### How the x86-64 inline generators work
+
+Each comparison emits the same 4-instruction sequence directly:
+
+| Word | CMP/TEST instruction | setcc | Bytes | SWAPbit ops |
+|------|---------------------|-------|:-----:|-------------|
+| `=` | `cmp rdx,rbx` (48 39 DA) | `sete cl` | 16 | s09 + s01×2 |
+| `<` | `cmp rdx,rbx` (48 39 DA) | `setl cl` | 16 | s09 + s01×2 |
+| `>` | `cmp rdx,rbx` (48 39 DA) | `setg cl` | 16 | s09 + s01×2 |
+| `0=` | `test rbx,rbx` (48 85 DB) | `sete cl` | 12 | s09 + s01×2 |
+| `0<>` | `test rbx,rbx` (48 85 DB) | `setne cl` | 12 | s09 + s01×2 |
+
+Binary comparisons (`=`, `<`, `>`) use s09 on the `cmp` ModR/M, then s01
+on both `movzx` and `neg` to target the correct result register. They end
+with `jmp _emit_drop_nos_s` to emit the NOS pop.
+
+Unary comparisons (`0=`, `0<>`) use s09 on the `test` ModR/M (both fields
+must swap since `test rbx,rbx` has rbx in both positions). They end with
+`jmp _s01` to apply the final SWAPbit.
+
+**Note on equality:** `cmp` with `sete` tests ZF. Since ZF depends only on
+whether the result is zero, `cmp a,b` and `cmp b,a` give the same ZF. So
+the s09 swap on `=` doesn't affect correctness — only `<` and `>` are
+sensitive to operand order.
+
+### Bug found and fixed: flow control SWAPbit reconciliation
+
+When first built, the `min` test failed:
+```
+: min over over > IF swap THEN drop ; 3 10 min . cr ;
+Expected: 3
+Got: 10
+```
+
+**Root cause:** This was the same SWAPbit flow control bug found in exp 018
+and fixed in production ff64.asm, but experiments 017, 018, and 019 were
+missing the fix. `swap` inside an IF body toggles the compile-time SWAPbit
+flag, but the runtime swap is conditional. At the THEN join point, both
+paths must agree on register assignments.
+
+**Fix:** Added `call _rst` to THEN, ELSE, BEGIN, AGAIN, and REPEAT in all
+three experiments (017, 018, 019). The `_rst` function checks if SWAPbit
+is set; if so, it emits `xchg rbx,rdx` and clears the flag. The jz from
+IF jumps to AFTER this xchg, so:
+- **Taken path:** IF body code (with swapped register semantics) → xchg
+  (restores normal order) → continues.
+- **Not-taken path:** jz jumps past body AND xchg → continues with normal
+  register order.
+
+Both paths end up with the same register assignment. All tests pass.
+
+### Tests (15 total, all PASS)
+
+| # | Input | Expected | Tests |
+|---|-------|----------|-------|
+| 1 | `3 3 = .` | -1 | equality true |
+| 2 | `3 4 = .` | 0 | equality false |
+| 3 | `3 4 < .` | -1 | less-than true |
+| 4 | `4 3 < .` | 0 | less-than false |
+| 5 | `4 3 > .` | -1 | greater-than true |
+| 6 | `3 4 > .` | 0 | greater-than false |
+| 7 | `0 0= .` | -1 | zero-equal true |
+| 8 | `5 0= .` | 0 | zero-equal false |
+| 9 | `0 0<> .` | 0 | nonzero false |
+| 10 | `5 0<> .` | -1 | nonzero true |
+| 11 | abs(-5) | 5 | unary with 0< + negate |
+| 12 | max(3,10) | 10 | < + swap-in-IF |
+| 13 | min(3,10) | 3 | > + swap-in-IF |
+| 14 | 10! | 3628800 | recursive factorial |
+| 15 | fib(10) | 55 | recursive fibonacci |
+
+**Running tally:** 23 of 38 words are now inline code generators.
+
+**Files:** `exp/019-cmpinline64/{cmpinline64.asm,Makefile}`
