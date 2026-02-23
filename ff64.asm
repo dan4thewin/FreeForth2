@@ -1447,6 +1447,7 @@ _compiler:
         jc .notfound
         ;; Found: rax=xt, ecx=ct
         add rsp, 16
+        and ecx, 7              ; mask to compile class bits (0-2)
         test ecx, ecx
         jz .compilecall
         cmp ecx, 1

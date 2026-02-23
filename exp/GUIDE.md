@@ -1314,3 +1314,98 @@ structures, object systems, and the `:^'` push-address pattern.
 ### Current state (after exp 033)
 
 ~130 words/macros ported. 107 tests across 33 experiments, all passing.
+
+---
+
+## Part 15: Words That Make Words (Exp 034)
+
+### The documentation goldmine
+
+Before diving into dictionary operations, we went back to the source:
+Christophe's own documentation in `docs/FreeForth.md`, `docs/FreeForth_Primer.md`,
+and the comprehensive `ff.help` reference. These files explain the architecture
+far better than reverse-engineering the assembly. Key insight: **read the docs
+before reading the code.**
+
+### execute — the simplest brilliant word
+
+```forth
+: execute >r ;
+```
+
+That's the entire definition. `>r` pushes TOS (an execution token) onto
+the return stack, dropping it from the data stack. Then `ret` (compiled
+by `;`) pops from the return stack — but instead of returning to the
+caller, it jumps to the xt we just pushed. When that code returns, it
+returns to whoever called `execute`. Two instructions, infinite power.
+
+### How alias works — the _semi_exec mechanism
+
+The defining words (`alias`, `constant`, etc.) need to receive values
+that were computed by the preceding code. For example, in `42 constant answer`,
+the constant `42` needs to be available when `constant` runs.
+
+FreeForth's secret: `_colon` (the `:` word) calls `_semi_exec` before
+creating a new header. This executes any pending anonymous code, putting
+computed values on the data stack. So:
+
+1. `42` is compiled as `push 42` into the anonymous area
+2. `constant` triggers `_colon`, which calls `_semi_exec`
+3. `_semi_exec` runs the anonymous code → 42 is on the stack
+4. `_colon` creates a header for "answer"
+5. The rest stores 42 as answer's xt value
+
+This is why FreeForth doesn't need a separate `[']` or prefix `'` — the
+natural flow of anonymous definition execution provides values to
+compile-time words.
+
+### The ct mask bug
+
+Testing aliases revealed a compiler bug: the ct dispatch used the raw
+byte value without masking. With ct=$20 (alias flag), the compiler saw
+"ct >= 2 → execute immediately" instead of "ct class 0 → compile as call."
+
+The fix: `and ecx, 7` before dispatch, matching the i386 original. This
+extracts only the compile class bits (0-2), ignoring flags in bits 3+.
+
+### The literal compiler suffix mechanism
+
+Reading `ff.help` revealed something we'd been working around: the i386
+literal compiler has a suffix mechanism. Tokens like `H@`, `h.ct+`,
+`anon!` are NOT defined words — they're parsed by the literal compiler:
+
+| Token  | Suffix | Remaining | Action |
+|--------|--------|-----------|--------|
+| `H@`   | `@`    | `H`       | Find H → fetch from its address |
+| `h.ct+`| `+`    | `h.ct`    | Find h.ct → add 8 to TOS |
+| `$20!` | `!`    | `$20`     | Number 32 → store at TOS |
+
+Supported suffixes: `@ ! + - * / % & | ^ , _`
+
+Our x86-64 port handles only trailing `,` (litcomma). We define
+explicit helper words (`H@`, `anon@`) as a workaround. The full
+suffix mechanism is a future enhancement.
+
+### Bracket state switching
+
+```forth
+: [` anon@ SC c@ anon:` ;
+: ]` 2>r ;` 2r> SC c! anon ! ;
+```
+
+`[` suspends the current definition: saves the anonymous pointer and
+compiler state, starts a fresh anonymous definition. `]` completes
+and executes the anonymous definition, then restores the saved state.
+
+This enables compile-time computation within named definitions:
+```forth
+: t [ 3 4 + ] . cr ;   \ [ ] computes 7 at compile time
+t                       \ prints 7
+```
+
+### Current state (after exp 034)
+
+~140 words/macros ported. 117 tests across 34 experiments, all passing.
+The dictionary manipulation infrastructure is now functional: header
+inspection, ct flag modification, execute, alias, constant, and
+bracket state switching.

@@ -1,0 +1,36 @@
+\ Exp 034: Execute, alias, constant (Forth-level), bracket state
+
+\ execute — call the xt on TOS
+\ Pushes xt to return stack, then returns — which jumps to xt
+: execute >r ;
+
+\ :.` — continuation entry point (alias for :`)
+: :.` :` ;
+
+\ _alias — set xt of most recent header, mark as alias, start anon
+\ ( xt -- ) stores xt into header, sets $20 flag, opens new anon
+: _alias H@ ! $20 H@ ct|! anon:` ;
+
+\ alias` — create a named synonym
+\ Usage: value-on-stack alias name
+\ :` calls _colon which calls _semi_exec, executing pending anon code
+\ that puts the xt on the stack. Then _alias stores it in the new header.
+: alias` :` _alias ;
+
+\ Forth-level constant` — alternative to assembly constant
+\ :` creates header, then we set ct=1 and store value as xt
+: constant` :` 1 H@ ct|! H@ ! anon:` ;
+
+\ myconst — wrapper to test the Forth constant` without shell backtick issues
+\ When user types "99 myconst val", backtick mangling finds myconst`,
+\ which calls constant` to create val with value 99
+: myconst` constant` ;
+
+\ [` — suspend current definition, start new anonymous def
+\ Saves current anon pointer and SC state, resets for new anon
+: [` anon@ SC c@ anon:` ;
+
+\ ]` — complete and execute current anonymous def, restore prior state
+\ ;` calls _semi to end the anonymous def (execute it)
+\ Then restores saved SC and anon values
+: ]` 2>r ;` 2r> SC c! anon ! ;

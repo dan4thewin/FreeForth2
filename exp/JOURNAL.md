@@ -2291,3 +2291,138 @@ pvt: sets bit 3 in ct byte
 
 **Files:** `ff64.boot` (+8 lines: h.ct, h.sz, h.nm, H@, anon@, ct|!, pvt'),
 `exp/033-dictops64/{macros.ff,Makefile}`
+
+---
+
+## Experiment 034: Execute, Alias, Constant, Brackets
+
+**Date:** 2025-07-16
+**Goal:** Port the core dictionary operations from ff.boot to ff64.boot —
+`execute`, `alias`, Forth-level `constant`, and bracket state switching
+`[`/`]`. Also fix a compiler bug discovered during alias testing.
+
+### The Compiler Bug: Missing ct Mask
+
+When testing `alias`, we discovered that aliased words with ct=$20
+(alias flag) were being treated as compile-time words (ct >= 2) and
+executed immediately instead of being compiled as calls.
+
+The root cause: our x86-64 compiler dispatches on the RAW ct byte
+value, but the i386 original masks with `and ecx, 7` to extract only
+the compile class bits (0-2) before dispatching. The upper bits (3+)
+are flags (private, alias, etc.) that should not affect the compile
+class.
+
+**Fix:** Added `and ecx, 7` before the ct dispatch in `_compiler`:
+```asm
+        and ecx, 7              ; mask to compile class bits (0-2)
+        test ecx, ecx
+        jz .compilecall
+```
+
+This was the kind of bug that would have bitten us with ANY flagged
+word (private, alias, constant with alias flag). Good that alias
+testing caught it early.
+
+### Reading the Documentation
+
+DG reminded us to read the existing docs/ directory and ff.help file.
+This was transformative — the ff.help file has detailed descriptions
+of every word, and the docs/FreeForth.md and docs/FreeForth_Primer.md
+explain the architecture clearly. Key insights gained:
+
+**The literal compiler suffix mechanism:** In the i386 FreeForth,
+tokens like `H@`, `h.ct+`, `anon!` are NOT defined words. They're
+handled by the literal compiler, which strips the final character
+(`@`, `+`, `!`, etc.) and applies the operation to the remaining
+word/number. This gives "free" compound operations:
+- `H@` = find H (variable), fetch from its address
+- `h.ct+` = find h.ct (constant 8), add to TOS
+- `$20 H@ ct|!` = the `@` suffix handles the H dereference
+
+Our x86-64 port doesn't have this suffix mechanism yet (only the
+trailing comma for litcomma). We work around it by defining explicit
+helper words: `H@`, `anon@`, etc.
+
+**The `:^` vector mechanism:** On i386, `push imm32; ret` creates a
+redirectable indirect jump (since push goes to the CALL stack, not
+the data stack). The 4-byte immediate at xt+1 can be patched by
+`!^` to redirect the vector. This is NOT a data push — it's a jump
+through the call stack. Future x86-64 port will use `jmp rel32` (5
+bytes, patchable offset at xt+1).
+
+**The `'` (tick) mechanism:** Postfix, not prefix. `foo '` compiles
+`call foo`, then `'` uncompiles the call via `-call` and replaces it
+with a literal push of foo's xt. Requires the callmark/uncompilation
+infrastructure, which we haven't ported yet.
+
+**How compile-time words receive stack values:** `_colon` calls
+`_semi_exec` before creating a new header. This executes any pending
+anonymous code, putting computed values on the data stack. So
+`42 constant answer` works because: `42` compiles a literal push
+into the anonymous area, then `constant` triggers `_colon` which
+executes that anonymous code (pushing 42), then stores 42 as the
+constant value.
+
+### Implementation
+
+**execute** — trivially elegant:
+```forth
+: execute >r ;
+```
+Pushes xt to return stack (via inline `>r`), then `ret` pops it and
+jumps there. When the called code returns, control returns to
+execute's caller. Classic Forth.
+
+**:.`** — continuation entry point, alias for `:``:
+```forth
+: :.` :` ;
+```
+Semantic marker for fall-through definitions. Mechanically identical
+to `:` but signals "code falls through from the previous word."
+
+**_alias** — set header xt and mark as alias:
+```forth
+: _alias H@ ! $20 H@ ct|! anon:` ;
+```
+Stores the value on TOS into the latest header's xt field, ORs $20
+(alias flag) into ct, and starts a new anonymous definition.
+
+**alias`** — create a named synonym:
+```forth
+: alias` :` _alias ;
+```
+When user writes `xt-value alias name`: `:`` calls _colon which
+first calls _semi_exec (executing the anonymous code that pushed the
+xt value), then creates a header for "name". `_alias` stores the
+xt value into the new header.
+
+**constant`** (Forth-level) — alternative to assembly:
+```forth
+: constant` :` 1 H@ ct|! H@ ! anon:` ;
+```
+Creates a header, sets ct=1 (literal class), stores the value from
+the stack as xt. When the constant is referenced, the compiler pushes
+its xt (= value) as a literal. This supplements the assembly
+`_constant` which handles the hardcoded `constant` keyword.
+
+**Bracket state switching:**
+```forth
+: [` anon@ SC c@ anon:` ;
+: ]` 2>r ;` 2r> SC c! anon ! ;
+```
+`[` saves the current anonymous definition state and SWAPbit/condition
+state, then starts a fresh anonymous definition. `]` completes and
+executes the anonymous definition (via `;``), then restores the saved
+state. This enables compile-time computation within named definitions:
+`: squares [ 12 12 * ] constant dozen-sq ;`
+
+### Tests (10 total, all PASS)
+
+Execute: call xt from stack, call with arguments
+Alias: create synonym, preserve arithmetic, verify ct flag
+Constant: assembly version (positive, negative), Forth version
+Brackets: compile-time evaluation (3+4=7, 10*2=20)
+
+**Files:** `ff64.asm` (+1 line: ct mask fix), `ff64.boot` (+8 lines),
+`exp/034-execalias64/{macros.ff,Makefile}`

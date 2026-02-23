@@ -228,3 +228,14 @@
 : anon@ anon @ ;
 : ct|! 8 + dupc@ rot | swap c! ;
 : pvt` 8 H@ ct|! ;
+
+( Dictionary operations )
+: execute >r ;
+: :.` :` ;
+: _alias H@ ! $20 H@ ct|! anon:` ;
+: alias` :` _alias ;
+: constant` :` 1 H@ ct|! H@ ! anon:` ;
+
+( Bracket state switching )
+: [` anon@ SC c@ anon:` ;
+: ]` 2>r ;` 2r> SC c! anon ! ;
