@@ -27,6 +27,7 @@ tin     dq 0
 tp      dq 0
 filebuf_ptr dq 0
 SC      db 0                    ; SWAPbit in bit 1: 0=rbx is TOS, 2=rdx is TOS
+cond_jmp db 0                   ; ?# : pending conditional jump opcode (0=none)
 
 ;; =====================================================================
 ;; Runtime primitives
@@ -459,7 +460,7 @@ _emit_drop_nos_s:
         mov word [rbp+1], $178B     ; mov rdx, [r15] (default)
         add rbp, 3
         call _s08                   ; swap reg field: rdx↔rbx
-        mov dword [rbp], $08C78349  ; add r15, 8 (always same)
+        mov dword [rbp], $087F8D4D  ; lea r15, [r15+8] (flags-preserving)
         add rbp, 4
         ret
 
@@ -467,7 +468,7 @@ _emit_drop_nos_s:
 ;; Default: sub r15,8; mov [r15],rdx   (push NOS=rdx)
 ;; Swapped: sub r15,8; mov [r15],rbx   (push NOS=rbx)
 _emit_dup_nos_s:
-        mov dword [rbp], $08EF8349  ; sub r15, 8 (always same)
+        mov dword [rbp], $F87F8D4D  ; lea r15, [r15-8] (flags-preserving)
         add rbp, 4
         mov byte [rbp], $49
         mov word [rbp+1], $1789     ; mov [r15], rdx (default)
@@ -615,19 +616,6 @@ _cfetch_inline:
         add rbp, 3
         jmp _s09
 
-;; 0< ( n -- flag ): true if negative (4 bytes)
-;; Default: sar rbx,63 (48 C1 FB 3F) — sign bit fills all 64 bits
-;; Swapped: sar rdx,63 (48 C1 FA 3F) — XOR $01 on ModR/M
-;; Note: emit opcode+ModR/M first, call s01, then emit immediate.
-_zlt_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $FBC1     ; sar rbx, ... (opcode + ModR/M)
-        add rbp, 3
-        call _s01                   ; swap r/m field
-        mov byte [rbp], $3F         ; immediate: 63
-        inc rbp
-        ret
-
 ;; rot ( a b c -- b c a ): rotate third to top (6 bytes)
 ;; Default: xchg rdx,[r15] (49 87 17); xchg rbx,rdx (48 87 DA)
 ;; Swapped: xchg rbx,[r15] (49 87 1F); xchg rbx,rdx (48 87 DA)
@@ -646,144 +634,224 @@ _rot_inline:
 ;; Default: sub r15,8 (49 83 EF 08); mov [r15],rbx (49 89 1F)
 ;; Swapped: sub r15,8; mov [r15],rdx (49 89 17) — XOR $08
 _tuck_inline:
-        mov dword [rbp], $08EF8349  ; sub r15, 8
+        mov dword [rbp], $F87F8D4D  ; lea r15, [r15-8] (flags-preserving)
         add rbp, 4
         mov byte [rbp], $49
         mov word [rbp+1], $1F89     ; mov [r15], rbx (default)
         add rbp, 3
         jmp _s08                    ; swap reg field: rbx↔rdx
 
-;; = ( a b -- flag ): inline equality comparison (16 bytes)
-;; Emits: cmp rdx,rbx; sete cl; movzx ebx,cl; neg rbx; DROP_NOS
-_eq_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DA39     ; cmp rdx, rbx
-        add rbp, 3
-        call _s09
-        mov byte [rbp], $0F
-        mov word [rbp+1], $C194     ; sete cl
-        add rbp, 3
-        mov byte [rbp], $0F
-        mov word [rbp+1], $D9B6     ; movzx ebx, cl
-        add rbp, 3
-        call _s01
-        mov byte [rbp], $48
-        mov word [rbp+1], $DBF7     ; neg rbx
-        add rbp, 3
-        call _s01
-        jmp _emit_drop_nos_s
+;; =====================================================================
+;; FLAGS-BASED CONDITIONALS (FreeForth approach)
+;;
+;; Comparison words set CPU FLAGS and store a conditional jump opcode
+;; in cond_jmp. IF/UNTIL/WHILE read it and emit the conditional jump.
+;; =====================================================================
 
-;; < ( a b -- flag ): inline signed less-than (16 bytes)
-_lt_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DA39     ; cmp rdx, rbx
-        add rbp, 3
-        call _s09
-        mov byte [rbp], $0F
-        mov word [rbp+1], $C19C     ; setl cl
-        add rbp, 3
-        mov byte [rbp], $0F
-        mov word [rbp+1], $D9B6     ; movzx ebx, cl
-        add rbp, 3
-        call _s01
-        mov byte [rbp], $48
-        mov word [rbp+1], $DBF7     ; neg rbx
-        add rbp, 3
-        call _s01
-        jmp _emit_drop_nos_s
-
-;; > ( a b -- flag ): inline signed greater-than (16 bytes)
-_gt_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DA39     ; cmp rdx, rbx
-        add rbp, 3
-        call _s09
-        mov byte [rbp], $0F
-        mov word [rbp+1], $C19F     ; setg cl
-        add rbp, 3
-        mov byte [rbp], $0F
-        mov word [rbp+1], $D9B6     ; movzx ebx, cl
-        add rbp, 3
-        call _s01
-        mov byte [rbp], $48
-        mov word [rbp+1], $DBF7     ; neg rbx
-        add rbp, 3
-        call _s01
-        jmp _emit_drop_nos_s
-
-;; 0= ( n -- flag ): inline zero-equal (12 bytes)
-_zeq_inline:
+;; 0- ( -- ): emit test TOS,TOS to set FLAGS without modifying stack
+_0minus_inline:
         mov byte [rbp], $48
         mov word [rbp+1], $DB85     ; test rbx, rbx
         add rbp, 3
-        call _s09
-        mov byte [rbp], $0F
-        mov word [rbp+1], $C194     ; sete cl
-        add rbp, 3
-        mov byte [rbp], $0F
-        mov word [rbp+1], $D9B6     ; movzx ebx, cl
-        add rbp, 3
-        call _s01
-        mov byte [rbp], $48
-        mov word [rbp+1], $DBF7     ; neg rbx
-        add rbp, 3
-        jmp _s01
+        jmp _s09
 
-;; 0<> ( n -- flag ): inline nonzero test (12 bytes)
-_zneq_inline:
+;; Binary flags-based comparisons: emit cmp NOS,TOS and store condition.
+_lt_flags:
+        mov byte [cond_jmp], $7C
+        jmp _emit_cmp_s
+_gt_flags:
+        mov byte [cond_jmp], $7F
+        jmp _emit_cmp_s
+_eq_flags:
+        mov byte [cond_jmp], $74
+        jmp _emit_cmp_s
+_neq_flags:
+        mov byte [cond_jmp], $75
+        jmp _emit_cmp_s
+_le_flags:
+        mov byte [cond_jmp], $7E
+        jmp _emit_cmp_s
+_ge_flags:
+        mov byte [cond_jmp], $7D
+        jmp _emit_cmp_s
+
+;; Shared: emit cmp rdx, rbx (48 39 DA) with SWAPbit
+_emit_cmp_s:
         mov byte [rbp], $48
-        mov word [rbp+1], $DB85     ; test rbx, rbx
+        mov word [rbp+1], $DA39
         add rbp, 3
-        call _s09
-        mov byte [rbp], $0F
-        mov word [rbp+1], $C195     ; setne cl
-        add rbp, 3
-        mov byte [rbp], $0F
-        mov word [rbp+1], $D9B6     ; movzx ebx, cl
-        add rbp, 3
-        call _s01
-        mov byte [rbp], $48
-        mov word [rbp+1], $DBF7     ; neg rbx
-        add rbp, 3
-        jmp _s01
+        jmp _s09
+
+;; Unary flags-based conditions: store condition in cond_jmp.
+_zeq_flags:
+        mov byte [cond_jmp], $74
+        ret
+_zneq_flags:
+        mov byte [cond_jmp], $75
+        ret
+_zlt_flags:
+        mov byte [cond_jmp], $7C
+        ret
+_zgt_flags:
+        mov byte [cond_jmp], $7F
+        ret
+_zle_flags:
+        mov byte [cond_jmp], $7E
+        ret
+_zge_flags:
+        mov byte [cond_jmp], $7D
+        ret
 
 ;; =====================================================================
+;; DOTTED COMPARISONS: produce boolean values on the stack
+;; =====================================================================
+
+;; =. ( a b -- flag )
+_eq_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $DA39
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C194
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7
+        add rbp, 3
+        call _s01
+        jmp _emit_drop_nos_s
+
+;; <. ( a b -- flag )
+_lt_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $DA39
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C19C
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7
+        add rbp, 3
+        call _s01
+        jmp _emit_drop_nos_s
+
+;; >. ( a b -- flag )
+_gt_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $DA39
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C19F
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7
+        add rbp, 3
+        call _s01
+        jmp _emit_drop_nos_s
+
+;; 0=. ( n -- flag )
+_zeq_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $DB85
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C194
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7
+        add rbp, 3
+        jmp _s01
+
+;; 0<>. ( n -- flag )
+_zneq_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $DB85
+        add rbp, 3
+        call _s09
+        mov byte [rbp], $0F
+        mov word [rbp+1], $C195
+        add rbp, 3
+        mov byte [rbp], $0F
+        mov word [rbp+1], $D9B6
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $48
+        mov word [rbp+1], $DBF7
+        add rbp, 3
+        jmp _s01
+
+;; 0<. ( n -- flag ): boolean sign test
+_zlt_inline:
+        mov byte [rbp], $48
+        mov word [rbp+1], $FBC1
+        add rbp, 3
+        call _s01
+        mov byte [rbp], $3F
+        inc rbp
+        ret
+
 ;; Compile-time words (ct=2): executed during compilation
 ;; These use the data stack (rbx/rdx/r15) to track patch addresses.
 ;; rbp = compilation pointer.
 ;; =====================================================================
 
-;; IF: test TOS, drop, compile jz <fwd>. Push patch address.
-;; Calls _rst first to sync SWAPbit — the emitted test/drop code
-;; always operates on rbx (the default TOS register).
+;; IF: use FLAGS set by preceding comparison/test.
+;; If cond_jmp is set: emit conditional jump using stored condition.
+;; If cond_jmp is 0: fallback to test TOS + DROP1 + jz (backward compat).
 _if:
         call _rst
-        ;; Compile: test rbx, rbx (48 85 DB)
+        movzx eax, byte [cond_jmp]
+        mov byte [cond_jmp], 0
+        test al, al
+        jz .fallback
+        ;; FLAGS-based: invert condition, emit long conditional jump
+        xor al, 1
+        mov byte [rbp], $0F
+        add al, $10
+        mov byte [rbp+1], al
+        add rbp, 2
+        jmp .push_patch
+.fallback:
+        ;; Boolean fallback: test rbx, rbx + DROP1 + jz
         mov byte [rbp], $48
         mov word [rbp+1], $DB85
         add rbp, 3
-        ;; Compile: DROP1 (flag-preserving: use lea instead of add)
-        ;;   mov rbx, rdx      → 48 89 D3
         mov byte [rbp], $48
         mov word [rbp+1], $D389
         add rbp, 3
-        ;;   mov rdx, [r15]    → 49 8B 17
         mov byte [rbp], $49
         mov word [rbp+1], $178B
         add rbp, 3
-        ;;   lea r15, [r15+8]  → 4D 8D 7F 08 (preserves flags!)
         mov dword [rbp], $087F8D4D
         add rbp, 4
-        ;; Compile: jz rel32   → 0F 84 xx xx xx xx
         mov byte [rbp], $0F
         mov byte [rbp+1], $84
         add rbp, 2
-        ;; Push address of the rel32 placeholder onto data stack
+.push_patch:
         sub r15, 8
         mov [r15], rdx
         mov rdx, rbx
         mov rbx, rbp
-        add rbp, 4              ; skip past the 4-byte placeholder
+        add rbp, 4
         ret
 
 ;; THEN: resolve forward jump. TOS = patch address.
@@ -846,15 +914,25 @@ _again:
         add r15, 8
         ret
 
-;; UNTIL: test TOS, drop, compile jz <back> (loop while false)
-;; Calls _rst first to sync SWAPbit, same as IF.
+;; UNTIL: use FLAGS to loop. Same dual-path as IF but backward jump.
 _until:
         call _rst
-        ;; Compile: test rbx, rbx (48 85 DB)
+        movzx eax, byte [cond_jmp]
+        mov byte [cond_jmp], 0
+        test al, al
+        jz .fallback
+        ;; FLAGS-based: invert condition, emit long conditional backward jump
+        xor al, 1
+        mov byte [rbp], $0F
+        add al, $10
+        mov byte [rbp+1], al
+        add rbp, 2
+        jmp .calc_offset
+.fallback:
+        ;; Boolean fallback: test + DROP1 + jz
         mov byte [rbp], $48
         mov word [rbp+1], $DB85
         add rbp, 3
-        ;; Compile: DROP1 (flag-preserving)
         mov byte [rbp], $48
         mov word [rbp+1], $D389
         add rbp, 3
@@ -863,10 +941,10 @@ _until:
         add rbp, 3
         mov dword [rbp], $087F8D4D
         add rbp, 4
-        ;; Compile: jz rel32 → 0F 84 xx xx xx xx
         mov byte [rbp], $0F
         mov byte [rbp+1], $84
         add rbp, 2
+.calc_offset:
         ;; Calculate backward offset: target - (here + 4)
         mov rax, rbx
         lea rcx, [rbp + 4]
@@ -1138,9 +1216,9 @@ _call_compile:
         ret
 
 _lit_compile:
-        ;; DUP1 inline: sub r15,8; mov [r15],rdx; mov rdx,rbx
+        ;; DUP1 inline: lea r15,[r15-8]; mov [r15],rdx; mov rdx,rbx
         call _rst               ; sync before literal
-        mov dword [rbp], $08EF8349
+        mov dword [rbp], $F87F8D4D  ; lea r15, [r15-8] (flags-preserving)
         add rbp, 4
         mov byte [rbp], $49
         mov word [rbp+1], $1789
@@ -1536,17 +1614,34 @@ WORD64 "or", _or_inline, 2, 2
 WORD64 "xor", _xor_inline, 2, 3
 WORD64 "@", _fetch_inline, 2, 1
 WORD64 "c@", _cfetch_inline, 2, 2
-WORD64 "0<", _zlt_inline, 2, 2
 WORD64 "rot", _rot_inline, 2, 3
 WORD64 "tuck", _tuck_inline, 2, 4
 
+;; FLAGS-based comparison words (ct=2)
+WORD64 "0-", _0minus_inline, 2, 2
+WORD64 "0>=", _zge_flags, 2, 3
+WORD64 "0<=", _zle_flags, 2, 3
+WORD64 "0>", _zgt_flags, 2, 2
+WORD64 "0<", _zlt_flags, 2, 2
+WORD64 "0<>", _zneq_flags, 2, 3
+WORD64 "0=", _zeq_flags, 2, 2
+WORD64 ">=", _ge_flags, 2, 2
+WORD64 "<=", _le_flags, 2, 2
+WORD64 "<>", _neq_flags, 2, 2
+WORD64 ">", _gt_flags, 2, 1
+WORD64 "<", _lt_flags, 2, 1
+WORD64 "=", _eq_flags, 2, 1
+
+;; DOTTED comparisons (ct=2): produce boolean values on stack
+WORD64 "0<>.", _zneq_inline, 2, 4
+WORD64 "0=.", _zeq_inline, 2, 3
+WORD64 "0<.", _zlt_inline, 2, 3
+WORD64 ">.", _gt_inline, 2, 2
+WORD64 "<.", _lt_inline, 2, 2
+WORD64 "=.", _eq_inline, 2, 2
+
 ;; Runtime words (ct=0) — still called via compiled CALL instruction
 WORD64 "cr", _cr, 0, 2
-WORD64 "0<>", _zneq_inline, 2, 3
-WORD64 "0=", _zeq_inline, 2, 2
-WORD64 ">", _gt_inline, 2, 1
-WORD64 "<", _lt_inline, 2, 1
-WORD64 "=", _eq_inline, 2, 1
 WORD64 "2", _two, 0, 1
 WORD64 "1", _one, 0, 1
 WORD64 ".", _dot, 0, 1

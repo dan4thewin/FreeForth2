@@ -5,27 +5,19 @@
 : 2dup over over ;
 : 2drop drop drop ;
 : 2swap rot >r rot r> ;
-: ?dup dup 0<> IF dup THEN ;
+: ?dup 0- 0<> IF dup THEN ;
 
 ( Arithmetic )
-: abs dup 0< IF negate THEN ;
-: max 2dup < IF swap THEN drop ;
-: min 2dup > IF swap THEN drop ;
-: within over - >r - r> < ;
+: abs 0- 0< IF negate THEN ;
+: max > IF swap THEN nip ;
+: min < IF swap THEN nip ;
 
-( Comparison )
-: >= < not ;
-: <= > not ;
-: <> = not ;
-
-( Memory )
+( Output )
 : ? @ . ;
 : on -1 swap ! ;
 : off 0 swap ! ;
-
-( Output )
 : space $20 emit ;
-: spaces BEGIN dup 0 > WHILE space 1 - REPEAT drop ;
+: spaces BEGIN 0- 0> WHILE space 1 - REPEAT drop ;
 
 ( Boolean constants )
 -1 constant TRUE
