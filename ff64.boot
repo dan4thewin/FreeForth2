@@ -104,6 +104,14 @@
 : here` over` $48, ,1 $EB89, s01 ;
 : allot` $48, ,1 $DD01, s08 drop` ;
 
+\ Compilation emit: store value at [rbp] and advance rbp
+\ c,` ( n -- ): store byte, advance 1
+: c,` $5D88, s08 $00, ,1 $C5FF48, ,3 drop` ;
+\ w,` ( n -- ): store 16-bit word, advance 2
+: w,` $66, ,1 $5D89, s08 $00, ,1 $02C58348, ,4 drop` ;
+\ ,` ( n -- ): store 64-bit cell, advance 8
+: ,` $48, ,1 $5D89, s08 $00, ,1 $086D8D48, ,4 drop` ;
+
 \ Composed operations
 : 2dup` over` over` ;
 : 2drop` drop` drop` ;

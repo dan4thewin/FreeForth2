@@ -1628,3 +1628,66 @@ Literal sizes: byte (42, 0, 127, -128, -1), 32-bit (128, 1000000),
 
 **Files:** `exp/026-lit64/{macros.ff,Makefile}`, `ff64.asm` (added
 `_lit` + WORD64 entry), `ff64.boot` (added `off``/`on``)
+
+---
+
+## Experiment 027: Compilation emit macros (c,`, w,`, ,`)
+
+**Date:** 2026-02-23
+
+### Goal
+
+Implement the compilation emit macros — words that store a value from
+the data stack into the dictionary at the compilation pointer [rbp]
+and advance rbp. These are essential for building data structures,
+string compilation, and meta-programming.
+
+### Implementation
+
+Each macro emits x86-64 machine code that stores a register value at
+[rbp], then advances rbp by the appropriate amount:
+
+| Macro | Store instruction      | Advance instruction   | Total |
+|-------|------------------------|-----------------------|-------|
+| `c,`` | `88 5D 00` (byte)      | `48 FF C5` (inc rbp)  | 6+drop |
+| `w,`` | `66 89 5D 00` (word)   | `48 83 C5 02` (add 2) | 8+drop |
+| `,``  | `48 89 5D 00` (cell)   | `48 8D 6D 08` (lea 8) | 8+drop |
+
+The key insight: litcomma writes the MACHINE CODE BYTES of these
+instructions at the compilation pointer during macro execution. The
+litcomma value IS the opcode encoding:
+
+```forth
+: c,` $5D88, s08 $00, ,1 $C5FF48, ,3 drop` ;
+```
+
+At runtime of `c,``, the litcomma instruction writes `88 5D` (the
+`mov [rbp], bl` opcode) at the caller's [rbp]. Then `s08` applies
+SWAPbit (changing to `mov [rbp], dl` if swapped). Then `$00,` writes
+the disp8, and `$C5FF48,` writes `inc rbp`.
+
+### x86-64 vs i386 differences
+
+On i386, `inc ebp` is 1 byte ($45). The entire `c,`` instruction
+sequence was 4 bytes (88 5D 00 45), fitting in a single dword
+litcomma: `$45005D88,`.
+
+On x86-64, `inc rbp` is 3 bytes ($48 FF C5). The sequence is now 6
+bytes, requiring multiple litcomma calls. Similarly, `,`` grows from
+7 to 8 bytes because the cell advance changes from `lea ebp,[ebp+4]`
+(3 bytes) to `lea rbp,[rbp+8]` (4 bytes with REX.W).
+
+### Test pitfall: here + c, offset
+
+Initially, tests used `here 65 c, 1 - c@ . cr ;` expecting 65. But
+`here` saves rbp BEFORE `c,` writes, so the saved address already
+points to the written byte — no offset needed. The correct test:
+`here 65 c, c@ . cr ;` ✓
+
+### Tests (8 total, all PASS)
+
+c,: advance (1 byte), value (65), two sequential bytes (72 73)
+w,: advance (2 bytes), value (4660)
+,: advance (8 bytes), value (42), big value (1000000)
+
+**Files:** `exp/027-compilemacros64/{macros.ff,Makefile}`, `ff64.boot`

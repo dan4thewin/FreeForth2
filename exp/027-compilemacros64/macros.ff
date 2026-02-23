@@ -1,0 +1,17 @@
+( Experiment 027: Compilation emit macros c,`, w,`, ,` )
+( These compile values into the dictionary at runtime )
+
+\ c,` ( n -- ): store byte at [rbp], advance rbp by 1
+\ mov byte [rbp+0], bl = 88 5D 00 (3 bytes, no REX for byte ops)
+\ inc rbp = 48 FF C5 (3 bytes)
+: c,` $5D88, s08 $00, ,1 $C5FF48, ,3 drop` ;
+
+\ w,` ( n -- ): store 16-bit word at [rbp], advance rbp by 2
+\ mov word [rbp+0], bx = 66 89 5D 00 (4 bytes, 66 prefix)
+\ add rbp, 2 = 48 83 C5 02 (4 bytes)
+: w,` $66, ,1 $5D89, s08 $00, ,1 $02C58348, ,4 drop` ;
+
+\ ,` ( n -- ): store 64-bit cell at [rbp], advance rbp by 8
+\ mov [rbp+0], rbx = 48 89 5D 00 (4 bytes, REX.W)
+\ lea rbp, [rbp+8] = 48 8D 6D 08 (4 bytes, preserves flags)
+: ,` $48, ,1 $5D89, s08 $00, ,1 $086D8D48, ,4 drop` ;
