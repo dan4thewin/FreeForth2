@@ -227,6 +227,10 @@
 : ELSE` SKIP` swap THEN` ;
 : CASE` =` drop` IF` drop` ;
 
+\ Tail-call optimization: redefine ;;` now that IF/ELSE/THEN are available
+: ;;` >S0 callmark @ 4+ 1+ here - 0= drop IF $E9 callmark @ c! ELSE $C3, ,1 THEN ;
+: ;THEN` ;;` THEN` ;
+
 ( Inline macros — miscellaneous )
 \ reverse` pops return address and calls it (turns call into jmp)
 : reverse` $D1FF59, ,3 ;

@@ -1766,3 +1766,33 @@ writing experiment Makefiles.
 **Running total:** ~205 words/macros ported. 213 tests across 41
 experiments (including the test helper retroactively covering earlier
 experiments), all passing.
+
+---
+
+## Part 23: Tail-Call Optimization (Experiment 042)
+
+With the vector infrastructure complete, we turned to a classic compiler
+optimization that FreeForth i386 has always had: tail-call optimization.
+When the last thing a definition does is call another word, the `call; ret`
+sequence can be replaced with a single `jmp`, saving a stack frame.
+
+The implementation was straightforward: in `_semi`, check if `callmark + 5
+== here` (the last compiled instruction was a call right at the end of the
+definition). If so, change the `$E8` opcode to `$E9` (jmp) and skip
+compiling `$C3` (ret).
+
+But this optimization exposed a subtle interaction with anonymous
+definitions. In FreeForth, code typed at the interactive prompt is compiled
+into an anonymous definition that `_semi` executes with `call rax`. If that
+anonymous definition ends with `jmp` instead of `ret`, control never
+returns to `_semi`. This caused the `reverse` word — which pops a return
+address from the stack and calls it — to crash spectacularly.
+
+The fix was elegant: only apply tail-call optimization when `[anon] == 0`,
+i.e., inside a named definition. Anonymous definitions always get `ret`.
+This matches the i386 behavior (which has additional guards via a `tailrec`
+variable) and preserves correctness for words like `reverse` that depend on
+the call/return stack discipline.
+
+**Running total:** ~205 words/macros ported. 220 tests across 42
+experiments, all passing.

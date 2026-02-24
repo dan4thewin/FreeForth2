@@ -1224,8 +1224,21 @@ _colon:
 
 _semi:
         call _rst               ; sync registers before ret
+        ;; Tail-call optimization: if last compiled was a call, change to jmp
+        ;; Only for named defs (anon=0); anonymous defs need ret to return
+        cmp qword [anon], 0
+        jne .no_tailcall
+        mov rax, [callmark]
+        add rax, 5
+        cmp rax, rbp
+        jne .no_tailcall
+        mov byte [rbp-5], $E9   ; change call ($E8) to jmp ($E9)
+        jmp .after_ret
+.no_tailcall:
         mov byte [rbp], $C3
         inc rbp
+.after_ret:
+        mov qword [callmark], 0 ; reset callmark
         mov rax, [anon]
         test rax, rax
         jnz .anonymous

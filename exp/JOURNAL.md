@@ -2872,3 +2872,66 @@ reset/execute (4), callmark (1).
 `ff64.boot` (d,`/:^`/-c/'`/@^/!^/n^/x^),
 `exp/test.sh` (test helper),
 `exp/041-vectors64/Makefile` (15 tests)
+
+---
+
+## Experiment 042: Tail-Call Optimization
+
+**Date:** 2025-07-15
+**Goal:** Implement tail-call optimization in `_semi` — change the last
+`call` in a named definition to `jmp`, eliminating the `ret`.
+
+### Background
+
+Tail-call optimization is a classic compiler technique: when the last thing
+a function does is call another function, replace `call; ret` with `jmp`.
+This saves stack space and one instruction. FreeForth i386 implements this
+in `_semisemi` by checking if `callmark + 5 == ebp` (the last compiled
+instruction was a call) and changing the `$E8` opcode to `$E9` (jmp).
+
+### Implementation
+
+**Assembly (`_semi` in ff64.asm):**
+- Check if `callmark + 5 == rbp` (last compiled was a call at the very end)
+- If yes: change `$E8` (call) to `$E9` (jmp) — don't compile `$C3` (ret)
+- If no: compile `$C3` (ret) as before
+- Reset `callmark` to 0 after either path
+
+**Critical fix — anonymous definition exclusion:**
+Anonymous definitions (typed at the interactive prompt, `anon != 0`) must
+NOT be tail-call optimized. The `_semi` code executes anonymous defs with
+`call rax` and expects them to `ret`. If the anonymous def ends with `jmp`
+instead of `ret`, control never returns to `_semi`, corrupting the state.
+
+This was discovered when the `reverse` word (`pop rcx; call rcx`) crashed.
+`reverse` pops a return address and calls it — it requires a return address
+on the stack from a `call` instruction. In the interactive prompt:
+```
+: hi 72 emit ; : t reverse hi cr ; t ;
+```
+The anonymous def `t ;` was being optimized to `jmp t` (no `call`, no
+return address pushed), so `reverse` popped garbage and jumped to invalid
+memory.
+
+The fix: only optimize when `[anon] == 0` (inside a named definition).
+The i386 version has a `tailrec` variable and additional checks, but the
+key insight is the same — anonymous defs need `ret`.
+
+**Forth-level `;;`` redefinition (ff64.boot):**
+After flow control words are defined, `;;`` is redefined to check callmark
+at the Forth level too, providing the same optimization for `;;`` used
+explicitly within definitions.
+
+### Words added/modified
+
+- `_semi` — tail-call optimization for named definitions only
+
+### Tests (7 total, all PASS)
+
+Named def produces jmp opcode (2), anonymous def still works (1),
+reverse works (1), chained tail-calls (1), empty def has ret (1),
+multi-call preserves last-only opt (1).
+
+**Files:** `ff64.asm` (_semi tail-call),
+`ff64.boot` (;;` redefinition),
+`exp/042-tailcall64/Makefile` (7 tests)

@@ -20,7 +20,8 @@ EXPERIMENTS = 001-hello64 002-stack64 003-codegen64 004-subrthread64 \
               038-utilwords64 \
               039-debugout64 \
               040-charliteral64 \
-              041-vectors64
+              041-vectors64 \
+              042-tailcall64
 
 test:
 	@for d in $(EXPERIMENTS); do \
