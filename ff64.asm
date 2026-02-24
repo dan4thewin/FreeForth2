@@ -467,6 +467,28 @@ _anon_colon:                    ; anon:` ( -- ) start new anonymous definition
         mov byte [SC], 0
         ret
 
+;; Compile-time stack push/pop — separate from data stack
+;; Used by START/END/BREAK for flow control address management
+_cs_push:                       ; >cs ( x -- ) push TOS to compile-time stack
+        mov rax, [csp]
+        sub rax, 8
+        mov [rax], rbx
+        mov [csp], rax
+        mov rbx, rdx            ; DROP1
+        mov rdx, [r15]
+        add r15, 8
+        ret
+
+_cs_pop:                        ; cs> ( -- x ) pop from compile-time stack to TOS
+        sub r15, 8              ; DUP1
+        mov [r15], rdx
+        mov rdx, rbx
+        mov rax, [csp]
+        mov rbx, [rax]
+        add rax, 8
+        mov [csp], rax
+        ret
+
 _dcomma: mov [rbp], ebx         ; d, ( x -- ) compile 32-bit dword
         add rbp, 4
         mov rbx, rdx
@@ -2283,6 +2305,8 @@ WORD64 ",2", _comma2, 0, 2
 WORD64 ",1", _comma1, 0, 2
 ; (IF/THEN/ELSE/BEGIN/AGAIN/UNTIL/WHILE/REPEAT now in ff64.boot)
 WORD64 "anon:`", _anon_colon, 0, 6
+WORD64 ">cs", _cs_push, 0, 3
+WORD64 "cs>", _cs_pop, 0, 3
 WORD64 ";`", _semi, 0, 2
 WORD64 ":`", _colon, 0, 2
 WORD64 "\", _backslash, 2, 1
@@ -2376,6 +2400,12 @@ _start:
         jmp .argfile_done
 
 .repl:
+        ;; Reset anon after boot file processing.
+        ;; Boot file may leave anon=0 from unterminated definitions.
+        mov [anon], rbp
+        mov qword [callmark], 0
+        mov byte [SC], 0
+.repl_loop:
         mov rax, 1
         mov rdi, 1
         lea rsi, [prompt]
@@ -2393,7 +2423,7 @@ _start:
         mov rdx, 3
         syscall
 
-        jmp .repl
+        jmp .repl_loop
 
 .exit:
         mov rax, 60
@@ -2425,6 +2455,14 @@ err_nocond_len = $ - err_nocond_msg
 minus_char    db '-'
 nl_char       db 10
 numbuf        rb 21
+
+        align 8
+;; Compile-time stack — separate from data stack for flow control addresses.
+;; Used by START/END/BREAK to save/restore mrk and break addresses.
+;; 16 entries deep (128 bytes) — enough for any reasonable nesting.
+cstack     rq 16
+cstack_top:
+csp        dq cstack_top           ; compile-time stack pointer (grows down)
 
         align 8
 headbuf    rb 65536

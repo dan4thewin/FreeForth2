@@ -2328,3 +2328,76 @@ explicit helper words: `: base@ base @ ;` `: base! base ! ;`
 
 **Running total:** ~235 words/macros ported. 258 tests across 48
 experiments, all passing.
+
+---
+
+## Part 24: Compile-time Stack and REPL Infrastructure
+
+### The Data Stack Pollution Problem
+
+FreeForth's `_exec` REPL uses `START ... ENTER` without a matching `END`.
+This is intentional — the loop runs forever, with errors caught by `catch`.
+But ff64's START was saving state on the *data stack*, and without END to
+clean up, those values leaked permanently.
+
+The i386 solution used a linked list threaded through jump-offset fields
+in the generated code — elegant but dependent on 32-bit addresses fitting
+in 32-bit offset fields. On x86-64, this trick fails because addresses
+are 64 bits but `jmp rel32` offsets remain 32 bits.
+
+### The Compile-time Stack (cstack)
+
+The solution is a separate fixed-size stack for compile-time bookkeeping:
+
+```nasm
+cstack rq 16        ; 16 entries, 128 bytes
+cstack_top:
+csp    dq cstack_top ; grows downward
+```
+
+Two primitives `>cs` and `cs>` move values between the data stack and
+the cstack. These are used by START, END, and BREAK:
+
+```forth
+: START` mrk 2@ >cs >cs 0 >cs $E9 c, 0 d, here mrk! ;
+: BREAK` >S0 $E9 c, 0 d, here 4- >cs _then ;
+: _resolve_breaks cs> 0; _then _resolve_breaks ;
+: END`   >S0 $E9 c, mrk@ here 4+ - d, _resolve_breaks cs> cs> mrk 2! ;
+```
+
+START saves the old mrk (2 cells) and a 0 sentinel to cstack. BREAK
+pushes each forward-jump address. END resolves all breaks (recursive
+`_resolve_breaks` pops until hitting 0), then restores mrk.
+
+BEGIN/WHILE/REPEAT/UNTIL remain data-stack based — they're self-contained
+(BEGIN pushes, UNTIL/REPEAT consume) and don't leak.
+
+### LEA for Flags Preservation
+
+A subtle but critical design choice: ff64's data stack adjustments use
+`lea r15,[r15±8]` instead of `add/sub r15,8`. The `lea` instruction
+does not modify CPU flags, making it safe to interleave stack operations
+with FreeForth's FLAGS-based conditionals:
+
+```forth
+0- 0<> drop WHILE   \ drop between condition and WHILE is safe
+```
+
+The `drop` compiles `mov rdx,[r15]; lea r15,[r15+8]` — neither instruction
+modifies the flags set by `0-`'s `or rbx,rbx`.
+
+### REPL Architecture
+
+The Forth-based REPL matches i386's design:
+
+- **`_eval`**: pushes `eval.`'s address as a literal (via tick)
+- **`_exec`**: `catch 0;` error handler, then `START _eval ENTER` loop
+- **`_top`**: `ui ... accept 0- 0= TILL` — read-eval-print loop
+- **`ui`**: a vector (`:^`) defaulting to `prompt`, enabling customization
+
+The `_exec` pattern uses START without END — exactly why the cstack was
+needed. The TILL at the end of `_top` jumps backward to START's body
+using `mrk@`.
+
+**Running total:** ~240 words/macros ported. 304 tests across 50
+experiments, all passing.

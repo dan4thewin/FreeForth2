@@ -246,44 +246,36 @@
 \
 \ mrk is a 2-cell compiler variable:
 \   cell 0: loop body address (backward jump target for END)
-\   cell 1: unused (reserved for compatibility with 2@/2!)
-\ Nested START..END loops save/restore mrk via compilation data stack.
+\   cell 1: SC state at loop start
+\ START/END/BREAK use a separate compile-time stack (cstack) for
+\ saved mrk values and break addresses, keeping the data stack clean.
+\ This is critical for the _exec pattern where START _eval ENTER
+\ has no matching END — an unterminated START must not pollute
+\ the data stack.
 \
-\ Break addresses are kept on the compilation data stack, not in a
-\ linked list. START pushes a 0 sentinel; each BREAK pushes its
-\ forward-jmp's rel32 address; END pops and resolves until it hits 0.
+\ >cs ( x -- ) pushes to compile-time stack
+\ cs> ( -- x ) pops from compile-time stack
 \
-\ START ( -- ) opens a structured loop. Pushes old mrk (2 cells) then
-\   a 0 sentinel onto the compilation stack. Compiles a forward E9 jmp
-\   (initially targeting the next instruction, patched by ENTER if used).
-\   Stores loop body address in mrk[0].
+\ START ( -- ) opens a structured loop. Saves old mrk (2 cells) and
+\   a 0 break-sentinel onto the compile-time stack. Compiles a forward
+\   E9 jmp (patched by ENTER if used). Stores loop body addr in mrk[0].
 \
 \ ENTER ( -- ) resolves START's forward jmp to target here.
-\   Code between START and ENTER is the loop body.
-\   First entry: body skipped (E9 jmps to ENTER).
-\   Loop-back: body runs, then falls through to ENTER.
 \
 \ BREAK ( -- ) compiles a forward E9 out of the loop. Pushes the
-\   address of the E9's rel32 field. Then resolves the preceding IF
-\   via _then (pattern: cond IF BREAK).
+\   rel32 address onto the compile-time stack. Resolves preceding IF.
 \
-\ END ( -- ) closes the loop: compiles backward E9 to mrk[0] (body
-\   start). Then pops and resolves all BREAK addresses from the
-\   compilation stack until it hits the 0 sentinel. Restores mrk.
-\
-\ Patterns:
-\   START <body> cond IF BREAK <more> END
-\     simple loop; BREAK exits
-\   START <body> ENTER cond IF BREAK <more> END
-\     first entry skips body (while-loop)
-\   START cond IF BREAK <body> END
-\     while(cond) { body }
+\ END ( -- ) closes the loop: compiles backward E9 to mrk[0].
+\   Pops and resolves break addresses from compile-time stack
+\   until it hits the 0 sentinel. Restores mrk.
 variable mrk 0 mrk 8+ !
 : align` $90909090, here negate 3& allot ;
-: START` mrk 2@ >S0 0 $E9 c, 0 d, here mrk! ;
+: START` mrk 2@ >cs >cs 0 >cs $E9 c, 0 d, here mrk! ;
 : ENTER` >S0 mrk@ 4- _then ;
-: BREAK` >S0 $E9 c, 0 d, here 4- swap _then ;
-: END` >S0 $E9 c, mrk@ here 4+ - d, BEGIN 0- 0<> WHILE _then REPEAT drop mrk 2! ;
+: TILL` >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
+: BREAK` >S0 $E9 c, 0 d, here 4- >cs _then ;
+: _resolve_breaks cs> 0; _then _resolve_breaks ;
+: END` >S0 $E9 c, mrk@ here 4+ - d, _resolve_breaks cs> cs> mrk 2! ;
 
 ( Utilities )
 : bl $20 ;
@@ -359,7 +351,7 @@ variable base
 : words H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE h.name h.next REPEAT drop cr ;
 
 ( Debug output — .s` shows stack, .h` shows system state )
-:. prompt space depth .\ ';' anon@ 0- 0= drop IF 1- THEN emit space ;
+:^ ui : prompt space depth .\ ';' anon@ 0- 0= drop IF 1- THEN emit space ;
 :. _s 1- 0; swap >r _s depth 0- 0= drop IF space THEN r> . ;
 : .s` prompt 9 _s cr ;
 : .h` ." free:" here H@ - $400/ .\ ." k SC=" SC c@ . .s` ;
@@ -430,3 +422,14 @@ variable hide hide on
     8& 0<> drop IF 0 over h.sz+ c! THEN
     h.next
   REPEAT drop ;
+
+( Forth-based REPL — _top/_exec/_back )
+( _back: on error, show the input up to the error point )
+:. _back tib >in@ over - type ;
+( _exec: catch wraps eval. from _eval's tick. error recovery. )
+( On error: show location, print message, restore dict/code state. )
+:. _exec catch 0; _back ." <-error: " c@+ type cr 2drop
+  anon@ 0- 0= drop IF H@ dup @ swap h.sz+ c@ h.nm+ 1+ + H! THEN
+  here - allot 0 SC c! anon:` 0<>` START _eval ENTER
+( _top: display prompt, read line, evaluate, repeat until EOF )
+:^ _top pvt ui 0 noauto! tib 1024 under accept 0- 0= TILL

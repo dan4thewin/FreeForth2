@@ -3593,3 +3593,136 @@ All 265 tests pass (258 existing + 7 new).
 
 **Files:** `ff64.boot` (hidepvt`, hide variable, pvtmargin interaction),
 `exp/049-hidepvt64/Makefile` (7 tests), `exp/Makefile` (added 049)
+
+---
+
+## Experiment 050: Compile-time Stack (cstack) and REPL Infrastructure
+
+**Date:** 2025-02-24
+**Branch:** `exp64-1`
+**Tests before:** 265 (49 experiments)
+**Tests after:** 304 (50 experiments)
+
+### Goal
+
+Implement a compile-time stack (cstack) to fix a fundamental design issue
+with START/BREAK/END, and lay groundwork for the Forth-based REPL.
+
+### The Problem
+
+The i386 FreeForth REPL uses this pattern:
+
+```
+_exec catch 0; ... START _eval ENTER
+_top  ... UNTIL
+```
+
+`START` and `ENTER` open a loop; `_top`'s `UNTIL` (or `TILL`) closes it
+with a backward conditional jump. There is no `END` — the loop runs
+forever, broken only by errors caught by `catch`.
+
+In the original i386 implementation, START uses `mrk` (a compiler variable)
+and a linked-list chain stored in jump-offset fields to track forward
+references from WHILE and BREAK. START doesn't push anything to the data
+stack.
+
+In ff64, START was pushing saved `mrk` values and a sentinel `0` onto the
+**data stack** for END to consume. Since the `_exec` pattern has no END,
+these 3 values leaked permanently, polluting the runtime data stack.
+DG identified this and proposed: use a fixed-size stack separate from both
+the data stack and the return stack.
+
+### The i386 mrk Design
+
+The i386 `mrk` variable is 8 bytes (2 cells):
+- **Cell 0:** backward jump target (loop entry address) with SC state
+  encoded in the low 2 bits (addresses are aligned)
+- **Cell 1:** head of a linked list of forward jumps compiled by WHILE
+  and BREAK
+
+The `+jmp` helper (used by WHILE and BREAK) links each forward jump into
+this chain by writing the previous head into the jump's offset field, then
+updating `mrk+4` to point to the new jump. END walks this linked list,
+resolving each jump via `_then`.
+
+This is elegant but relies on the fact that i386 addresses and offsets
+are both 32 bits. On x86-64, addresses are 64 bits but `jmp rel32`
+offsets are still 32 bits — the linked list trick would require storing
+64-bit pointers in 32-bit offset fields, causing sign-extension problems.
+
+### The cstack Solution
+
+Instead of a linked list, ff64 uses an explicit compile-time stack:
+
+**Assembly (ff64.asm):**
+- `cstack rq 16` — 16-entry fixed-size array (128 bytes)
+- `csp dq cstack_top` — stack pointer, grows downward
+- `_cs_push` / `_cs_pop` — primitives exposed as `>cs` / `cs>`
+
+**Forth (ff64.boot) — START/END/BREAK rewritten:**
+```forth
+: START` mrk 2@ >cs >cs 0 >cs $E9 c, 0 d, here mrk! ;
+: ENTER` >S0 mrk@ 4- _then ;
+: BREAK` >S0 $E9 c, 0 d, here 4- >cs _then ;
+: _resolve_breaks cs> 0; _then _resolve_breaks ;
+: END`   >S0 $E9 c, mrk@ here 4+ - d, _resolve_breaks cs> cs> mrk 2! ;
+```
+
+START saves old mrk (2 cells) and a 0 sentinel to the cstack, then
+compiles a forward E9 jmp and sets mrk to the loop body address.
+
+BREAK compiles a forward E9 jmp, pushes its rel32 address to cstack,
+and resolves the preceding IF.
+
+END compiles a backward E9 jmp to mrk, then `_resolve_breaks` recursively
+pops cstack entries and resolves each as a forward jump until hitting the
+0 sentinel. Finally, the saved mrk is restored.
+
+`_resolve_breaks` uses recursion instead of BEGIN/WHILE/REPEAT to avoid
+mixing data-stack-based loop control with cstack operations.
+
+**TILL** was added for the `_top` pattern — a backward conditional jump
+using `mrk@` as target, matching i386's TILL:
+```forth
+: TILL` >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
+```
+
+### REPL Infrastructure
+
+Added the Forth-based REPL words, matching i386 architecture:
+
+- `:^ ui : prompt` — ui is a vector defaulting to `prompt`, enabling
+  customizable user interfaces
+- `_back` — recovers dictionary and code state after an error
+- `_exec` — `catch 0;` error handler + `START _eval ENTER` loop
+- `_top` — read-eval loop: `ui ... accept 0- 0= TILL`
+
+The Forth REPL is not yet activated (the assembly `.repl` loop is still
+used), but the infrastructure compiles and the `_exec` pattern works
+without data stack pollution thanks to the cstack.
+
+### Key Discovery: LEA Preserves Flags
+
+During debugging, I was confused about whether `drop` between a condition
+(`0- 0=`) and `IF` would clobber CPU flags. Investigation revealed that
+ff64's data stack operations intentionally use `lea r15,[r15±8]` instead
+of `add/sub r15,8`. The `lea` instruction does NOT modify flags, making
+patterns like `0- 0<> drop WHILE` safe. This is a deliberate design
+choice in ff64.asm's `_emit_drop_nos_s` and `_emit_dup_nos_s`.
+
+### Tests (12 new)
+
+- cstack basics: push/pop round-trip, LIFO order
+- START/END: countdown, countup, double BREAK, START/TILL
+- BEGIN/WHILE/REPEAT and BEGIN/UNTIL (regression)
+- TIMES/LOOP (regression)
+- depth is 0 after boot (verifies no stack pollution)
+- nested START/END
+- ui vector
+
+All 304 tests pass (292 existing + 12 new).
+
+**Files:** `ff64.asm` (cstack data, >cs/cs> primitives, .repl anon reset),
+`ff64.boot` (START/END/BREAK/TILL rewrite, _resolve_breaks, ui vector,
+_back/_exec/_top REPL words), `exp/050-cstack64/Makefile` (12 tests),
+`exp/Makefile` (added 050)
