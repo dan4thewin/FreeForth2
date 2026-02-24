@@ -230,7 +230,7 @@
 : CASE` =` drop` IF` drop` ;
 
 \ Tail-call optimization: redefine ;;` now that IF/ELSE/THEN are available
-: ;;` >S0 callmark @ 4+ 1+ here - 0= drop IF $E9 callmark @ c! ELSE $C3, ,1 THEN ;
+: ;;` >S0 callmark @ here - 0= drop IF $E9 callmark @ 5 - c! ELSE $C3, ,1 THEN ;
 : ;THEN` ;;` THEN` ;
 
 ( Inline macros — miscellaneous )
@@ -316,11 +316,13 @@ variable mrk 0 mrk 8 + !
 ( target32 at xt+1 is sign-extended to 64-bit by push )
 : :^` :` $68, ,1 here 4+ 1+ d, $C3, ,1 ;
 :. -c here dup 4 - d@ + -5 allot 0 callmark ! ;
+: -call callmark @ here = 2drop IF -c ELSE drop THEN ;
 : @^ ( xt -- target ) 1+ d@ ;
 : !^ ( new-target xt -- ) 1+ d! ;
 : n^ ( xt -- ) dup 6 + swap 1+ d! ;
 : x^ ( xt -- ) 6 + >r ;
-: '` -c lit` ;
+: '` -call lit` ;
+: ?` -call 0; call, ;
 : _alias H@ ! $20 H@ ct|! anon:` ;
 : alias` :` _alias ;
 : constant` :` 1 H@ ct|! H@ ! anon:` ;

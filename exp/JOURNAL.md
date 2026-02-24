@@ -3174,3 +3174,86 @@ definition, parse the next word, and create a marker for it.
 `ff64.boot` (_mark loop rewrite),
 `exp/045-markvar64/Makefile` (8 tests),
 `exp/Makefile` (added 045 to experiment list)
+
+---
+
+## Experiment 046: -call, tick, and vector manipulation (2026-02-24)
+
+**Goal:** Implement the `-call` infrastructure for uncompiling the last
+compiled call, enabling postfix tick (`'`) and conditional call (`?`).
+Fix the callmark convention to match i386's post-call storage.
+
+### callmark convention fix
+
+**Discovery:** The i386 `_call_compile` stores `callmark = ebp` AFTER
+advancing past the call instruction (via POSTPN which does `add ebp,5`
+first). Our x86-64 version stored callmark BEFORE `add rbp,5`, making
+callmark point to the `$E8` byte instead of the position after the call.
+
+This meant `callmark @ here =` would never match because callmark was
+always 5 less than here. The assembly `_semi`'s tail-call check had
+compensated with `callmark + 5 == rbp`, but the Forth-level `-call`
+used the simpler `callmark == here` check (matching i386 convention).
+
+**Fix:** Moved `mov [callmark], rbp` after `add rbp, 5` in
+`_call_compile`. Updated `_semi`'s tail-call check to use
+`callmark == rbp` directly. Updated `;;`` to match.
+
+### -call implementation
+
+```forth
+:. -c here dup 4 - d@ + -5 allot 0 callmark ! ;
+: -call callmark @ here = 2drop IF -c ELSE drop THEN ;
+```
+
+`-c` unconditionally uncompiles the last 5 bytes: reads the rel32
+displacement at here-4, adds to here to get the absolute target,
+allots -5 to remove the call, clears callmark.
+
+`-call` checks if callmark equals here (meaning a call was just
+compiled), and only then calls `-c`.
+
+**Note:** Including `cr` or `." ..."` with `cr` in the ELSE branch of
+`-call` caused incorrect compilation of subsequent words. The root cause
+is likely related to cr being ct=2 (execute-at-compile-time) and some
+interaction with the compiler's state. For now, the ELSE branch simply
+drops the stale value silently. A future investigation could add proper
+error reporting here.
+
+### Postfix tick and conditional call
+
+```forth
+: '` -call lit` ;
+: ?` -call 0; call, ;
+```
+
+`'` (tick) in FreeForth is POSTFIX: `word '` uncompiles `call word`
+and compiles word's xt as a literal. This contrasts with standard Forth
+where tick is prefix.
+
+`?` (conditional call) uncompiles the preceding call and re-compiles it
+only if the target is non-zero. Used for conditional compilation where
+a name might resolve to zero.
+
+### Vector operations
+
+The existing `:^`, `@^`, `!^`, `n^`, `x^` runtime words were validated
+with the new `-call` and `'` infrastructure. Compile-time versions
+(`^^``, `!^``, etc.) are deferred — they require emitting inline machine
+code that directly modifies the vector's push-immediate operand, which
+needs careful x86-64 encoding work.
+
+**Tests (8):**
+- tick basic (compile-time uncompile + execute)
+- tick literal value (uncompile + compile as literal)
+- vector redirect with !^
+- vector @^ reads target
+- vector n^ disables
+- vector x^ calls original body
+- callmark cleared by -c
+- ? conditional keeps call
+
+**Files:** `ff64.asm` (callmark convention fix in _call_compile and _semi),
+`ff64.boot` (-call, redefined '` and ?`, `;;`` update),
+`exp/046-callvec64/Makefile` (8 tests),
+`exp/Makefile` (added 046 to experiment list)

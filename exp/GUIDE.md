@@ -2032,3 +2032,84 @@ These simpler dictionary words were also validated:
 
 **Running total:** ~220 words/macros ported. 226 tests across 45
 experiments, all passing.
+
+---
+
+## Part 21: -call, Postfix Tick, and Vector Manipulation
+
+### Postfix Tick — `'` (tick)
+
+Standard Forth uses prefix tick: `' word` pushes word's execution token.
+FreeForth uses POSTFIX tick: `word '` — first the compiler compiles
+`call word`, then `'` uncompiles that call and replaces it with a
+literal push of word's xt.
+
+```forth
+: '` -call lit` ;
+```
+
+At compile time: `-call` checks if a call was just compiled (callmark
+matches here). If so, it uncompiles the call (reads the displacement,
+computes the absolute address, backs up 5 bytes). Then `lit`` compiles
+that address as a literal.
+
+### The -call Infrastructure
+
+`-call` is the gatekeeper for call uncompilation:
+
+```forth
+:. -c here dup 4 - d@ + -5 allot 0 callmark ! ;
+: -call callmark @ here = 2drop IF -c ELSE drop THEN ;
+```
+
+`callmark` is set by `_call_compile` (assembly) whenever a `call` is
+emitted into compiled code. It stores the position AFTER the call
+instruction (matching the i386 convention where `callmark == here`
+means "a call was just compiled").
+
+`-c` does the actual uncompilation:
+1. `here` — current compilation pointer (right after the call)
+2. `dup 4 -` — point to the rel32 displacement field
+3. `d@` — read displacement (32-bit, sign-extended)
+4. `+` — add displacement to here → absolute target address
+5. `-5 allot` — back up 5 bytes (remove the call)
+6. `0 callmark !` — clear callmark
+
+### callmark Convention
+
+A subtle but critical detail: `callmark` must be stored AFTER advancing
+`rbp` past the call instruction. The i386 `POSTPN` macro does `add ebp,5`
+THEN `mov [callmark],ebp`. If callmark is stored before advancing, it
+points to the `$E8` byte (5 less than here), and the `callmark == here`
+check always fails.
+
+This same convention is used by `;;`` for tail-call optimization and
+by `_semi` in the assembly.
+
+### Conditional Call — `?`
+
+```forth
+: ?` -call 0; call, ;
+```
+
+`?` uncompiles the preceding call and re-compiles it only if the target
+is non-zero. Used for conditional compilation patterns where a name
+might resolve to zero (indicating "not available").
+
+### Runtime Vector Operations
+
+With `-call` and `'` working, the full vector lifecycle is:
+
+```forth
+:^ greet ." hello" cr ;     \ define vector with default body
+greet                        \ → "hello"
+: hi ." hi" cr ;
+hi ' greet ' !^              \ redirect greet to hi
+greet                        \ → "hi"
+greet ' x^                   \ call original body → "hello"
+greet ' n^                   \ disable vector (returns immediately)
+greet                        \ → (nothing)
+```
+
+**Running total:** ~225 words/macros ported. 234 tests across 46
+experiments, all passing.

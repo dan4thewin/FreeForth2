@@ -1231,8 +1231,8 @@ _call_compile:
         lea rcx, [rbp+5]
         sub eax, ecx
         mov dword [rbp+1], eax
-        mov [callmark], rbp     ; save call position for -call/;;
         add rbp, 5
+        mov [callmark], rbp     ; save position AFTER call for -call/;;
         ret
 
 _lit_compile:
@@ -1318,7 +1318,6 @@ _semi:
         test rax, rax
         jnz .no_tailcall
         mov rax, [callmark]
-        add rax, 5
         cmp rax, rbp
         jne .no_tailcall
         mov byte [rbp-5], $E9   ; change call ($E8) to jmp ($E9)
