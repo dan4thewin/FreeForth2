@@ -237,6 +237,54 @@
 \ reverse` pops return address and calls it (turns call into jmp)
 : reverse` $D1FF59, ,3 ;
 
+( Forward jump resolution helper )
+\ _then ( addr -- ) patches a forward jmp's rel32 at addr to target here
+: _then here over - 4 - swap d! ;
+
+( Advanced loop infrastructure: START/ENTER/BREAK/END )
+\ Structured loop with optional first-entry skip.
+\
+\ mrk is a 2-cell compiler variable:
+\   cell 0: loop body address (backward jump target for END)
+\   cell 1: unused (reserved for compatibility with 2@/2!)
+\ Nested START..END loops save/restore mrk via compilation data stack.
+\
+\ Break addresses are kept on the compilation data stack, not in a
+\ linked list. START pushes a 0 sentinel; each BREAK pushes its
+\ forward-jmp's rel32 address; END pops and resolves until it hits 0.
+\
+\ START ( -- ) opens a structured loop. Pushes old mrk (2 cells) then
+\   a 0 sentinel onto the compilation stack. Compiles a forward E9 jmp
+\   (initially targeting the next instruction, patched by ENTER if used).
+\   Stores loop body address in mrk[0].
+\
+\ ENTER ( -- ) resolves START's forward jmp to target here.
+\   Code between START and ENTER is the loop body.
+\   First entry: body skipped (E9 jmps to ENTER).
+\   Loop-back: body runs, then falls through to ENTER.
+\
+\ BREAK ( -- ) compiles a forward E9 out of the loop. Pushes the
+\   address of the E9's rel32 field. Then resolves the preceding IF
+\   via _then (pattern: cond IF BREAK).
+\
+\ END ( -- ) closes the loop: compiles backward E9 to mrk[0] (body
+\   start). Then pops and resolves all BREAK addresses from the
+\   compilation stack until it hits the 0 sentinel. Restores mrk.
+\
+\ Patterns:
+\   START <body> cond IF BREAK <more> END
+\     simple loop; BREAK exits
+\   START <body> ENTER cond IF BREAK <more> END
+\     first entry skips body (while-loop)
+\   START cond IF BREAK <body> END
+\     while(cond) { body }
+variable mrk 0 mrk 8 + !
+: align` $90909090, here negate 3 and allot ;
+: START` mrk 2@ >S0 0 $E9 c, 0 d, here mrk ! ;
+: ENTER` >S0 mrk @ 4 - _then ;
+: BREAK` >S0 $E9 c, 0 d, here 4 - swap _then ;
+: END` >S0 $E9 c, mrk @ here 4 + - d, BEGIN 0- 0<> WHILE _then REPEAT drop mrk 2! ;
+
 ( Utilities )
 : bl $20 ;
 : noop ;

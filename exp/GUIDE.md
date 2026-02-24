@@ -1822,3 +1822,110 @@ in the dictionary, breaking tests that assumed otherwise.
 
 **Running total:** ~215 words/macros ported. 236 tests across 43
 experiments, all passing.
+
+---
+
+## Part 25: Structured Loops — START/ENTER/BREAK/END (Exp 044)
+
+FreeForth provides a second loop family alongside BEGIN/WHILE/REPEAT:
+the **START/ENTER/BREAK/END** structured loop. Where BEGIN loops test
+at the top or bottom, START loops provide arbitrary exit points via
+BREAK and optional first-entry skip via ENTER.
+
+### The i386 Design
+
+On i386, all loop constructs share the `mrk` variable (2 cells):
+
+- `mrk[0]`: backward target address (with SC bits packed in low 2 bits)
+- `mrk[4]`: linked list of forward jumps (WHILE/BREAK chain)
+
+START saves old mrk, records the body start. ENTER patches START's
+forward SHORT jump (`$EB`) to skip to the test. BREAK compiles a
+forward SHORT jump and links its offset into mrk[4]. END walks the
+chain resolving all forward jumps, then restores mrk. Critically,
+i386 END does NOT compile the backward jump — that's done by UNTIL
+(= TILL + END) or REPEAT (= backward jmp + END).
+
+### The x86-64 Design
+
+Our port differs in three ways:
+
+**1. NEAR jumps instead of SHORT.** x86-64 code uses 4-byte relative
+offsets (`$E9`) instead of 1-byte (`$EB`). This is necessary because
+x86-64 code is larger (REX prefixes, 64-bit immediates).
+
+**2. Stack-based break tracking instead of linked list.** The i386
+linked list stores 1-byte relative offsets between break addresses in
+the compiled code. On x86-64, storing 32-bit relative offsets between
+64-bit addresses causes sign-extension mismatches — the sentinel value
+never compares to zero. Instead, we push break addresses directly onto
+FreeForth's compilation data stack:
+
+```
+START: push old-mrk, push 0 (sentinel), compile E9 forward, save body addr
+BREAK: compile E9 forward, push rel32-addr, resolve preceding IF
+END:   compile E9 backward, pop-and-resolve until 0 sentinel, restore mrk
+```
+
+**3. END includes the backward jump.** On i386, END only resolves
+forward jumps. On x86-64, END compiles the backward E9 to the body
+start. This means our `START...IF BREAK...END` is equivalent to i386's
+`START...IF BREAK...REPEAT` or `START...ENTER...UNTIL`.
+
+### Code Structure
+
+```forth
+variable mrk 0 mrk 8 + !
+: START` mrk 2@ >S0 0 $E9 c, 0 d, here mrk ! ;
+: ENTER` >S0 mrk @ 4 - _then ;
+: BREAK` >S0 $E9 c, 0 d, here 4 - swap _then ;
+: END`   >S0 $E9 c, mrk @ here 4 + - d,
+         BEGIN 0- 0<> WHILE _then REPEAT drop mrk 2! ;
+```
+
+**START** saves old mrk with `mrk 2@` (pushes 2 cells), then pushes 0
+as a sentinel. Compiles a forward E9 (initially jumping to the next
+instruction — a no-op unless ENTER patches it). Stores `here` (the
+body start) in `mrk[0]`.
+
+**ENTER** patches START's E9 to jump to here. `mrk @ 4 -` gives the
+address of START's rel32 field; `_then` patches it.
+
+**BREAK** compiles a forward E9, pushes the rel32 address (`here 4 -`),
+then swaps it under the IF address and calls `_then` to resolve IF.
+Stack effect: `( if-addr -- break-addr )`.
+
+**END** compiles backward E9 to `mrk[0]`. Then loops: test TOS for
+nonzero (a break address), call `_then` to resolve it, repeat until
+hitting the 0 sentinel. The `drop` removes the sentinel, and `mrk 2!`
+restores the saved mrk.
+
+### GDB Marker Technique
+
+Debugging generated code is challenging because there are no symbols
+for Forth-compiled words. We developed a marker technique using r10
+(an otherwise unused register on x86-64):
+
+```forth
+: M1` >S0 $41 c, $BA c, 1 d, ;   \ mov r10d, 1
+: M2` >S0 $41 c, $BA c, 2 d, ;   \ mov r10d, 2
+: int3` >S0 $CC c, ;              \ software breakpoint
+```
+
+Insert `int3` at the start of a word and markers before each macro:
+
+```forth
+: t int3 5 M1 START 1- dup . space 0- 0= IF M2 BREAK M3 END drop cr ;
+```
+
+Then under GDB: `gdb -batch -ex "run -f ff64.boot < test.ff" -ex "x/50i $rip" ./ff64_dbg`
+
+The disassembly clearly shows `mov $0x1,%r10d` before START's code,
+`mov $0x2,%r10d` before BREAK, `mov $0x3,%r10d` before END — making
+it immediately obvious which macro generated each section.
+
+For i386, the `see` word provides similar capability without markers:
+`see wordname` disassembles any compiled word with symbolic call targets.
+
+**Running total:** ~220 words/macros ported. 245 tests across 44
+experiments, all passing.

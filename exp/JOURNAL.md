@@ -3003,3 +3003,70 @@ Shifts (10), comments (1), parser (2), system (3).
 `exp/043-shifts64/Makefile` (16 tests),
 `exp/034-execalias64/Makefile` (test fix),
 `exp/039-debugout64/Makefile` (test fix)
+
+---
+
+## Experiment 044: START/ENTER/BREAK/END Loop Infrastructure
+
+**Goal:** Implement structured loop words START, ENTER, BREAK, and END
+in ff64.boot, enabling multi-exit loops with optional first-entry skip.
+
+**Background:** The i386 FreeForth uses `mrk` (a 2-cell variable) to track
+loop state: cell 0 holds the backward target, cell 4 holds a linked list
+of forward jump addresses (WHILE/BREAK chain). START opens the loop by
+saving old mrk and recording the body start. ENTER patches START's forward
+jump. BREAK compiles a forward jump and links it into the chain. END walks
+the chain resolving all forward jumps, then restores mrk.
+
+**Design differences from i386:**
+
+The i386 version stores BREAK addresses as a linked list of 1-byte relative
+offsets in the compiled code itself (via mrk[4]). This works because i386
+FreeForth uses SHORT jumps (`$EB`, 1-byte offset) throughout.
+
+Our x86-64 version uses NEAR jumps (`$E9`, 4-byte offset) because x86-64
+code can span larger distances. The initial linked-list approach failed
+for nested loops: the chain stored 32-bit relative offsets between break
+addresses, but when the sentinel value (0 - addr) was truncated to 32 bits
+and sign-extended back to 64 bits, it never compared equal to zero. This
+caused END's chain walk to run off into garbage memory.
+
+**Solution: stack-based break tracking.** Instead of a linked list in the
+compiled code, BREAK addresses are pushed onto FreeForth's compilation data
+stack:
+
+- **START** pushes old mrk (2 cells) and a `0` sentinel, compiles forward E9
+- **BREAK** compiles forward E9, pushes rel32 address, resolves preceding IF
+- **END** compiles backward E9, then pops and resolves until hitting 0 sentinel
+
+This is simpler, naturally handles nesting (each START pushes its own
+sentinel), and avoids the 32-bit/64-bit addressing mismatch entirely.
+
+**Additional discovery:** Our x86-64 version handles nested loops via
+separate word definitions better than i386. The i386 `mrk` variable is
+shared globally, so calling a word that uses START/END from inside another
+START/END loop clobbers the outer loop's mrk. Our version saves/restores
+mrk on the compilation stack, so nesting works correctly even across word
+boundaries.
+
+**GDB marker technique developed:** During debugging, we developed a
+technique for annotating generated code with visible markers. Defining
+macros like `M1`, `M2`, `M3` that emit `mov r10d, <ID>` (which is harmless
+since r10 is unused) allows GDB disassembly to show exactly which macro
+generated each section of code. Combined with `int3` as a Forth macro
+(`$CC c,`), this provides reliable breakpoints in generated code.
+
+**Tests (9):**
+- Simple START/END countdown
+- START/ENTER countdown
+- START/ENTER first-skip countup
+- Two breaks (first hit)
+- Three breaks (third hit)
+- Nested inline START/END
+- Nested via separate words
+- START/END with zero iterations
+- mrk save/restore across sequential loops
+
+**Files:** `ff64.boot` (_then helper, mrk variable, START/ENTER/BREAK/END),
+`exp/044-startloop64/Makefile` (9 tests),
+`exp/Makefile` (added 044 to experiment list)
