@@ -2228,13 +2228,13 @@ WORD64 "c,", _ccomma, 0, 2
 WORD64 ",", _comma, 0, 1
 WORD64 "allot", _allot, 0, 5
 WORD64 "here", _here, 0, 4
-WORD64 "SC", _SC_addr, 0, 2
+WORD64 "SC", SC, 1, 2
 WORD64 "?", _cond_addr, 0, 1
-WORD64 "callmark", _callmark_addr, 0, 8
+WORD64 "callmark", callmark, 1, 8
 WORD64 "call,", _call_comma, 0, 5
 WORD64 "dcall,", _dcall_comma, 0, 6
-WORD64 "anon", _anon_addr, 0, 4
-WORD64 "H", _H_addr, 0, 1
+WORD64 "anon", anon, 1, 4
+WORD64 "H", H, 1, 1
 WORD64 "depth", _depth, 0, 5
 WORD64 "/mod", _divmod, 0, 4
 WORD64 "mod", _mod, 0, 3

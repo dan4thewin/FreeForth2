@@ -3519,3 +3519,31 @@ _find_suffix, _lit8_64, _compiler label restructuring),
 `ff64.boot` (27 suffix adoptions, noauto/_auto/eval./_eval),
 `exp/048-suffix64/Makefile` (15 tests),
 `exp/Makefile` (added 048)
+
+### Addendum: Assembly Variable ct Fix
+
+**Discovery:** The i386 `DATA` macro sets ct=1 for all assembly-defined
+variables (`H`, `anon`, `SC`, `callmark`). Our x86-64 WORD64 entries
+had ct=0, which meant the suffix mechanism couldn't work on them.
+
+**Root cause:** With ct=0, the compiler generates a `call` to the
+word's code entry (e.g., `_H_addr:` which does `lea rbx, [H]`).
+With ct=1, the compiler inlines the xt as a literal. For ct=1 to work
+correctly, the xt must be the **data address** (e.g., `H` the label),
+not the **code entry** (e.g., `_H_addr`).
+
+**Fix:** Changed WORD64 entries from `WORD64 "H", _H_addr, 0, 1`
+to `WORD64 "H", H, 1, 1` (and similarly for `anon`, `SC`, `callmark`).
+This makes the xt the actual data address, and ct=1 tells the compiler
+to inline it — exactly matching i386 behavior.
+
+**Consequence:** Variable suffixes now work: `H@`, `anon@`, `callmark@`,
+`callmark!`, `mrk@`, `mrk!`, `noauto@`, `>in@`, `>in!`, `tp@`, `tp!`,
+`base@`, `base!` are all valid suffix forms. Removed now-unnecessary
+word definitions for `H@`, `anon@`, `base@`, `base!` — callers use
+suffix directly.
+
+**Additional suffix adoptions in ff64.boot:** 20 more locations
+converted, including `h.sz+`, `h.nm+`, `h.ct+`, `callmark@`,
+`callmark!`, `mrk@`, `mrk!`, `anon!`, `noauto@`, `>in@`, `>in!`,
+`tp@`, `tp!`, `base!`, `H!`, `$400/`.
