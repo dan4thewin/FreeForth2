@@ -2618,3 +2618,56 @@ After fixing all tests: 20 pass, 0 fail.
 
 **Files:** `ff64.asm` (-155 lines assembly), `ff64.boot` (+17 lines Forth),
 `exp/036-flowforth64/Makefile` (20 tests)
+
+---
+
+## Experiment 037: Counted Loops — TIMES/LOOP
+
+**Goal:** Add counted loop support via TIMES` and LOOP` macros, enabling
+`N TIMES body LOOP` where the body executes N times with r@ counting
+down from N-1 to 0.
+
+### The Mechanism
+
+TIMES` generates three things:
+1. `>r'` — pushes the count to the return stack (inline)
+2. `dec qword [rsp]` — decrements the counter ($48 $FF $0C $24)
+3. `js near +offset` — exits loop when counter goes negative ($0F $88 rel32)
+
+LOOP` generates the closing:
+1. `$E9 rel32` — unconditional backward jump to the dec instruction
+2. Patches the js forward target to point after the backward jump
+3. `rdrop'` — `add rsp,8` to pop the counter from the return stack
+
+### Why LOOP Instead of REPEAT
+
+The i386 FreeForth uses REPEAT for both WHILE/REPEAT and TIMES/REPEAT,
+with END` detecting the loop type by examining the generated code. Our
+x86-64 port can't easily do compile-time conditional compilation within
+a colon definition (IF/THEN inside a macro generate TARGET code, not
+macro-internal branches). Rather than build the complex END` infrastructure,
+we use a dedicated LOOP` word that includes rdrop.
+
+### SWAPbit Subtlety
+
+Initial implementation had `>S0` before `>r'`, but this was wrong. The
+SWAPbit must be normalized AFTER `>r'` (which toggles it), not before.
+Moving `>S0` to after `>r'` fixed count errors:
+```forth
+: TIMES` >r` >S0 here $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
+```
+
+### FLAGS-Based Comparison Reminder
+
+`<`, `>`, `=` etc. ONLY set CPU flags and cond_jmp — they do NOT modify
+the data stack. After `5 < WHILE`, the literal 5 is still on the stack.
+Correct pattern: `5 < drop WHILE` — the `drop` removes the comparison
+operand.
+
+### Tests (12 total, all PASS)
+
+Count 1/3/5/10, skip on 0, r@ counting, r@ sum, nested TIMES, WHILE
+still works, mixed WHILE/TIMES, TIMES in separate word.
+
+**Files:** `ff64.boot` (+2 lines: TIMES`/LOOP`),
+`exp/037-countedloops64/Makefile` (12 tests)

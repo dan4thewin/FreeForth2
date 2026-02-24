@@ -1554,3 +1554,58 @@ The compiler compiles its own control structures.
 
 **Running total:** ~170 words/macros ported. 152 tests across 36
 experiments, all passing.
+
+---
+
+## Part 18: Counted Loops — TIMES/LOOP (Exp 037)
+
+FreeForth's TIMES provides efficient counted loops by placing the counter
+on the return stack and using `dec [rsp]; js exit` at the loop top — a
+tight two-instruction pattern that modern CPUs handle very efficiently.
+
+### How It Works
+
+```forth
+5 TIMES r@ . LOOP    \ prints: 4 3 2 1 0
+0 3 TIMES 1 + LOOP   \ result: 3
+```
+
+The counter starts at N and is decremented BEFORE the body runs. The body
+sees r@ values from N-1 down to 0. When the counter goes negative
+(JS = Jump if Sign), the loop exits and rdrop pops the counter.
+
+### Generated Code Pattern
+
+```
+  push rbx to rstack        ; >r (TIMES)
+loop_top:
+  dec qword [rsp]            ; decrement counter
+  js exit                    ; exit if negative (N iterations done)
+  ... body ...
+  jmp loop_top               ; backward jump (LOOP)
+exit:
+  add rsp, 8                 ; rdrop (LOOP)
+```
+
+### TIMES/LOOP vs WHILE/REPEAT
+
+The i386 FreeForth uses REPEAT for both patterns, with END` detecting the
+loop type. Our x86-64 uses a dedicated LOOP` that includes rdrop:
+
+| Pattern | When to use | Terminator |
+|---------|-------------|------------|
+| `BEGIN ... WHILE ... REPEAT` | Conditional loops | REPEAT` |
+| `N TIMES ... LOOP` | Counted loops | LOOP` |
+
+### The SWAPbit Ordering Fix
+
+A subtle bug: `>r'` toggles the SWAPbit (because it includes `dup>r'` which
+calls `s1`). Placing `>S0` before `>r'` normalizes SWAPbit, then `>r'`
+un-normalizes it, causing wrong register usage in the body. Fix: normalize
+AFTER `>r'`:
+```forth
+: TIMES` >r` >S0 here ...    \ >S0 after >r`, not before
+```
+
+**Running total:** ~175 words/macros ported. 164 tests across 37
+experiments, all passing.

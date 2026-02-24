@@ -189,6 +189,8 @@
 : UNTIL` >S0 cond $0F c, $10 + c, dup here 4 + - d, drop ;
 : WHILE` IF` ;
 : REPEAT` swap AGAIN` THEN` ;
+: TIMES` >r` >S0 here $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
+: LOOP` >S0 swap AGAIN` THEN` rdrop` ;
 
 ( Stack manipulation )
 : 2swap rot >r rot r> ;
