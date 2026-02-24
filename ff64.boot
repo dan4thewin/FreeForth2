@@ -186,11 +186,11 @@
 ( ? exposes the cond_jmp byte used by FLAGS-based conditions )
 : d, here d! 4 allot ;
 : cond ? c@ 0 ? c! 1 xor ;
-: IF` >S0 cond $0F c, $10 + c, here 4 allot ;
-: THEN` >S0 here over - 4 - swap d! ;
+: IF` >S0 cond $0F c, $10+ c, here 4 allot ;
+: THEN` >S0 here over - 4- swap d! ;
 : BEGIN` >S0 here ;
-: AGAIN` >S0 $E9 c, dup here 4 + - d, drop ;
-: UNTIL` >S0 cond $0F c, $10 + c, dup here 4 + - d, drop ;
+: AGAIN` >S0 $E9 c, dup here 4+ - d, drop ;
+: UNTIL` >S0 cond $0F c, $10+ c, dup here 4+ - d, drop ;
 : WHILE` IF` ;
 : REPEAT` swap AGAIN` THEN` ;
 : TIMES` >r` >S0 here $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
@@ -210,12 +210,12 @@
 : on -1 swap ! ;
 : off 0 swap ! ;
 : space $20 emit ;
-: spaces BEGIN 0- 0> WHILE space 1 - REPEAT drop ;
-: type BEGIN 0- 0> WHILE swap dup c@ emit 1 + swap 1 - REPEAT 2drop ;
-: count dup 1 + swap c@ ;
+: spaces BEGIN 0- 0> WHILE space 1- REPEAT drop ;
+: type BEGIN 0- 0> WHILE swap dup c@ emit 1+ swap 1- REPEAT 2drop ;
+: count dup 1+ swap c@ ;
 
 ( Memory )
-: fill rot rot BEGIN 0- 0> WHILE 1 - -rot 2dup c! 1 + rot REPEAT drop 2drop ;
+: fill rot rot BEGIN 0- 0> WHILE 1- -rot 2dup c! 1+ rot REPEAT drop 2drop ;
 : erase 0 fill ;
 
 ( Flow control macros — composable backtick versions )
@@ -278,12 +278,12 @@
 \     first entry skips body (while-loop)
 \   START cond IF BREAK <body> END
 \     while(cond) { body }
-variable mrk 0 mrk 8 + !
-: align` $90909090, here negate 3 and allot ;
+variable mrk 0 mrk 8+ !
+: align` $90909090, here negate 3& allot ;
 : START` mrk 2@ >S0 0 $E9 c, 0 d, here mrk ! ;
-: ENTER` >S0 mrk @ 4 - _then ;
-: BREAK` >S0 $E9 c, 0 d, here 4 - swap _then ;
-: END` >S0 $E9 c, mrk @ here 4 + - d, BEGIN 0- 0<> WHILE _then REPEAT drop mrk 2! ;
+: ENTER` >S0 mrk @ 4- _then ;
+: BREAK` >S0 $E9 c, 0 d, here 4- swap _then ;
+: END` >S0 $E9 c, mrk @ here 4+ - d, BEGIN 0- 0<> WHILE _then REPEAT drop mrk 2! ;
 
 ( Utilities )
 : bl $20 ;
@@ -301,7 +301,7 @@ variable mrk 0 mrk 8 + !
 ( Dictionary access )
 : H@ H @ ;
 : anon@ anon @ ;
-: ct|! 8 + dupc@ rot | swap c! ;
+: ct|! 8+ dupc@ rot | swap c! ;
 : pvt` 8 H@ ct|! ;
 
 ( Dictionary operations )
@@ -315,7 +315,7 @@ variable mrk 0 mrk 8 + !
 ( Vector xt layout: $68 <target32> $C3 <body...> )
 ( target32 at xt+1 is sign-extended to 64-bit by push )
 : :^` :` $68, ,1 here 4+ 1+ d, $C3, ,1 ;
-:. -c here dup 4 - d@ + -5 allot 0 callmark ! ;
+:. -c here dup 4- d@ + -5 allot 0 callmark ! ;
 : -call callmark @ here = 2drop IF -c ELSE drop THEN ;
 : @^ ( xt -- target ) 1+ d@ ;
 : !^ ( new-target xt -- ) 1+ d! ;
@@ -337,7 +337,7 @@ variable base
 : base@ base @ ;
 : base! base ! ;
 :. _d tuck 0 swap m/mod 0- 0= IF drop nip ;THEN rot _d
-: .digit $30 + $39 u> drop IF 39 + $7A u> drop IF drop $3F THEN THEN emit ;
+: .digit $30+ $39 u> drop IF 39+ $7A u> drop IF drop $3F THEN THEN emit ;
 : .ub\ _d .digit ;
 : .ub .ub\ space ;
 :. .sign 0- 0< IF $2D emit negate THEN ;
@@ -358,13 +358,13 @@ variable base
 : .w 4 .#s ;
 
 ( Dictionary listing )
-: h.next dup h.sz + c@ h.nm + 1 + + ;
+: h.next dup h.sz + c@ h.nm + 1+ + ;
 : h.name dup h.nm + over h.sz + c@ type space ;
 : words H@ BEGIN dup h.sz + c@ 0- 0<> drop WHILE h.name h.next REPEAT drop cr ;
 
 ( Debug output — .s` shows stack, .h` shows system state )
-:. prompt space depth .\ ';' anon@ 0- 0= drop IF 1 - THEN emit space ;
-:. _s 1 - 0; swap >r _s depth 0- 0= drop IF space THEN r> . ;
+:. prompt space depth .\ ';' anon@ 0- 0= drop IF 1- THEN emit space ;
+:. _s 1- 0; swap >r _s depth 0- 0= drop IF space THEN r> . ;
 : .s` prompt 9 _s cr ;
 : .h` ." free:" here H@ - $400 / .\ ." k SC=" SC c@ . .s` ;
 : .l 8 .#s ;
@@ -386,9 +386,9 @@ variable base
 \ Then walks headers from H@ via h.next, comparing each xt with here,
 \ until finding the marker's header. The header after it becomes the
 \ new H (discarding the marker and all later definitions).
-:. _mark ;` r> 5 - here - allot anon:`
-  H@ BEGIN dup@ swap h.sz + c@+ + 1 + swap here = 2drop UNTIL H ! ;
-: marker 2dup + dup c@ >r dup >r $60 swap c! 1 +
+:. _mark ;` r> 5- here - allot anon:`
+  H@ BEGIN dup@ swap h.sz + c@+ + 1+ swap here = 2drop UNTIL H ! ;
+: marker 2dup + dup c@ >r dup >r $60 swap c! 1+
   here 0 header 2r> c! _mark ' call, anon:` ;
 : mark` ;` wsparse marker ;
 
@@ -397,9 +397,24 @@ variable base
 1 constant stdout
 2 constant stderr
 
+( noauto — variable controlling auto-semicolon in REPL )
+( When 0, typed lines auto-execute via _auto calling ; )
+variable noauto pvt
+
 ( eval — evaluate a counted string as Forth source )
 ( Saves >in and tp, sets new parsing bounds, calls compiler, restores. )
 : eval >in @ tp @ 2>r over + tp ! >in ! compiler 2r> tp ! >in ! ;
+
+( _auto — auto-execute anonymous code if noauto is 0 )
+( Called after compiler returns in eval. Decrements >in and calls ; )
+:. _auto noauto @ 0- drop 0= IF >in @ 1- >in ! ;` THEN ;
+
+( eval. — evaluate with auto-execution )
+( Like eval but calls _auto to execute the compiled code )
+:. eval. >in @ tp @ 2>r over + tp ! >in ! compiler _auto 2r> tp ! >in ! ;
+
+( _eval — evaluate and get result xt via tick )
+:. _eval eval. '
 
 ( key — read a single character from stdin )
 : key tib 1 accept drop tib c@ ;

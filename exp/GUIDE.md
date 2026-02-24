@@ -2218,3 +2218,113 @@ its effects preserved across the anonymous→named transition.
 
 **Running total:** ~230 words/macros ported. 243 tests across 47
 experiments, all passing.
+
+---
+
+## Part 23: The Suffix Mechanism — Inline Optimization (Exp 048)
+
+FreeForth's literal compiler suffix mechanism is one of its most
+distinctive features. When the compiler encounters a token, it first
+tries to find it as a word. If that fails, it checks whether the last
+character is a recognized suffix (`+-*/%&|^,@!_`). If so, it strips
+the suffix, parses the stem (as a number or ct=1 constant), and emits
+optimized inline machine code instead of a function call.
+
+### Why It Matters
+
+Consider `5 +` vs `5+`:
+
+- **`5 +`** generates: a literal push of 5 (10 bytes for DUP1 + mov),
+  then a call to `+` (5 bytes). Total: ~15 bytes, two instructions,
+  one function call.
+
+- **`5+`** generates: a single `add rbx, 5` (4 bytes). Total: 4 bytes,
+  one instruction, zero function calls.
+
+For a language where most of the standard library is defined in Forth
+(not assembly), this optimization is critical. The i386 ff.boot uses
+suffixes 169 times — without them, the boot code would be significantly
+larger and slower.
+
+### The Dispatch Table
+
+```
+suffix_chars: "+-*/%&|^,@!_"
+suffix_handlers: [_litadd, _litsub, _litmul, _litdiv, _litmod,
+                  _litand, _litior, _litxor, _litcomma, _litfetch,
+                  _litstore, _litnip]
+```
+
+The compiler walks `suffix_chars` comparing each character against the
+last character of the token. If found, the index selects the handler.
+
+### Arithmetic Suffixes (+, -, &, |, ^)
+
+These all follow the same pattern:
+1. Check if value fits in a signed byte (_lit8_64)
+2. Emit `REX + opcode + ModR/M + imm8` (4 bytes) or
+   `REX + opcode + ModR/M + imm32` (7 bytes)
+3. Call `_s01` to handle SWAPbit — the instruction operates on rbx
+   or rdx depending on SWAPbit state
+
+The SWAPbit integration is subtle: `rbp` must be advanced past the
+opcode bytes BEFORE calling `_s01`, because `_s01` XORs the byte at
+`[rbp-1]` to flip the register encoding.
+
+### Multiply (*)
+
+Uses `imul reg, reg, imm` which has different encoding from add/sub.
+The short form uses imm8 (4 bytes), the long form uses imm32 (7 bytes).
+Uses `_s09` instead of `_s01` for SWAPbit because the ModR/M byte
+encoding differs.
+
+### Division (/) and Modulo (%)
+
+These are the most complex suffixes. x86 division requires specific
+registers (rax for dividend, rdx:rax for dividend pair, result in
+rax with remainder in rdx). The generated code:
+
+```
+push rdx        ; save NOS
+mov rax, rbx    ; dividend from TOS
+cqo             ; sign-extend to rdx:rax
+mov rcx, imm    ; divisor
+idiv rcx        ; rax=quotient, rdx=remainder
+mov rbx, rax    ; (/ takes quotient)
+pop rdx         ; restore NOS
+```
+
+For `%`, the penultimate instruction is `mov rbx, rdx` (remainder).
+
+### Fetch (@) and Store (!)
+
+These work with variables and constants. `x@` where `x` is a ct=1
+constant emits RIP-relative addressing:
+
+```
+DUP1            ; push data stack
+mov rbx, [rip + disp32]  ; RIP-relative fetch
+```
+
+`x!` emits:
+```
+mov [rip + disp32], rbx  ; RIP-relative store
+DROP             ; pop data stack
+```
+
+### Nip-Replace (_)
+
+The `_` suffix replaces TOS without pushing: `99_` generates
+`mov rbx, 99` (or `mov ebx, 99` for small values that zero-extend).
+This is useful for replacing the top of stack with a constant.
+
+### What Can't Use Suffixes
+
+Variables (ct=0) cannot use the suffix mechanism. `mrk@` would need
+to fetch from `mrk`'s *address*, but the suffix mechanism gets the
+word's *value* (its xt). Since variables push their xt at runtime,
+this doesn't give the right semantics. The convention is to define
+explicit helper words: `: base@ base @ ;` `: base! base ! ;`
+
+**Running total:** ~235 words/macros ported. 258 tests across 48
+experiments, all passing.

@@ -1392,7 +1392,7 @@ _constant:
 _compiler:
         call _wsparse
         test ecx, ecx
-        jz .done
+        jz _compiler_done
 
         cmp ecx, 1
         jne .notsc
@@ -1512,25 +1512,62 @@ _compiler:
         call _lit_compile
         jmp _compiler
 .not_charlit:
-        ;; Check for trailing comma: $DA89, syntax
-        cmp ecx, 2              ; need at least 2 chars (digit + comma)
+        ;; ─── Suffix mechanism ───
+        ;; Check if last char is an interpreted suffix: +-*/%&|^,@!_
+        cmp ecx, 2              ; need at least 2 chars
         jb .try_number
-        cmp byte [rax + rcx - 1], ','
-        jne .try_number
-        ;; Strip trailing comma and parse the number
-        dec ecx
+        movzx edi, byte [rax + rcx - 1]  ; edi = final character
+        ;; Search suffix table
+        push rcx
+        push rax
+        lea rsi, [suffix_chars]
+        xor r8d, r8d            ; index
+.sfx_search:
+        movzx r9d, byte [rsi + r8]
+        test r9d, r9d
+        jz .sfx_notfound
+        cmp r9d, edi
+        je .sfx_found
+        inc r8d
+        jmp .sfx_search
+.sfx_notfound:
+        pop rax
+        pop rcx
+        jmp .try_number
+.sfx_found:
+        ;; r8 = index into suffix table. Strip suffix and parse number.
+        pop rax
+        pop rcx
+        dec ecx                 ; strip suffix char
+        push r8                 ; save suffix index
+        push rcx
+        push rax
+        ;; First try: look up as a word (for named constants/variables)
+        push rdi                ; save suffix char
+        call _find_suffix       ; try to find word without suffix
+        pop rdi
+        jz .sfx_got_value       ; found → rax = xt value
+        ;; Second try: parse as number
+        pop rax
+        pop rcx
         push rcx
         push rax
         call _number
-        jz .got_litcomma
+        jnz .sfx_fail
+.sfx_got_value:
+        ;; rax = value (from number or word lookup)
+        add rsp, 16             ; discard saved rax/rcx
+        pop r8                  ; suffix index
+        ;; Dispatch to suffix handler
+        jmp qword [suffix_handlers + r8*8]
+.sfx_fail:
         pop rax
         pop rcx
-        inc ecx                 ; restore original length for error
+        pop r8                  ; discard suffix index
+        inc ecx                 ; restore full length
         jmp .try_number_with
-.got_litcomma:
-        add rsp, 16
-        call _litcomma
-        jmp _compiler
+
+
 .try_number:
         push rcx
         push rax
@@ -1564,7 +1601,309 @@ _compiler:
         mov rdx, 1
         syscall
         jmp _compiler
-.done:  ret
+_compiler_done:
+        ret
+        ;; ─── Suffix handlers ───
+
+;; _find_suffix: look up rax/ecx as a word, return xt value if ct=1
+;; On entry: rax=string, ecx=length (suffix stripped)
+;; Returns: ZF set and rax=value if found (ct=1 data word)
+;;          ZF clear if not found
+_find_suffix:
+        push rbx
+        push rdx
+        ;; _find expects: rax=string addr, rcx=length
+        ;; rax and ecx already set correctly
+        call _find
+        jc .fs_notfound         ; CF set = not found
+        ;; Found: check ct=1 (data/literal)
+        and ecx, 7
+        cmp ecx, 1
+        jne .fs_notfound
+        ;; ct=1: rax has xt (the data value)
+        pop rdx
+        pop rbx
+        xor ecx, ecx           ; set ZF
+        ret
+.fs_notfound:
+        pop rdx
+        pop rbx
+        or ecx, 1              ; clear ZF
+        ret
+
+;; lit8_64: check if rax fits in a signed byte
+;; Returns: CF set if byte-sized (jbe = byte, ja = long)
+_lit8_64:
+        push rcx
+        mov rcx, rax
+        sar rcx, 7             ; shift right 7 bits
+        cmp rcx, 0             ; 0 = positive byte, -1 = negative byte
+        je .byte
+        cmp rcx, -1
+        je .byte
+        pop rcx
+        stc                     ; CF=1 → NOT byte-sized (use "ja" for long)
+        ret
+.byte:  pop rcx
+        clc                     ; CF=0 → byte-sized
+        ret
+
+;; litadd — 5+ becomes add rbx,5
+;; On entry: rax = value
+_litadd:
+        call _rst
+        call _lit8_64
+        jc .long
+        ;; Byte: 48 83 C3 xx (4 bytes) — add rbx, imm8
+        mov dword [rbp], $C38348
+        add rbp, 3              ; advance past opcode for _s01
+        call _s01               ; SWAPbit on ModR/M byte [rbp-1]
+        mov byte [rbp], al
+        add rbp, 1
+        jmp _compiler
+.long:  ;; Long: 48 81 C3 xx xx xx xx (7 bytes) — add rbx, imm32
+        mov dword [rbp], $C38148
+        add rbp, 3
+        call _s01
+        mov dword [rbp], eax
+        add rbp, 4
+        jmp _compiler
+
+;; litsub — 3- becomes sub rbx,3
+_litsub:
+        call _rst
+        call _lit8_64
+        jc .long
+        mov dword [rbp], $EB8348      ; sub rbx, imm8
+        add rbp, 3
+        call _s01
+        mov byte [rbp], al
+        add rbp, 1
+        jmp _compiler
+.long:  mov dword [rbp], $EB8148      ; sub rbx, imm32
+        add rbp, 3
+        call _s01
+        mov dword [rbp], eax
+        add rbp, 4
+        jmp _compiler
+
+;; litand — $FF& becomes and rbx,$FF
+_litand:
+        call _rst
+        call _lit8_64
+        jc .long
+        mov dword [rbp], $E38348      ; and rbx, imm8
+        add rbp, 3
+        call _s01
+        mov byte [rbp], al
+        add rbp, 1
+        jmp _compiler
+.long:  mov dword [rbp], $E38148      ; and rbx, imm32
+        add rbp, 3
+        call _s01
+        mov dword [rbp], eax
+        add rbp, 4
+        jmp _compiler
+
+;; litior — $80| becomes or rbx,$80
+_litior:
+        call _rst
+        call _lit8_64
+        jc .long
+        mov dword [rbp], $CB8348      ; or rbx, imm8
+        add rbp, 3
+        call _s01
+        mov byte [rbp], al
+        add rbp, 1
+        jmp _compiler
+.long:  mov dword [rbp], $CB8148      ; or rbx, imm32
+        add rbp, 3
+        call _s01
+        mov dword [rbp], eax
+        add rbp, 4
+        jmp _compiler
+
+;; litxor — 1^ becomes xor rbx,1
+_litxor:
+        call _rst
+        call _lit8_64
+        jc .long
+        mov dword [rbp], $F38348      ; xor rbx, imm8
+        add rbp, 3
+        call _s01
+        mov byte [rbp], al
+        add rbp, 1
+        jmp _compiler
+.long:  mov dword [rbp], $F38148      ; xor rbx, imm32
+        add rbp, 3
+        call _s01
+        mov dword [rbp], eax
+        add rbp, 4
+        jmp _compiler
+
+;; litmul — 3* becomes imul rbx,rbx,3
+_litmul:
+        call _rst
+        call _lit8_64
+        jc .long
+        ;; Byte: 48 6B DB xx (4 bytes) — imul rbx, rbx, imm8
+        mov dword [rbp], $DB6B48
+        add rbp, 3
+        call _s09               ; SWAPbit on both fields
+        mov byte [rbp], al
+        add rbp, 1
+        jmp _compiler
+.long:  ;; Long: 48 69 DB xx xx xx xx (7 bytes) — imul rbx, rbx, imm32
+        mov dword [rbp], $DB6948
+        add rbp, 3
+        call _s09
+        mov dword [rbp], eax
+        add rbp, 4
+        jmp _compiler
+
+;; litdiv — compile inline signed division by immediate
+;; push rdx; mov rax,rbx; cqo; mov rcx,imm32; idiv rcx; mov rbx,rax; pop rdx
+_litdiv:
+        call _rst
+        ;; 52             push rdx
+        ;; 48 89 D8       mov rax, rbx
+        ;; 48 99          cqo
+        mov byte [rbp], $52             ; push rdx
+        mov dword [rbp+1], $D88948      ; mov rax, rbx
+        mov word [rbp+4], $9948         ; cqo
+        ;; 48 C7 C1 imm32 mov rcx, sign-extended imm32
+        mov byte [rbp+6], $48
+        mov word [rbp+7], $C1C7
+        mov dword [rbp+9], eax
+        ;; 48 F7 F9       idiv rcx
+        ;; 48 89 C3       mov rbx, rax (quotient)
+        ;; 5A             pop rdx
+        mov byte [rbp+13], $48
+        mov word [rbp+14], $F9F7
+        mov byte [rbp+16], $48
+        mov word [rbp+17], $C389
+        mov byte [rbp+19], $5A
+        add rbp, 20
+        jmp _compiler
+
+;; litmod — like litdiv but keep remainder (rdx) instead of quotient (rax)
+_litmod:
+        call _rst
+        mov byte [rbp], $52             ; push rdx
+        mov dword [rbp+1], $D88948      ; mov rax, rbx
+        mov word [rbp+4], $9948         ; cqo
+        mov byte [rbp+6], $48
+        mov word [rbp+7], $C1C7
+        mov dword [rbp+9], eax
+        mov byte [rbp+13], $48
+        mov word [rbp+14], $F9F7
+        ;; mov rbx, rdx (remainder instead of quotient)
+        mov byte [rbp+16], $48
+        mov word [rbp+17], $D389
+        mov byte [rbp+19], $5A
+        add rbp, 20
+        jmp _compiler
+
+;; litfetch — addr@ becomes mov rbx,[addr] via RIP-relative
+;; On entry: rax = address to fetch from
+_litfetch:
+        call _rst
+        ;; Emit DUP1 first (push current TOS)
+        ;; lea r15,[r15-8]; mov [r15],rdx; mov rdx,rbx
+        mov dword [rbp], $F87F8D4D      ; lea r15,[r15-8]
+        add rbp, 4
+        mov byte [rbp], $49
+        mov word [rbp+1], $1789         ; mov [r15], rdx
+        add rbp, 3
+        mov byte [rbp], $48
+        mov word [rbp+1], $DA89         ; mov rdx, rbx
+        add rbp, 3
+        call _s08                       ; SWAPbit on dup preamble
+        ;; Now emit: mov rbx, [rip+disp32]
+        ;; 48 8B 1D xx xx xx xx (7 bytes)
+        mov byte [rbp], $48
+        mov word [rbp+1], $1D8B
+        add rbp, 3
+        call _s01                       ; SWAPbit on result register
+        ;; disp32 = target - (here + 4)  (4 more bytes for disp32)
+        lea rcx, [rbp + 4]             ; address after this instruction
+        sub rax, rcx                    ; rip-relative displacement
+        mov dword [rbp], eax
+        add rbp, 4
+        jmp _compiler
+
+;; litstore — addr! becomes mov [addr],rbx via RIP-relative, then drop
+;; On entry: rax = address to store to
+_litstore:
+        call _rst
+        ;; Emit: mov [rip+disp32], rbx → 48 89 1D xx xx xx xx
+        mov byte [rbp], $48
+        mov word [rbp+1], $1D89
+        add rbp, 3
+        call _s01
+        ;; disp32 = target - (here + 4)
+        lea rcx, [rbp + 4]
+        sub rax, rcx
+        mov dword [rbp], eax
+        add rbp, 4
+        ;; Emit inline DROP:
+        ;; 48 89 D3       mov rbx, rdx
+        ;; 49 8B 17       mov rdx, [r15]
+        ;; 4D 8D 7F 08    lea r15, [r15+8]
+        mov byte [rbp], $48
+        mov word [rbp+1], $D389
+        mov byte [rbp+3], $49
+        mov word [rbp+4], $178B
+        mov dword [rbp+6], $087F8D4D
+        add rbp, 10
+        jmp _compiler
+
+;; litnip — 42_ replaces TOS without push (like drop + lit)
+;; On entry: rax = value
+_litnip:
+        call _rst
+        ;; Just emit mov rbx, imm32/imm64 (no DUP1 preamble)
+        mov rcx, rax
+        mov eax, eax            ; zero-extend to test if 32-bit
+        cmp rax, rcx
+        jne .big
+        ;; 32-bit: BB xx xx xx xx (5 bytes)
+        mov byte [rbp], $BB
+        inc rbp
+        call _s01               ; SWAPbit on BB byte [rbp-1]
+        mov dword [rbp], eax
+        add rbp, 4
+        jmp _compiler
+.big:   ;; 64-bit: 48 BB xx xx xx xx xx xx xx xx (10 bytes)
+        mov byte [rbp], $48
+        mov byte [rbp+1], $BB
+        add rbp, 2
+        call _s01
+        mov qword [rbp], rcx
+        add rbp, 8
+        jmp _compiler
+
+;; Suffix dispatch tables
+suffix_chars db "+-*/%&|^,@!_", 0
+suffix_handlers:
+        dq _litadd              ; +
+        dq _litsub              ; -
+        dq _litmul              ; *
+        dq _litdiv              ; /
+        dq _litmod              ; %
+        dq _litand              ; &
+        dq _litior              ; |
+        dq _litxor              ; ^
+        dq _litcomma_suffix     ; ,
+        dq _litfetch            ; @
+        dq _litstore            ; !
+        dq _litnip              ; _
+
+;; litcomma wrapper — called from suffix dispatch, rax=value
+_litcomma_suffix:
+        call _litcomma
+        jmp _compiler
+
 
 ;; Error: IF/UNTIL/WHILE used without preceding condition
 _err_nocond:

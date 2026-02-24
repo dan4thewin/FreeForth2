@@ -3396,3 +3396,126 @@ _semi_exec allot preservation fix; catch/throw),
 `ff64.boot` (stdin/stdout/stderr, type, eval, key, bye),
 `exp/047-syswords64/Makefile` (9 tests),
 `exp/Makefile` (added 047)
+
+---
+
+## Experiment 048: Literal Compiler Suffix Mechanism
+
+**Date:** 2025-06-25
+
+**Goal:** Implement the full suffix mechanism for the literal compiler,
+bringing feature parity with the i386 FreeForth. The i386 compiler
+recognizes a trailing character on tokens (`+-*/%&|^,@!_`) and generates
+optimized inline code. Our x86-64 port previously only had `,` (litcomma).
+This experiment adds all 12 suffix types.
+
+### Background
+
+FreeForth's literal compiler is one of its most distinctive features.
+When the compiler encounters a token like `5+`, it recognizes the `+`
+suffix, strips it, parses `5` as a number, and emits an inline `add`
+instruction instead of a call to the `+` word. This produces faster,
+more compact code.
+
+The i386 ff.boot uses suffixes extensively — a survey found 169 genuine
+suffix uses across the boot source. Our ff64.boot had none (except `,`
+for litcomma, which was already implemented in the original asm).
+
+### Suffix Types Implemented
+
+| Suffix | Operation | Example | Generated code |
+|--------|-----------|---------|----------------|
+| `+` | Add immediate | `5+` | `add rbx/rdx, 5` |
+| `-` | Subtract immediate | `3-` | `sub rbx/rdx, 3` |
+| `*` | Multiply immediate | `7*` | `imul rbx/rdx, rbx/rdx, 7` |
+| `/` | Divide by immediate | `4/` | `push rdx; mov rax,rbx; cqo; mov rcx,4; idiv rcx; mov rbx,rax; pop rdx` |
+| `%` | Modulo by immediate | `5%` | Like `/` but takes remainder |
+| `&` | AND immediate | `$0F&` | `and rbx/rdx, $0F` |
+| `|` | OR immediate | `$80|` | `or rbx/rdx, $80` |
+| `^` | XOR immediate | `$FF^` | `xor rbx/rdx, $FF` |
+| `@` | Fetch from address | `x@` | `DUP1 + mov rbx, [rip+disp]` |
+| `!` | Store to address | `x!` | `mov [rip+disp], rbx + DROP` |
+| `_` | Replace TOS | `99_` | `mov rbx, 99` (no DUP) |
+| `,` | Compile literal | `$C3,` | `mov [rbp], imm; advance rbp` |
+
+### Design
+
+**Dispatch flow:**
+1. Compiler fails to find the full token as a word
+2. Check if last character is in `"+-*/%&|^,@!_"`
+3. If yes, strip suffix, try to find the stem as a ct=1 word (constant)
+4. If not found, try to parse the stem as a number
+5. If found, dispatch to the appropriate handler via a jump table
+6. If both fail, restore suffix and fall through to normal number parsing
+
+**SWAPbit integration:** Arithmetic suffixes (`+-&|^`) use `_s01` to
+handle SWAPbit — the instruction operates on either rbx or rdx depending
+on the current SWAPbit state. Multiply uses `_s09` (different ModR/M).
+Division/modulo bypass SWAPbit via `>S0` semantics (hardcoded registers).
+
+**Short vs long encoding:** A helper `_lit8_64` checks if the value fits
+in a signed byte. If so, the `add/sub/and/or/xor` instructions use the
+3-byte `REX + op + ModR/M + imm8` form. Otherwise, the 7-byte form with
+imm32 is used.
+
+**Named constants:** The suffix mechanism works with named constants too.
+Given `10 constant N`, writing `N+` is equivalent to `10+`. The
+`_find_suffix` helper looks up the stem in the dictionary, checks ct=1,
+and returns the constant's value.
+
+**Variables (ct=0) don't work:** The suffix mechanism requires ct=1
+(constants) for named stems. Variables (ct=0) like `mrk`, `base`,
+`callmark` cannot use `mrk@` or `base!` syntax because the suffix
+would need to emit a fetch from the variable's *address*, not use its
+*value*. This matches i386 behavior: `base@` in i386 ff.boot is defined
+as a Forth word `: base@ base @ ;`, not as a suffix.
+
+### FASM Label Scoping Issue
+
+The suffix handler functions (`_litadd:`, `_litsub:`, etc.) use
+non-local labels, which break FASM's local label scoping for
+`_compiler`'s `.try_number`, `.error`, etc. Solution: move
+`.try_number` and related local labels above the suffix handler
+definitions, keeping them within `_compiler`'s scope. The
+`_compiler_done` label was also changed from `.done` to a non-local
+label so it can be referenced from suffix handlers.
+
+### ff64.boot Suffix Adoption
+
+Applied suffix syntax to 27 locations in ff64.boot where `N op` pairs
+could be replaced with `Nop` suffixes:
+
+- `$10 +` → `$10+`, `4 -` → `4-`, `1 +` → `1+`, `1 -` → `1-`
+- `4 + -` → `4+ -` → `4-` (in THEN`, ENTER`, BREAK`, etc.)
+- `3 and` → `3&` (in align`)
+- `8 +` → `8+` (in mrk initialization)
+- `$30 +` → `$30+`, `39 +` → `39+` (in .digit)
+
+Variables (`mrk @`, `base @`, `callmark @`, `noauto @`, `>in @`, etc.)
+were NOT converted because they are ct=0 — the suffix mechanism only
+works with ct=1 constants and numeric literals.
+
+### noauto/_auto/eval. Infrastructure
+
+Also added in this experiment (carried forward from earlier work):
+- `noauto` — variable controlling auto-semicolon in REPL
+- `_auto` — if noauto=0, decrements >in and calls `;`
+- `eval.` — evaluate string with auto-execution via _auto
+- `_eval` — eval. followed by tick (')
+
+### Test Results
+
+15 new tests covering all suffix types:
+- 5 arithmetic: `5+`, `3-`, `7*`, `4/`, `5%`
+- 3 bitwise: `$0F&`, `$0F|`, `$0F^`
+- 3 memory: `x@`, `x!`, `99_`
+- 2 named constants: `N+`, `M%`
+- 2 large immediates: `$1000+`, `256/`
+
+All 258 tests pass (243 existing + 15 new).
+
+**Files:** `ff64.asm` (suffix dispatch table, 12 handler functions,
+_find_suffix, _lit8_64, _compiler label restructuring),
+`ff64.boot` (27 suffix adoptions, noauto/_auto/eval./_eval),
+`exp/048-suffix64/Makefile` (15 tests),
+`exp/Makefile` (added 048)
