@@ -59,10 +59,58 @@ This is a defining attribute of FreeForth (and FreeForth2):
 - Dotted comparisons (`=.`, `<.`, etc.) and `IF.`/`WHILE.`/`UNTIL.`
   are legitimate words but belong in Forth (ff64.boot), not assembly.
 
+## Debugging generated code
+
+FreeForth's compiler generates machine code at runtime. When something
+crashes or behaves wrong, **use GDB first** — don't try to reason about
+the bug by manually tracing SWAPbit state or flag preservation through
+compilation passes. That approach is extremely error-prone and slow.
+
+### What works
+
+- **GDB disassembly of generated code.** Build without `-s` (strip),
+  run under GDB, examine the crash site with `x/Ni $rip` and
+  `x/Ni addr` to see the actual machine code the compiler emitted.
+  The generated code is the ground truth. Example workflow:
+  ```
+  echo 'test-input' | gdb -batch -ex 'run -f ff64.boot' -ex 'x/30i $rip-40' ./ff64
+  ```
+- **Tracing back from the crash.** If RIP is a small number (like 9),
+  it means execution jumped to a data value — check what constant or
+  literal has that value. The return stack (`x/4gx $rsp`) shows where
+  the bad call/jump came from.
+- **Disassembling a word with the i386 `ff`.** Use `see wordname` on
+  the original 32-bit binary to understand how Christophe's compiler
+  generates code for a given pattern. This is faster than reading the
+  compiler source.
+
+### What doesn't work
+
+- **Manual SWAPbit tracing.** Tracking SWAPbit through every macro
+  expansion is extremely complex and unreliable. There are too many
+  toggles (swap\`, lit\`, dup>r\`) and adjusters (s01, s08, s09) to
+  trace reliably in your head. Use GDB to see the actual emitted bytes.
+- **Theorizing without evidence.** Don't spend time hypothesizing about
+  flag preservation, register clobbering, or stack corruption without
+  first looking at the generated machine code. The hypothesis is often
+  wrong.
+- **Progressive test simplification alone.** Narrowing a crash by
+  removing words from a test definition can help, but is slow and can
+  lead to wrong conclusions (e.g., creating a "simplified" test that
+  crashes for a different reason than the original).
+
+### The ct=1 bug as a cautionary tale
+
+The `words` crash (exp 038) took extensive manual analysis of SWAPbit
+state, flag preservation, and stack operations — all of which turned out
+to be red herrings. One GDB session showing `jmp 0x9` immediately
+revealed that the compile-time stack was corrupted by a constant value.
+**Always check the generated code first.**
+
 ## Build and test
 
 - `make all` builds both `ff` (32-bit) and `ff64` (64-bit)
-- `make -C exp test` runs all experiments (currently 20, all PASS)
+- `make -C exp test` runs all experiments (currently 38, all PASS)
 - `./ff64 -f ff64.boot` loads the standard library
 - Assembler is FASM (flat assembler, version 1.73.32)
 - Linker warning about RWX segment is expected
