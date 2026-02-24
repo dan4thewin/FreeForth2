@@ -13,7 +13,8 @@ test:
 	}; \
 	echo "  --- cstack basics ---"; \
 	chk '1 >cs cs> . cr ;' '1 ' 'cs push/pop round-trip'; \
-	chk '1 2 3 >cs >cs >cs cs> . cs> . cs> . cr ;' '1 2 3 ' 'cs LIFO order'; \
+	chk '1 2 3 >cs >cs >cs cs> . cs> . cs> . cr ;' '1 2 3 ' 'cs round-trip 3 items'; \
+	chk '1 >cs 2 >cs 3 >cs cs> . cs> . cs> . cr ;' '3 2 1 ' 'cs LIFO order'; \
 	echo "  --- START/END with cstack ---"; \
 	chk ': t 5 START 1- 0- 0= IF BREAK END ; t . cr ;' '0 ' 'START/BREAK/END countdown'; \
 	chk ': t 0 START 1+ dup 5 - 0- 0= drop IF BREAK END ; t . cr ;' '5 ' 'START/BREAK/END countup'; \
