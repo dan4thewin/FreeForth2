@@ -1352,6 +1352,17 @@ _compiler:
 .notfound:
         pop rcx
         pop rax
+        ;; Check for character literal: 'X' syntax (length=3, quotes)
+        cmp ecx, 3
+        jne .not_charlit
+        cmp byte [rax], $27     ; opening single quote
+        jne .not_charlit
+        cmp byte [rax+2], $27   ; closing single quote
+        jne .not_charlit
+        movzx eax, byte [rax+1] ; extract the character
+        call _lit_compile
+        jmp _compiler
+.not_charlit:
         ;; Check for trailing comma: $DA89, syntax
         cmp ecx, 2              ; need at least 2 chars (digit + comma)
         jb .try_number

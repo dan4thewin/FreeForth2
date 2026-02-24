@@ -18,7 +18,8 @@ EXPERIMENTS = 001-hello64 002-stack64 003-codegen64 004-subrthread64 \
               036-flowforth64 \
               037-countedloops64 \
               038-utilwords64 \
-              039-debugout64
+              039-debugout64 \
+              040-charliteral64
 
 test:
 	@for d in $(EXPERIMENTS); do \

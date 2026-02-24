@@ -2780,3 +2780,40 @@ depth (3), .s (2), .h (2), .l (1), .hdr (2), .hdrs (2).
 
 **Files:** `ff64.asm` (depth fix: +1 line), `ff64.boot` (+11 lines),
 `exp/039-debugout64/Makefile` (12 tests)
+
+---
+
+## Experiment 040: Character Literals
+
+**Goal:** Add `'X'` character literal syntax to the compiler so that
+`'A'` pushes 65, `';'` pushes 59, etc.
+
+### Implementation
+
+Added character literal detection in the compiler's `.notfound` path,
+before the trailing-comma and number checks:
+
+```asm
+cmp ecx, 3              ; exactly 3 chars?
+jne .not_charlit
+cmp byte [rax], $27     ; starts with '?
+jne .not_charlit
+cmp byte [rax+2], $27   ; ends with '?
+jne .not_charlit
+movzx eax, byte [rax+1] ; extract character
+call _lit_compile        ; compile as literal
+```
+
+The pattern requires exactly 3 characters: quote, char, quote. This
+means `' '` (space) doesn't work because the tokenizer splits on spaces.
+Use `$20` or `32` for space. All other printable ASCII characters work.
+
+Updated `prompt` in ff64.boot to use `';'` instead of `$3B`.
+
+### Tests (8 total, all PASS)
+
+Character values (4), char in word/expression/IF (3), prompt (1).
+
+**Files:** `ff64.asm` (+10 lines: character literal check),
+`ff64.boot` (prompt updated to use `';'`),
+`exp/040-charliteral64/Makefile` (8 tests)

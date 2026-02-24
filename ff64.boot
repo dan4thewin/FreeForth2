@@ -291,7 +291,7 @@ variable base
 : words H@ BEGIN dup h.sz + c@ 0- 0<> drop WHILE h.name h.next REPEAT drop cr ;
 
 ( Debug output — .s` shows stack, .h` shows system state )
-:. prompt space depth .\ $3B anon@ 0- 0= drop IF 1 - THEN emit space ;
+:. prompt space depth .\ ';' anon@ 0- 0= drop IF 1 - THEN emit space ;
 :. _s 1 - 0; swap >r _s depth 0- 0= drop IF space THEN r> . ;
 : .s` prompt 9 _s cr ;
 : .h` ." free:" here H@ - $400 / .\ ." k SC=" SC c@ . .s` ;

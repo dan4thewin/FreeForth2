@@ -1712,3 +1712,24 @@ so free space = `here H@ -` (positive when there's space remaining).
 
 **Running total:** ~195 words/macros ported. 163 tests across 39
 experiments, all passing.
+
+---
+
+## Part 21: Character Literals (Exp 040)
+
+The compiler now recognizes `'X'` as a character literal. When the
+compiler can't find a word (with or without backtick), it checks if the
+token is exactly 3 characters with single quotes around a character.
+If so, it extracts the ASCII value and compiles it as a literal.
+
+This enables readable code like:
+```forth
+:. prompt space depth .\ ';' anon@ 0- 0= drop IF 1 - THEN emit space ;
+```
+instead of `$3B` for the semicolon character.
+
+Limitation: `' '` (space character) doesn't work because the tokenizer
+uses space as a delimiter. Use `$20` or `bl` instead.
+
+**Running total:** ~195 words/macros ported. 171 tests across 40
+experiments, all passing.
