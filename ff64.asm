@@ -2417,6 +2417,15 @@ _start:
 
         call _compiler
 
+        ;; Auto-execute anonymous code (like eval.'s _auto).
+        ;; If anon != 0 and anon != rbp, there's pending code to run.
+        mov rax, [anon]
+        test rax, rax
+        jz .repl_ok             ; anon=0: named def just ended, skip
+        cmp rax, rbp
+        je .repl_ok             ; empty block, skip
+        call _semi_exec         ; execute the anonymous block
+.repl_ok:
         mov rax, 1
         mov rdi, 1
         lea rsi, [ok_msg]

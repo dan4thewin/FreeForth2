@@ -29,7 +29,8 @@ EXPERIMENTS = 001-hello64 002-stack64 003-codegen64 004-subrthread64 \
               047-syswords64 \
               048-suffix64 \
               049-hidepvt64 \
-              050-cstack64
+              050-cstack64 \
+              051-repl-autoexec
 
 test:
 	@for d in $(EXPERIMENTS); do \

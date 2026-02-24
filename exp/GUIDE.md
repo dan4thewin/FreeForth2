@@ -2401,3 +2401,69 @@ using `mrk@`.
 
 **Running total:** ~240 words/macros ported. 304 tests across 50
 experiments, all passing.
+
+---
+
+## Part 25: REPL Auto-Execute and Compile-Time Macros (Exp 051)
+
+### The Missing Piece: Auto-Execute
+
+FreeForth's REPL has two layers. The **compiler** transforms tokens into
+machine code. The **auto-execute** step runs that code. Without
+auto-execute, typing `42 .` compiles the instructions but never executes
+them — the result is silently discarded.
+
+In the i386 original, `eval.` handles both: it calls `compiler`, then
+`_auto`, which checks the `noauto` variable and triggers `;` to execute
+the anonymous block via `_semi_exec`. The ff64 assembly REPL (`.repl` in
+ff64.asm) called `_compiler` directly without the auto-execute step.
+Named definitions worked because `;` in the source triggers `_semi`
+internally, but standalone expressions were lost.
+
+The fix adds 9 lines after `call _compiler` in `.repl_loop`:
+
+```asm
+mov rax, [anon]        ; load anonymous block start
+test rax, rax          ; anon=0? (named def just ended)
+jz .repl_ok            ; skip — no anonymous code
+cmp rax, rbp           ; anon=rbp? (empty block)
+je .repl_ok            ; skip — nothing compiled
+call _semi_exec        ; execute the anonymous block
+```
+
+The logic: if `anon` is non-zero and differs from `rbp`, there's pending
+anonymous code. `_semi_exec` compiles a `ret`, resets `rbp` to `anon`,
+calls the block, and cleans up. This mirrors what `_auto` + `;` would do
+in the Forth layer.
+
+### Backtick Macro Calling Convention
+
+FreeForth's compiler has a backtick lookup mechanism. For each token, it
+appends a backtick and searches the dictionary. If `token\`` is found,
+it's called immediately at compile time. This is how macros like `IF`,
+`BEGIN`, `BREAK` work — their implementations are named `IF\``,
+`BEGIN\``, `BREAK\`` etc.
+
+The subtle implication: when **using** a backtick macro, you type the
+name **without** the backtick. The compiler adds it. If you accidentally
+type `IF\`` (with the backtick), the compiler appends another backtick,
+looks for `IF\`\`` (double backtick), doesn't find it, and falls back to
+compiling a regular CALL to `IF\`` — executing it at runtime instead of
+compile time.
+
+This applies to `int3\`` — the debug breakpoint macro. Define it as
+`: int3\` >S0 $CC c, ;` (name includes backtick). Use it as `int3`
+(no backtick) inside definitions:
+
+```forth
+: int3` >S0 $CC c, ;     ( define the macro )
+: test int3 42 . cr ;     ( use without backtick — $CC inlined )
+```
+
+The compiler sees `int3`, appends backtick, finds `int3\``, calls it at
+compile time. `int3\``'s body writes $CC at `[rbp]` (the current
+compilation position), producing an inline breakpoint in the generated
+code.
+
+**Running total:** ~240 words/macros ported. 311 tests across 51
+experiments, all passing.

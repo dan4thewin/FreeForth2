@@ -3726,3 +3726,73 @@ All 304 tests pass (292 existing + 12 new).
 `ff64.boot` (START/END/BREAK/TILL rewrite, _resolve_breaks, ui vector,
 _back/_exec/_top REPL words), `exp/050-cstack64/Makefile` (12 tests),
 `exp/Makefile` (added 050)
+
+---
+
+## Experiment 051: REPL Auto-Execute
+
+**Goal:** Make the assembly REPL execute anonymous code after compilation,
+enabling interactive use (e.g., `42 . cr` prints `42`). Also confirm the
+`int3`` compile-time macro works correctly.
+
+**Background:** The assembly `.repl` loop in ff64.asm called `_compiler`
+but never executed the resulting anonymous code. In FreeForth, `eval.`
+calls `_compiler` followed by `_auto`, which auto-executes by calling `;`.
+The assembly REPL skipped this step, so typed expressions compiled but
+never ran. Named definitions (`: word ... ;`) worked because `_semi`
+handles them during compilation, but anonymous expressions like `42 .`
+were silently discarded.
+
+**Discovery — int3\` macro usage:** During debugging, we traced `int3\``'s
+compile-time behavior through GDB. The word `: int3\` >S0 $CC c, ;`
+compiles $CC (the x86 INT3 breakpoint opcode) at the current compilation
+position. Key insight: when typing `int3\`` (with backtick) inside a
+definition, the compiler treats the backtick as part of the token name,
+appends ANOTHER backtick for the lookup, and tries to find `int3\`\``.
+Since that doesn't exist, it falls back to compiling a runtime CALL to
+`int3\``. The CORRECT usage is `int3` (without backtick) — the compiler
+auto-appends the backtick, finds `int3\``, and executes it at compile
+time, inlining the $CC byte.
+
+**The fix:** Added 9 lines to `.repl_loop` in ff64.asm, after
+`call _compiler`:
+
+```asm
+mov rax, [anon]
+test rax, rax
+jz .repl_ok        ; anon=0: named def just ended, skip
+cmp rax, rbp
+je .repl_ok         ; empty block, skip
+call _semi_exec     ; execute the anonymous block
+```
+
+This checks for pending anonymous code (anon ≠ 0, anon ≠ rbp) and
+calls `_semi_exec` to execute it. Named definitions set anon=0 via
+`_semi`, so the check skips them. Empty blocks (anon = rbp) are also
+skipped. `_semi_exec` compiles ret, resets rbp to anon, executes the
+block, and cleans up (callmark=0, SC=0).
+
+**Result:** 311 tests (6 new), all pass. Interactive expressions now
+work:
+- `42 . cr` → prints `42`
+- `3 4 + . cr` → prints `7`
+- `65 emit` → prints `A`
+- `: sq dup * ; 5 sq . cr` → prints `25`
+
+**GDB verification of int3:**
+```
+: int3` >S0 $CC c, ;
+: t int3 42 . cr ;
+t
+```
+Under GDB with SIGTRAP handling, `t`'s code shows:
+```
+int3              ← $CC byte inlined by int3` at compile time
+lea r15,[r15-8]   ← DUP1
+mov ebx, 0x2a     ← literal 42
+call .            ← number output
+jmp cr            ← tail-call newline
+```
+
+**Files:** `ff64.asm` (auto-execute in .repl_loop),
+`exp/051-repl-autoexec/Makefile` (6 tests), `exp/Makefile` (added 051)
