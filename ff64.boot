@@ -140,6 +140,8 @@
 : w,` $66, ,1 $5D89, s08 $00, ,1 $02C58348, ,4 drop` ;
 \ ,` ( n -- ): store 64-bit cell, advance 8
 : ,` $48, ,1 $5D89, s08 $00, ,1 $086D8D48, ,4 drop` ;
+\ d,` ( n -- ): store 32-bit dword, advance 4
+: d,` $5D89, s08 $00, ,1 $04C58348, ,4 drop` ;
 
 \ Composed operations
 : 2dup` over` over` ;
@@ -251,6 +253,17 @@
 ( Dictionary operations )
 : execute >r ;
 : :.` :` pvt` ;
+
+( Vector words — :^ creates push/ret preamble, 6 bytes )
+( Vector xt layout: $68 <target32> $C3 <body...> )
+( target32 at xt+1 is sign-extended to 64-bit by push )
+: :^` :` $68, ,1 here 4+ 1+ d, $C3, ,1 ;
+:. -c here dup 4 - d@ + -5 allot 0 callmark ! ;
+: @^ ( xt -- target ) 1+ d@ ;
+: !^ ( new-target xt -- ) 1+ d! ;
+: n^ ( xt -- ) dup 6 + swap 1+ d! ;
+: x^ ( xt -- ) 6 + >r ;
+: '` -c lit` ;
 : _alias H@ ! $20 H@ ct|! anon:` ;
 : alias` :` _alias ;
 : constant` :` 1 H@ ct|! H@ ! anon:` ;

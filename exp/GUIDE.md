@@ -1733,3 +1733,36 @@ uses space as a delimiter. Use `$20` or `bl` instead.
 
 **Running total:** ~195 words/macros ported. 171 tests across 40
 experiments, all passing.
+
+---
+
+## Part 22: Vectors and Tick (Exp 041)
+
+Vectors are the core extensibility mechanism in FreeForth. A vector word
+starts with a `push imm32; ret` preamble (6 bytes). The push pushes the
+body address onto the return stack, and ret jumps to it. To redirect a
+vector, write a new target address at xt+1.
+
+On x86-64, `push imm32` sign-extends the 32-bit value to 64 bits.
+Since our code lives well below 2GB (~4MB), this works perfectly.
+
+The `:^` macro: `: :^` :` $68, ,1 here 4+ 1+ d, $C3, ,1 ;`
+- Creates the word header (`:`)
+- Compiles push opcode ($68)
+- Compiles the body address as a 32-bit value (here+5 via `4+ 1+`)
+- Compiles ret ($C3)
+
+New assembly words `d,`/`d@`/`d!` handle 32-bit dword operations needed
+for the push operand. `d@` uses `movsxd` for sign-extended reads.
+
+The `callmark` variable tracks the last compiled call instruction.
+`-c` uses it to uncompile a call and recover the target xt. `'` (tick)
+wraps this: `foo '` uncompiles the call to foo and compiles its xt as
+a literal, making it available at runtime.
+
+Also introduced `exp/test.sh` — a reusable test helper that simplifies
+writing experiment Makefiles.
+
+**Running total:** ~205 words/macros ported. 213 tests across 41
+experiments (including the test helper retroactively covering earlier
+experiments), all passing.

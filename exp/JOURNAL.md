@@ -2817,3 +2817,58 @@ Character values (4), char in word/expression/IF (3), prompt (1).
 **Files:** `ff64.asm` (+10 lines: character literal check),
 `ff64.boot` (prompt updated to use `';'`),
 `exp/040-charliteral64/Makefile` (8 tests)
+
+---
+
+## Experiment 041: Vectors and Tick
+
+**Goal:** Implement `:^` vector words, `'` (tick), `d,`/`d@`/`d!`, and
+callmark infrastructure — the foundation for user-redirectable words.
+
+### Background
+
+FreeForth vectors use a `push imm32; ret` preamble (6 bytes). The push
+operand at xt+1 holds the target address (32-bit, sign-extended to 64-bit
+on x86-64). To redirect a vector, write a new 32-bit address at xt+1.
+
+### Implementation
+
+**Assembly (ff64.asm):**
+- `d,` ( x -- ) — compile 32-bit dword at here, advance 4
+- `d@` ( addr -- sval ) — sign-extended 32-bit fetch (movsxd)
+- `d!` ( val addr -- ) — 32-bit store
+- `callmark` variable — tracks last compiled call position
+- `call,` / `dcall,` — Forth-callable call compilation
+- `_call_compile.no_rst` — entry point skipping SWAPbit reset
+
+**Boot (ff64.boot):**
+- `d,`` — inline macro version of d, (32-bit store + advance 4)
+- `:^`` — creates vector with `push imm32; ret` preamble
+- `-c` — uncompile last call, return target xt
+- `'`` — tick: uncompiles preceding call, compiles xt as literal
+- `@^` ( xt -- target ) — read vector target
+- `!^` ( new xt -- ) — set vector target
+- `n^` ( xt -- ) — reset vector to default body
+- `x^` ( xt -- ) — call original body (xt+6)
+
+**Test helper (exp/test.sh):**
+- Reusable `run/start/finish` functions for experiment Makefiles
+- Handles quoting, negative numbers (`grep -F --`), multi-line input
+
+### Design decisions
+
+Vector ops (`@^`, `!^`, `n^`, `x^`) are implemented as runtime words
+taking an xt from the stack, used with `'` (tick). The i386 versions are
+compile-time macros using `-call` to uncompile the preceding call — that
+approach requires `_?` and `!"` error infrastructure we haven't ported yet.
+Runtime versions are simpler and fully functional.
+
+### Tests (15 total, all PASS)
+
+d,/d@/d! (4), vector creation/structure (5), tick (1), redirect/read/
+reset/execute (4), callmark (1).
+
+**Files:** `ff64.asm` (d,/d@/d!/callmark/call,/dcall,),
+`ff64.boot` (d,`/:^`/-c/'`/@^/!^/n^/x^),
+`exp/test.sh` (test helper),
+`exp/041-vectors64/Makefile` (15 tests)

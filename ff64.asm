@@ -23,6 +23,7 @@ h.nm = 10
 
 H       dq 0
 anon    dq 0
+callmark dq 0
 tin     dq 0
 tp      dq 0
 filebuf_ptr dq 0
@@ -292,6 +293,15 @@ _store: mov [rbx], rdx          ; ! ( val addr -- )
 _cfetch: movzx rbx, byte [rbx]  ; c@ ( addr -- char )
         ret
 
+_dfetch: movsxd rbx, dword [rbx] ; d@ ( addr -- sval ) sign-extended 32-bit fetch
+        ret
+
+_dstore: mov [rbx], edx         ; d! ( val addr -- ) store 32-bit dword
+        mov rbx, [r15]
+        mov rdx, [r15+8]
+        add r15, 16
+        ret
+
 _cstore: mov [rbx], dl          ; c! ( char addr -- )
         mov rbx, [r15]
         mov rdx, [r15+8]
@@ -415,6 +425,27 @@ _anon_addr:                     ; anon ( -- addr ) anonymous def start
         lea rbx, [anon]
         ret
 
+_callmark_addr:                 ; callmark ( -- addr ) last compiled call position
+        sub r15, 8
+        mov [r15], rdx
+        mov rdx, rbx
+        lea rbx, [callmark]
+        ret
+
+_call_comma:                    ; call, ( xt -- ) compile call to xt, reset SWAPbit
+        mov rax, rbx
+        mov rbx, rdx
+        mov rdx, [r15]
+        add r15, 8
+        jmp _call_compile
+
+_dcall_comma:                   ; dcall, ( xt -- ) compile call to xt, no reset
+        mov rax, rbx
+        mov rbx, rdx
+        mov rdx, [r15]
+        add r15, 8
+        jmp _call_compile.no_rst
+
 _SC_addr:                       ; SC ( -- addr ) SWAPbit/condition state
         sub r15, 8
         mov [r15], rdx
@@ -431,7 +462,15 @@ _cond_addr:                     ; ? ( -- addr ) condition jump opcode byte
 
 _anon_colon:                    ; anon:` ( -- ) start new anonymous definition
         mov [anon], rbp
+        mov qword [callmark], 0
         mov byte [SC], 0
+        ret
+
+_dcomma: mov [rbp], ebx         ; d, ( x -- ) compile 32-bit dword
+        add rbp, 4
+        mov rbx, rdx
+        mov rdx, [r15]
+        add r15, 8
         ret
 
 _ccomma: mov [rbp], bl          ; c, ( c -- ) compile byte
@@ -1103,10 +1142,12 @@ _number:
 
 _call_compile:
         call _rst               ; sync registers before call
+.no_rst:
         mov byte [rbp], $E8
         lea rcx, [rbp+5]
         sub eax, ecx
         mov dword [rbp+1], eax
+        mov [callmark], rbp     ; save call position for -call/;;
         add rbp, 5
         ret
 
@@ -1637,6 +1678,7 @@ WORD64 "1", _one, 0, 1
 WORD64 ".", _dot, 0, 1
 WORD64 "rshift", _rshift, 0, 6
 WORD64 "lshift", _lshift, 0, 6
+WORD64 "d,", _dcomma, 0, 2
 WORD64 "w,", _wcomma, 0, 2
 WORD64 "c,", _ccomma, 0, 2
 WORD64 ",", _comma, 0, 1
@@ -1644,6 +1686,9 @@ WORD64 "allot", _allot, 0, 5
 WORD64 "here", _here, 0, 4
 WORD64 "SC", _SC_addr, 0, 2
 WORD64 "?", _cond_addr, 0, 1
+WORD64 "callmark", _callmark_addr, 0, 8
+WORD64 "call,", _call_comma, 0, 5
+WORD64 "dcall,", _dcall_comma, 0, 6
 WORD64 "anon", _anon_addr, 0, 4
 WORD64 "H", _H_addr, 0, 1
 WORD64 "depth", _depth, 0, 5
@@ -1651,6 +1696,8 @@ WORD64 "/mod", _divmod, 0, 4
 WORD64 "mod", _mod, 0, 3
 WORD64 "/", _div, 0, 1
 WORD64 "+!", _addstore, 0, 2
+WORD64 "d@", _dfetch, 0, 2
+WORD64 "d!", _dstore, 0, 2
 WORD64 "c!", _cstore, 0, 2
 WORD64 "!", _store, 0, 1
 WORD64 "emit", _emit, 0, 4
