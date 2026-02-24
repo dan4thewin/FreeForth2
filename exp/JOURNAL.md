@@ -2426,3 +2426,117 @@ Brackets: compile-time evaluation (3+4=7, 10*2=20)
 
 **Files:** `ff64.asm` (+1 line: ct mask fix), `ff64.boot` (+8 lines),
 `exp/034-execalias64/{macros.ff,Makefile}`
+
+---
+
+## Experiment 035: Number Output with Base Variable
+
+**Date:** 2025-07-22
+**Goal:** Replace the hardcoded decimal-only assembly `_dot` with a
+Forth-defined number output chain supporting arbitrary bases, matching
+the i386 ff.boot's elegant recursive digit extraction pattern.
+
+### The Fall-Through Pattern
+
+This experiment showcases one of FreeForth's most beautiful mechanisms.
+Disassembling `_d` in the i386 original (via `see _d`) revealed the key:
+
+```
+_d ends with:  call _d        ; recursive call
+.digit starts: add ebx,$30    ; immediately after, no ret!
+.digit ends:   jmp putc       ; tail call
+```
+
+`_d` has no `;` — its code falls directly through to `.digit`. When `_d`
+recurses, each call pushes a return address pointing at `.digit`'s code.
+As the recursion unwinds, digits are printed from most significant to
+least significant. The mechanism:
+
+1. `_d` divides value by base, getting quotient and remainder
+2. If quotient is non-zero: leave remainder on stack, recurse with quotient
+3. Base case: quotient is zero, return the remainder (final digit)
+4. Each return falls through to `.digit`, printing one digit
+5. `.ub\` calls `.digit` once more for the last digit
+
+This was confirmed by DG's suggestion to disassemble the i386 compiled
+code — the definitive way to understand FreeForth's code generation.
+
+### Understanding :.
+
+An important correction from DG: `:.` is NOT a "fall-through" mechanism.
+It is simply `: + pvt` — creates a private word (invisible after
+`hidepvt`). The fall-through works because `_d` has no `;`, and the next
+`:` (for `.digit`) doesn't compile a ret between them. This is a natural
+consequence of FreeForth's compilation model, not a special feature.
+
+### Implementation
+
+**base variable and accessors:**
+```forth
+variable base
+10 base ! ;
+: base@ base @ ;
+: base! base ! ;
+```
+Without the literal compiler suffix mechanism, we need explicit `base@`
+and `base!` words (the i386 uses `base@` = find base, apply `@`).
+
+**Recursive digit extraction (_d, private):**
+```forth
+:. _d tuck 0 swap m/mod 0- 0= IF drop nip ;THEN rot _d
+```
+Stack: ( value base ) → tuck 0 swap → ( base value 0 base ) →
+m/mod → ( base rem quot ). If quot=0: drop nip → ( rem ), return.
+If quot≠0: rot → ( rem quot base ), recurse.
+
+**Digit to ASCII (.digit):**
+```forth
+: .digit $30 + $39 u> drop IF 39 + $7A u> drop IF drop $3F THEN THEN emit ;
+```
+Uses hex literals ($30='0', $39='9', $7A='z', $3F='?') since we lack
+character literal ('X') syntax. The `u> drop` pattern: `u>` only sets
+flags (doesn't nip), so `drop` removes the comparison literal. Digits
+0-9 map to '0'-'9'; 10-35 map to 'a'-'z'; beyond that → '?'.
+
+**Output chain:**
+```forth
+: .ub\ _d .digit ;        \ unsigned base print, no trailing space
+: .ub .ub\ space ;         \ unsigned base print with space
+:. .sign 0- 0< IF $2D emit negate THEN ;  \ handle sign ($2D='-')
+: .\ .sign base@ .ub\ ;   \ signed print, no space
+: . .\ space ;             \ THE number printer (replaces _dot!)
+```
+
+**Convenience words:**
+```forth
+: .dec\ .sign 10 .ub\ ;   \ always decimal
+: .dec .dec\ space ;
+: .u\ base@ .ub\ ;        \ unsigned in current base
+: .u .u\ space ;
+: .ux\ $10 .ub\ ;         \ unsigned hex
+: .ux .ux\ space ;
+: .x\ .sign $10 .ub\ ;    \ signed hex
+: .x .x\ space ;
+```
+
+### The `u> drop` Insight
+
+FreeForth's FLAGS-based conditionals mean `u>` only sets processor flags
+and stores the condition code — it does NOT modify the data stack. When
+you write `$39 u> drop IF`:
+1. `$39` pushes the literal (TOS=$39, old TOS becomes NOS)
+2. `u>` compiles `cmp NOS, TOS`, sets condition flags, but doesn't nip
+3. `drop` removes the $39, restoring the original stack
+4. `IF` uses the stored condition to compile a conditional jump
+
+This differs from standard Forth where `>` returns a boolean flag. The
+FLAGS-based approach generates tighter code (no boolean materialization).
+
+### Tests (15 total, all PASS)
+
+Zero, positive, negative, one, minus-one, large number, hex output,
+hex deadbeef, explicit decimal, base switch, base restore, unsigned hex,
+unsigned decimal, multi-digit, three-digit.
+
+**Files:** `ff64.boot` (+20 lines: base, _d, .digit, .sign, ., .x, etc.),
+`exp/035-numout64/{macros.ff,Makefile}`

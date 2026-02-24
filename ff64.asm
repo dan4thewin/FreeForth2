@@ -818,6 +818,20 @@ _ge_flags:
         mov byte [cond_jmp], $7D
         jmp _emit_cmp_s
 
+;; Unsigned binary comparisons (JB=$72, JAE=$73, JBE=$76, JA=$77)
+_ult_flags:
+        mov byte [cond_jmp], $72
+        jmp _emit_cmp_s
+_ugt_flags:
+        mov byte [cond_jmp], $77
+        jmp _emit_cmp_s
+_ule_flags:
+        mov byte [cond_jmp], $76
+        jmp _emit_cmp_s
+_uge_flags:
+        mov byte [cond_jmp], $73
+        jmp _emit_cmp_s
+
 ;; Shared: emit cmp rdx, rbx (48 39 DA) with SWAPbit
 _emit_cmp_s:
         mov byte [rbp], $48
@@ -1710,6 +1724,10 @@ WORD64 "0<>`", _zneq_flags, 0, 4
 WORD64 "0=`", _zeq_flags, 0, 3
 WORD64 ">=`", _ge_flags, 0, 3
 WORD64 "<=`", _le_flags, 0, 3
+WORD64 "u>=`", _uge_flags, 0, 4
+WORD64 "u<=`", _ule_flags, 0, 4
+WORD64 "u>`", _ugt_flags, 0, 3
+WORD64 "u<`", _ult_flags, 0, 3
 WORD64 "<>`", _neq_flags, 0, 3
 WORD64 ">`", _gt_flags, 0, 2
 WORD64 "<`", _lt_flags, 0, 2
@@ -1724,6 +1742,10 @@ WORD64 "0>", _zgt_flags, 2, 2
 WORD64 "0<", _zlt_flags, 2, 2
 WORD64 "0<>", _zneq_flags, 2, 3
 WORD64 "0=", _zeq_flags, 2, 2
+WORD64 "u>=", _uge_flags, 2, 3
+WORD64 "u<=", _ule_flags, 2, 3
+WORD64 "u>", _ugt_flags, 2, 2
+WORD64 "u<", _ult_flags, 2, 2
 WORD64 ">=", _ge_flags, 2, 2
 WORD64 "<=", _le_flags, 2, 2
 WORD64 "<>", _neq_flags, 2, 2

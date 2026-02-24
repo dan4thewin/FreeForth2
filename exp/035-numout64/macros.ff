@@ -1,0 +1,17 @@
+( Exp 035: Number output — additional convenience words )
+
+( Hex output )
+: .x\ .sign $10 .ub\ ;
+: .x .x\ space ;
+
+( Decimal output — explicit base )
+: .dec\ .sign 10 .ub\ ;
+: .dec .dec\ space ;
+
+( Unsigned output )
+: .u\ base@ .ub\ ;
+: .u .u\ space ;
+
+( Unsigned hex output )
+: .ux\ $10 .ub\ ;
+: .ux .ux\ space ;

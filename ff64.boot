@@ -231,7 +231,7 @@
 
 ( Dictionary operations )
 : execute >r ;
-: :.` :` ;
+: :.` :` pvt` ;
 : _alias H@ ! $20 H@ ct|! anon:` ;
 : alias` :` _alias ;
 : constant` :` 1 H@ ct|! H@ ! anon:` ;
@@ -239,3 +239,24 @@
 ( Bracket state switching )
 : [` anon@ SC c@ anon:` ;
 : ]` 2>r ;` 2r> SC c! anon ! ;
+
+( Number output )
+variable base
+10 base ! ;
+: base@ base @ ;
+: base! base ! ;
+:. _d tuck 0 swap m/mod 0- 0= IF drop nip ;THEN rot _d
+: .digit $30 + $39 u> drop IF 39 + $7A u> drop IF drop $3F THEN THEN emit ;
+: .ub\ _d .digit ;
+: .ub .ub\ space ;
+:. .sign 0- 0< IF $2D emit negate THEN ;
+: .\ .sign base@ .ub\ ;
+: . .\ space ;
+: .dec\ .sign 10 .ub\ ;
+: .dec .dec\ space ;
+: .u\ base@ .ub\ ;
+: .u .u\ space ;
+: .ux\ $10 .ub\ ;
+: .ux .ux\ space ;
+: .x\ .sign $10 .ub\ ;
+: .x .x\ space ;

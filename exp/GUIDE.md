@@ -1409,3 +1409,66 @@ t                       \ prints 7
 The dictionary manipulation infrastructure is now functional: header
 inspection, ct flag modification, execute, alias, constant, and
 bracket state switching.
+
+---
+
+## Part 16: Number Output — The Fall-Through Pattern (Exp 035)
+
+### A Beautiful Mechanism
+
+The most elegant code in ff.boot is the number output chain. To understand
+it, DG suggested disassembling the i386 compiled code — an invaluable
+technique that reveals exactly what FreeForth generates:
+
+```
+$ echo "see _d" | ./ff
+_d:
+  ...
+  call   _d              ; recursive call to self
+  add    ebx,$30          ; .digit starts HERE — no ret!
+  ...
+  jmp    putc             ; .digit ends with tail call
+```
+
+The key insight: `_d` is defined without `;`. Its code ends with `call _d`,
+and `.digit`'s code follows immediately in memory. When `_d` recurses,
+each level pushes a return address pointing at `.digit`'s code. As the
+recursion unwinds, digits print from most to least significant.
+
+### Why It Works
+
+FreeForth's compilation model makes this natural:
+- `:.` creates a private header (`: + pvt`) — nothing special about flow
+- No `;` means no `ret` is compiled
+- The next `:` creates a new header at the current compilation pointer
+- The new word's code IS the fall-through from the previous word
+
+This isn't a hack — it's a consequence of FreeForth's design where the
+compiler always compiles forward and `:` doesn't insert padding.
+
+### The u> drop Pattern
+
+FreeForth's FLAGS-based conditionals don't push booleans:
+```forth
+: .digit $30 + $39 u> drop IF 39 + ... THEN emit ;
+```
+- `$39` pushes a literal (shifting TOS down)
+- `u>` sets CPU flags (NOS > TOS unsigned?) but doesn't modify stack
+- `drop` removes the $39 literal
+- `IF` uses the stored condition flag
+
+This generates tighter code than standard Forth's boolean approach.
+
+### From Assembly to Forth
+
+The Forth `.` replaces ~35 lines of assembly `_dot` with ~12 lines of
+Forth, gaining arbitrary base support for free:
+```forth
+: . .\ space ;              \ decimal by default
+16 base! 255 . ;            \ prints "ff"
+10 base! ;                  \ back to decimal
+$DEADBEEF .x ;              \ prints "deadbeef"
+```
+
+**Running total:** ~155 words/macros ported. 132 tests across 35
+experiments, all passing.
