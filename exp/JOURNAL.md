@@ -3547,3 +3547,49 @@ suffix directly.
 converted, including `h.sz+`, `h.nm+`, `h.ct+`, `callmark@`,
 `callmark!`, `mrk@`, `mrk!`, `anon!`, `noauto@`, `>in@`, `>in!`,
 `tp@`, `tp!`, `base!`, `H!`, `$400/`.
+
+---
+
+## Experiment 049: hidepvt — Hide Private Words
+
+**Date:** 2025-06-25
+
+**Goal:** Implement `hidepvt`` to hide private words (defined with `:.`
+or `pvt`) from the symbol table after boot.
+
+### Implementation
+
+Simplified approach compared to i386: instead of compacting headers
+(which requires complex nested START/END loops and byte-by-byte memory
+copying), we zero out the name-length byte (`h.sz`) of private headers.
+This prevents `_find` from matching them while preserving the header
+chain for traversal.
+
+The `pvtmargin` flag (ct bit 4 = $10) stops the walk — headers before
+the margin are protected.
+
+```forth
+variable hide hide on
+: hidepvt` hide@ 0; drop
+  H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
+    dup h.ct+ c@ dup $10& 0<> drop IF 2drop ;THEN
+    8& 0<> drop IF 0 over h.sz+ c! THEN
+    h.next
+  REPEAT drop ;
+```
+
+### Ordering issue
+
+`:^` (vector definitions) requires `:^`` which is defined in the vector
+words section. The hidepvt code was initially placed before the vector
+definitions, causing crashes. Moved to after all word definitions.
+
+### Test Results
+
+7 tests: pvt word callable, hidden after hidepvt, public still works,
+hide variable controls behavior, pvtmargin stops hiding.
+
+All 265 tests pass (258 existing + 7 new).
+
+**Files:** `ff64.boot` (hidepvt`, hide variable, pvtmargin interaction),
+`exp/049-hidepvt64/Makefile` (7 tests), `exp/Makefile` (added 049)

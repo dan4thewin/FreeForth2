@@ -420,3 +420,13 @@ variable noauto pvt
 
 ( type — output a counted string: addr len -- )
 : type stdout write drop ;
+
+( Hide private words — zero out pvt-marked header names )
+( Stops at pvtmargin. Does not compact memory. )
+variable hide hide on
+: hidepvt` hide@ 0; drop
+  H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
+    dup h.ct+ c@ dup $10& 0<> drop IF 2drop ;THEN
+    8& 0<> drop IF 0 over h.sz+ c! THEN
+    h.next
+  REPEAT drop ;
