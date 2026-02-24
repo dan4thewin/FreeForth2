@@ -2113,3 +2113,108 @@ greet                        \ → (nothing)
 
 **Running total:** ~225 words/macros ported. 234 tests across 46
 experiments, all passing.
+
+---
+
+## Part 22: System Words and the _semi_exec Bug
+
+### Exception Handling: catch/throw
+
+FreeForth's exception handling is minimal but complete. `catch` wraps a word
+execution in a safety net; `throw` unwinds back to it.
+
+**catch ( xt -- exception )**
+
+`catch` saves three things on the call stack:
+1. The data stack pointer (r15)
+2. The NOS register (rdx)
+3. The previous exception frame pointer [xfp]
+
+Then it sets `xfp` to the current rsp (marking the recovery point), drops
+the xt from the data stack, and calls it. If the word returns normally,
+`catch` cleans up the saved state and pushes 0 (no exception).
+
+**throw ( exception -- )**
+
+`throw` restores rsp from `xfp`, pops the three saved values (xfp, rdx, r15),
+and executes `ret`. This returns directly to catch's caller with the exception
+value still in TOS (rbx). The data stack is restored to its state at catch time.
+
+```
+: ok 42 . cr ;
+ok ' catch . cr           \ → prints "42" then "0" (success)
+
+: bomb 99 throw ;
+bomb ' catch . cr          \ → prints "99" (exception value)
+
+: inner 55 throw ;
+: outer inner ' catch ;
+outer . cr                 \ → prints "55" (propagates through call chain)
+```
+
+### I/O Primitives: write, read, accept, type
+
+The I/O words wrap Linux syscalls. A critical implementation detail: the
+`syscall` instruction on x86-64 **clobbers rcx and r11**. All I/O words
+must save/restore rax, rdi, rsi, and rcx around the syscall to prevent
+corrupting FreeForth's internal state.
+
+**write ( addr count fd -- written )**
+
+Maps to Linux `sys_write` (rax=1). Stack layout: TOS=fd, NOS=count,
+third=addr. Note the stack order — addr is pushed first, then count,
+then fd. The implementation saves count from NOS (rdx) into rcx before
+overwriting rdx with the syscall argument.
+
+**type ( addr count -- )**
+
+Defined in Forth as `stdout write drop`. Pushes fd=1, calls write,
+drops the return value (bytes written).
+
+### The _semi_exec Allot Bug
+
+This was a subtle and important bug in how anonymous code execution
+interacted with memory allocation.
+
+**Background:** In FreeForth, when you type `create buf 16 allot` at the
+prompt, each word compiles into an anonymous definition. When `:` starts
+a new definition, `_colon` calls `_semi_exec` to execute the pending
+anonymous code. This anonymous code creates the `buf` header and advances
+`rbp` by 16 bytes (via allot).
+
+**The bug:** After executing the anonymous code, our `_semi_exec` was
+resetting `rbp` back to `[anon]` — the START of the anonymous code area.
+This effectively "forgot" that 16 bytes had been allocated for buf's data.
+The next definition (`: t ...`) would compile its code starting at `rbp`,
+which now overlapped with buf's data area.
+
+**The i386 solution:** Lavarenne's original design has `_semi` fall through
+to `_anon` after executing anonymous code. `_anon` does `mov [anon], ebp`,
+capturing the post-execution `ebp` as the new anonymous definition start.
+Since `allot` advanced `ebp`, the allocated space is preserved.
+
+**The fix:** Instead of restoring `rbp` from a saved value, we now let
+`rbp` keep whatever value it has after execution, then save it with
+`mov [anon], rbp`. This matches the i386 fall-through pattern.
+
+```
+\ Before fix: buf data overwritten by t's code
+create buf 16 allot
+65 buf c!
+: t 0 ;              \ t's code would overwrite buf!
+buf c@ .              \ → garbage (77, 141, etc.)
+
+\ After fix: buf data preserved
+create buf 16 allot
+65 buf c!
+: t 0 ;              \ t's code compiled AFTER buf's 16 bytes
+buf c@ .              \ → 65 ✓
+```
+
+This is a pattern that appears throughout FreeForth — the anonymous code
+mechanism assumes that `rbp` accurately tracks all memory allocation.
+Any operation that advances `rbp` (allot, create, variable) must have
+its effects preserved across the anonymous→named transition.
+
+**Running total:** ~230 words/macros ported. 243 tests across 47
+experiments, all passing.

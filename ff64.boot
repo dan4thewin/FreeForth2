@@ -391,3 +391,21 @@ variable base
 : marker 2dup + dup c@ >r dup >r $60 swap c! 1 +
   here 0 header 2r> c! _mark ' call, anon:` ;
 : mark` ;` wsparse marker ;
+
+( I/O constants )
+0 constant stdin
+1 constant stdout
+2 constant stderr
+
+( eval — evaluate a counted string as Forth source )
+( Saves >in and tp, sets new parsing bounds, calls compiler, restores. )
+: eval >in @ tp @ 2>r over + tp ! >in ! compiler 2r> tp ! >in ! ;
+
+( key — read a single character from stdin )
+: key tib 1 accept drop tib c@ ;
+
+( bye — exit the system )
+: bye` ;` cr 0 exit ;
+
+( type — output a counted string: addr len -- )
+: type stdout write drop ;

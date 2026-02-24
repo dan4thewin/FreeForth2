@@ -27,6 +27,7 @@ callmark dq 0
 tin     dq 0
 tp      dq 0
 filebuf_ptr dq 0
+xfp     dq 0                    ; exception frame pointer for catch/throw
 SC      db 0                    ; SWAPbit in bit 1: 0=rbx is TOS, 2=rdx is TOS
 cond_jmp db 0                   ; ?# : pending conditional jump opcode (0=none)
 
@@ -1339,12 +1340,15 @@ _semi:
 _semi_exec:
         mov byte [rbp], $C3
         inc rbp
-        push rbp
         mov rax, [anon]
-        mov rbp, rax            ; reset rbp BEFORE calling (like i386)
-        call rax
-        pop rbp
-        mov rbp, [anon]         ; restore again after call
+        mov rbp, rax            ; reset rbp to anon start (for execution)
+        call rax                ; execute anonymous code (may advance rbp via allot)
+        ;; After execution, rbp reflects any allot changes.
+        ;; Fall through to _anon to set [anon]=rbp, preserving allotted space.
+        ;; This matches i386 behavior where _semi falls through to _anon.
+        mov [anon], rbp
+        mov qword [callmark], 0
+        mov byte [SC], 0
         ret
 
 ;; variable: parse name, allocate 8-byte cell, create literal header
@@ -1588,7 +1592,104 @@ _err_nocond:
         jmp _compiler
 
 ;; =====================================================================
-;; I/O
+;; Exception handling: catch/throw
+;; =====================================================================
+
+;; catch ( xt -- exception ) execute xt, return 0 if ok, exception if throw
+_catch:
+        push r15                ; save data stack pointer
+        push rdx                ; save NOS
+        push qword [xfp]       ; save previous frame pointer
+        mov [xfp], rsp          ; set new frame pointer
+        mov rcx, rbx            ; xt to call
+        mov rbx, rdx            ; DROP1: TOS = NOS
+        mov rdx, [r15]
+        add r15, 8
+        call rcx                ; execute protected code
+        pop qword [xfp]        ; restore frame pointer
+        add rsp, 16             ; discard saved NOS and r15
+        ;; No exception: push 0
+        sub r15, 8
+        mov [r15], rdx
+        mov rdx, rbx
+        xor ebx, ebx            ; TOS = 0 (no exception)
+        ret
+
+;; _error: called from compiler when !" prefix is found
+;; throw ( message -- ) unwind to catch, TOS = exception message
+_throw:
+        mov rsp, [xfp]          ; restore call stack
+        pop qword [xfp]        ; restore previous frame pointer
+        pop rdx                 ; restore NOS
+        pop r15                 ; restore data stack pointer
+        ret                     ; return to catch's caller with TOS=message
+
+;; =====================================================================
+;; I/O — Forth-callable read/write/accept
+;; =====================================================================
+
+;; write ( addr count fd -- written )
+_write_word:
+        push rax
+        push rdi
+        push rsi
+        push rcx
+        mov rax, 1              ; sys_write
+        mov rdi, rbx            ; fd = TOS
+        mov rcx, rdx            ; save count = NOS
+        mov rsi, [r15]          ; addr = third
+        mov rdx, rcx            ; count for syscall
+        syscall
+        mov rbx, rax            ; TOS = bytes written
+        mov rdx, [r15+8]       ; NOS = item below third
+        add r15, 16             ; pop third + old NOS
+        pop rcx
+        pop rsi
+        pop rdi
+        pop rax
+        ret
+
+;; read ( addr count fd -- nread )
+_read_word:
+        push rax
+        push rdi
+        push rsi
+        push rcx
+        xor eax, eax            ; sys_read
+        mov rdi, rbx            ; fd = TOS
+        mov rcx, rdx            ; save count = NOS
+        mov rsi, [r15]          ; addr = third
+        mov rdx, rcx            ; count for syscall
+        syscall
+        mov rbx, rax            ; TOS = bytes read
+        mov rdx, [r15+8]       ; NOS = item below third
+        add r15, 16             ; pop third + old NOS
+        pop rcx
+        pop rsi
+        pop rdi
+        pop rax
+        ret
+
+;; accept ( addr count -- nread ) read from stdin (fd=0)
+_accept:
+        push rax
+        push rdi
+        push rsi
+        xor eax, eax            ; sys_read
+        xor edi, edi            ; fd=0 (stdin)
+        mov rsi, rdx            ; addr = NOS
+        mov rdx, rbx            ; count = TOS (also syscall count arg)
+        syscall
+        mov rbx, rax            ; TOS = bytes read
+        mov rdx, [r15]          ; NOS = item below addr
+        add r15, 8              ; pop addr
+        pop rsi
+        pop rdi
+        pop rax
+        ret
+
+;; =====================================================================
+;; Line-based I/O (internal)
 ;; =====================================================================
 
 _readline:
@@ -1817,10 +1918,17 @@ WORD64 "lnparse", _lnparse, 0, 7
 WORD64 "wsparse", _wsparse_forth, 0, 7
 WORD64 "header", _header_forth, 0, 6
 WORD64 "exit", _exit_word, 0, 4
+WORD64 "catch", _catch, 0, 5
+WORD64 "throw", _throw, 0, 5
+WORD64 "write", _write_word, 0, 5
+WORD64 "read", _read_word, 0, 4
+WORD64 "accept", _accept, 0, 6
+WORD64 "compiler", _compiler, 0, 8
 
 ;; Data words (ct=1) — push address/value
 WORD64 ">in", tin, 1, 3
 WORD64 "tp", tp, 1, 2
+WORD64 "tib", inbuf, 1, 3
 
 ;; Compile-time words (ct=1)
 WORD64 "swap`", _swap_inline, 0, 5

@@ -3257,3 +3257,142 @@ needs careful x86-64 encoding work.
 `ff64.boot` (-call, redefined '` and ?`, `;;`` update),
 `exp/046-callvec64/Makefile` (8 tests),
 `exp/Makefile` (added 046 to experiment list)
+
+---
+
+## Experiment 047: System Words — catch/throw, I/O, allot fix
+
+**Date:** 2025-02-24 (continued)
+
+**Goal:** Implement and test system-level words: exception handling (catch/throw),
+I/O primitives (write/read/accept/type), and fix a critical bug in `_semi_exec`
+that caused `create`/`allot` data to be overwritten by subsequent `:` definitions.
+
+### Three bugs found and fixed
+
+#### Bug 1: write/read/accept register clobbering
+
+The initial implementations of `_write_word`, `_read_word`, and `_accept` did not
+save/restore registers around the `syscall` instruction. The Linux `syscall`
+instruction clobbers rcx and r11, and our I/O functions also used rax, rdi, rsi
+for argument passing without preserving them.
+
+This caused crashes when `type` (which calls `write`) was used inside a `:` definition
+where subsequent code expected those registers intact. The `_emit` function (single
+character output) already had proper register preservation — it pushes/pops rax, rdi,
+rsi, rdx around its syscall. The I/O words needed the same treatment.
+
+**Fix:** Added `push rax; push rdi; push rsi; push rcx` / matching pops around the
+syscall in all three I/O functions.
+
+#### Bug 2: write stack effect was wrong
+
+The initial write implementation read addr from NOS (rdx) and count from [r15]
+(third on stack), but the correct stack layout for `write (addr count fd --)` is:
+TOS=fd (rbx), NOS=count (rdx), third=addr ([r15]).
+
+**Fix:** Corrected register assignments: `rdi=rbx` (fd from TOS),
+`rcx=rdx` (save count from NOS), `rsi=[r15]` (addr from third),
+`rdx=rcx` (count for syscall).
+
+#### Bug 3: _semi_exec discarding allot space (critical!)
+
+This was the most significant bug. When `_semi_exec` executed pending anonymous
+code (triggered by `:` starting a new definition), it would reset `rbp` back to
+`[anon]` after execution. This discarded any space allocated by `allot` during
+the anonymous code's execution.
+
+**Symptom:** `create buf 16 allot 65 buf c! : t buf c@ ; t` would show garbage
+instead of 65, because `t`'s compiled code overwrote buf's data area.
+
+**Root cause analysis:** In the i386 FreeForth, `_semi` falls through to `_anon`
+after executing anonymous code:
+```
+_semi:
+    ...
+    mov ebp, ecx        ; reset to anon start
+    call ecx             ; execute anonymous code (may advance ebp via allot)
+    ; falls through to _anon:
+_anon:
+    mov [anon], ebp      ; save CURRENT ebp as new anon start
+    mov [callmark], 0
+    mov byte[SC], 0
+    ret
+```
+
+After execution, `ebp` reflects any `allot` advancement. `_anon` saves this new
+`ebp` as the anon start, so subsequent compilations start AFTER the allotted space.
+
+Our x86-64 version was:
+```
+_semi_exec:
+    mov byte [rbp], $C3
+    inc rbp
+    push rbp             ; save current rbp
+    mov rax, [anon]
+    mov rbp, rax          ; reset to anon start
+    call rax              ; execute (allot may advance rbp)
+    pop rbp               ; RESTORE OLD rbp — DISCARDS allot changes!
+    mov rbp, [anon]       ; reset AGAIN to anon start!
+    ret
+```
+
+Both `pop rbp` and `mov rbp,[anon]` discarded the `allot` advancement.
+
+**Fix:** Match the i386 fall-through pattern:
+```
+_semi_exec:
+    mov byte [rbp], $C3
+    inc rbp
+    mov rax, [anon]
+    mov rbp, rax          ; reset to anon start
+    call rax              ; execute (allot may advance rbp)
+    ; After execution, rbp reflects allot changes
+    mov [anon], rbp       ; save post-execution rbp
+    mov qword [callmark], 0
+    mov byte [SC], 0
+    ret
+```
+
+Now `[anon]` is set to wherever `rbp` ended up after execution, preserving
+any `allot`-ed space.
+
+### System words implemented
+
+**In ff64.asm:**
+- `catch ( xt -- exception )` — saves data stack pointer (r15), NOS (rdx),
+  and exception frame pointer (xfp) on the call stack. Sets xfp to current
+  rsp. Calls xt. On normal return, pushes 0 (no exception).
+- `throw ( exception -- )` — restores rsp from xfp, pops saved state,
+  returns to catch's caller with exception value as TOS.
+- `write ( addr count fd -- written )` — Linux sys_write wrapper
+- `read ( addr count fd -- nread )` — Linux sys_read wrapper
+- `accept ( addr count -- nread )` — read from stdin (fd=0)
+
+**In ff64.boot:**
+- `stdin` / `stdout` / `stderr` — file descriptor constants (0, 1, 2)
+- `type ( addr count -- )` — `stdout write drop`
+- `eval ( addr count -- )` — redirect input state and run compiler
+- `key ( -- char )` — read single character from stdin
+- `bye` — print newline and exit with code 0
+
+### Test results
+
+9 tests, all passing:
+- catch returns 0 on success
+- throw returns exception to catch
+- nested catch/throw
+- write outputs bytes
+- type outputs string
+- type works inside definition
+- create+allot data survives colon def
+- variable data survives colon def
+- bye exits cleanly
+
+**Running total:** 243 tests across 47 experiments, all passing.
+
+**Files:** `ff64.asm` (_write_word, _read_word, _accept register fixes;
+_semi_exec allot preservation fix; catch/throw),
+`ff64.boot` (stdin/stdout/stderr, type, eval, key, bye),
+`exp/047-syswords64/Makefile` (9 tests),
+`exp/Makefile` (added 047)
