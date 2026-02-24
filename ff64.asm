@@ -986,6 +986,29 @@ _lnparse:
         mov rbx, 10             ; LF separator
         jmp _parse
 
+;; wsparse ( -- @ # ) — skip whitespace, parse next word
+_wsparse_forth:
+        sub r15, 8
+        mov [r15], rdx
+        mov rdx, rbx
+        call _wsparse
+        sub r15, 8
+        mov [r15], rdx
+        mov rdx, rax            ; rdx = word address
+        mov rbx, rcx            ; rbx = word length
+        ret
+
+;; header ( @ # xt ct -- ) — create a new dictionary header
+_header_forth:
+        mov r9, rbx             ; r9 = ct
+        mov r8, rdx             ; r8 = xt
+        mov rcx, [r15]          ; rcx = name length
+        mov rax, [r15+8]        ; rax = name address
+        mov rdx, [r15+16]
+        mov rbx, [r15+24]
+        add r15, 32
+        jmp _header
+
 ;; exit ( n -- ) — exit process with status code n
 _exit_word:
         mov rdi, rbx            ; exit code in rdi
@@ -997,8 +1020,12 @@ _exit_word:
 ;; Return address on stack points to the length byte
 _dotstr_rt:
         pop rsi                 ; rsi = address of length byte
+        push rdx                ; save NOS (rdx is clobbered by syscall)
+        push rbx                ; save TOS
         movzx rdx, byte [rsi]  ; rdx = string length
         inc rsi                 ; rsi = string data
+        push rsi                ; save string start
+        push rdx                ; save string length
         push rax
         push rdi
         push rcx
@@ -1010,7 +1037,11 @@ _dotstr_rt:
         pop rcx
         pop rdi
         pop rax
+        pop rdx                 ; restore string length
+        pop rsi                 ; restore string start
         add rsi, rdx            ; skip past string data
+        pop rbx                 ; restore TOS
+        pop rdx                 ; restore NOS
         jmp rsi                 ; "return" to after the string
 
 ;; ." compile-time word: scan until " and compile inline string print
@@ -1277,10 +1308,15 @@ _colon:
 
 _semi:
         call _rst               ; sync registers before ret
+        ;; Check for empty anonymous def: if [anon] == rbp, nothing was compiled
+        ;; since anon:` — just reset and return (like i386's cmp ecx,ebp / jz)
+        mov rax, [anon]
+        cmp rax, rbp
+        je .empty
         ;; Tail-call optimization: if last compiled was a call, change to jmp
         ;; Only for named defs (anon=0); anonymous defs need ret to return
-        cmp qword [anon], 0
-        jne .no_tailcall
+        test rax, rax
+        jnz .no_tailcall
         mov rax, [callmark]
         add rax, 5
         cmp rax, rbp
@@ -1295,7 +1331,10 @@ _semi:
         mov rax, [anon]
         test rax, rax
         jnz .anonymous
+.empty:
         mov [anon], rbp
+        mov qword [callmark], 0
+        mov byte [SC], 0
         ret
 .anonymous:
 _semi_exec:
@@ -1303,10 +1342,10 @@ _semi_exec:
         inc rbp
         push rbp
         mov rax, [anon]
+        mov rbp, rax            ; reset rbp BEFORE calling (like i386)
         call rax
         pop rbp
-        mov rax, [anon]
-        mov rbp, rax
+        mov rbp, [anon]         ; restore again after call
         ret
 
 ;; variable: parse name, allocate 8-byte cell, create literal header
@@ -1776,6 +1815,8 @@ WORD64 "r>", _rfrom, 0, 2
 WORD64 ">r", _tor, 0, 2
 WORD64 "parse", _parse, 0, 5
 WORD64 "lnparse", _lnparse, 0, 7
+WORD64 "wsparse", _wsparse_forth, 0, 7
+WORD64 "header", _header_forth, 0, 6
 WORD64 "exit", _exit_word, 0, 4
 
 ;; Data words (ct=1) — push address/value

@@ -3070,3 +3070,107 @@ generated each section of code. Combined with `int3` as a Forth macro
 **Files:** `ff64.boot` (_then helper, mrk variable, START/ENTER/BREAK/END),
 `exp/044-startloop64/Makefile` (9 tests),
 `exp/Makefile` (added 044 to experiment list)
+
+---
+
+## Experiment 045: create/variable/mark/marker (2026-02-24)
+
+**Goal:** Dictionary state save/restore with `mark` and `marker`, plus
+validation of `create` and `variable` which were implemented earlier.
+
+**Context:** This experiment encountered three distinct bugs, all in the
+interaction between runtime Forth execution and the compile-time machinery.
+The debugging process illustrates how intertwined FreeForth's compiler and
+runtime really are — `mark` must call `;` at runtime, which means the
+compiler's anonymous-definition machinery executes during interpretation.
+
+### Bug 1: `_dotstr_rt` clobbers rdx and rbx
+
+**Symptom:** `r> ." r>=" .x` printed `3` instead of a return address.
+
+**Cause:** `_dotstr_rt` (the runtime for `."`) does a `write` syscall that
+uses rdx as the count parameter and rbx/rdi as scratch. But rdx is FreeForth's
+NOS register. So `."` after `r>` silently replaced the popped return address
+with the string length.
+
+**Fix:** Save/restore rdx and rbx around the syscall in `_dotstr_rt` with
+push/pop. Verified: `r> ." r>=" .x` now correctly prints a return address.
+
+### Bug 2: `_semi` missing empty anonymous definition check
+
+**Symptom:** `_mark` calling `;\`` at runtime crashed — `_semi` tried to
+re-execute already-executing anonymous code.
+
+**Cause:** i386's `_semi` has `cmp ecx,ebp; jz _anon.0` — if the anonymous
+block is empty (nothing compiled since `anon:`), just reset and return. Our
+x86-64 `_semi` was missing this check. When `_mark`'s body calls `_semi` at
+runtime via `;\``, and there's no pending anonymous code, `_semi` should be a
+no-op. Without the check, it emitted ret bytes into the current code being
+executed and then tried to re-execute it — catastrophic.
+
+**Fix:** Added `cmp rax,rbp; je .empty` at the start of `_semi`, with proper
+reset of `callmark` and `SC` at the `.empty` label.
+
+### Bug 3: _mark header walk loop — FLAGS vs stack
+
+**Symptom:** `h.next` received value 5 instead of a header pointer.
+
+**Cause:** FreeForth's FLAGS-based comparisons (`=`, `<`, etc.) do NOT modify
+the data stack — they only set CPU flags and `cond_jmp`. My original loop:
+```
+H@ BEGIN dup @ here - 0- 0<> WHILE h.next REPEAT h.next H !
+```
+After `here - 0-`, TOS was the difference value (5), not the header pointer.
+The comparison never consumed it.
+
+**Fix:** Rewrote to match i386's approach — compute h.next inline, then
+compare xt with here, then `2drop` to remove both comparison operands:
+```
+H@ BEGIN dup@ swap h.sz + c@+ + 1 + swap here = 2drop UNTIL H !
+```
+
+**FLAGS preservation through `2drop`:** A concern arose that `2drop` might
+clobber the FLAGS set by `=`, breaking `UNTIL`. Investigation revealed that
+`_emit_drop_nos_s` uses `lea r15,[r15+8]` — LEA does not affect FLAGS. So
+`drop` generates all flags-preserving instructions (mov, mov, lea). Two drops
+= still flags-preserving. ✓
+
+### Implementation notes
+
+**`mark` implementation (ff64.boot):**
+```forth
+:. _mark ;` r> 5 - here - allot anon:`
+  H@ BEGIN dup@ swap h.sz + c@+ + 1 + swap here = 2drop UNTIL H ! ;
+: marker 2dup + dup c@ >r dup >r $60 swap c! 1 +
+  here 0 header 2r> c! _mark ' call, anon:` ;
+: mark` ;` wsparse marker ;
+```
+
+`_mark` works by: `r>` gets the return address (inside the marker word),
+subtracting 5 gives the `call _mark` instruction, subtracting from `here`
+gives the negative offset to pass to `allot` (which restores `here`).
+`anon:\`` resets the anonymous definition. Then it walks headers from H@
+via h.next until finding one whose xt matches `here` (the marker's own
+entry point). The header AFTER that one becomes the new H.
+
+`marker` creates a named word whose body contains `call _mark`. It
+temporarily modifies the input to parse the word name (the `$60`/c!
+trick adjusts the preceding character).
+
+`mark\`` is simply `;\` wsparse marker` — end the current anonymous
+definition, parse the next word, and create a marker for it.
+
+**Tests (8):**
+- create with allot, store, fetch
+- variable store/fetch
+- variable initializes to zero
+- mark basic (define word, call it, forget it)
+- mark forgets word (accessing forgotten word errors)
+- nested marks (inner mark forgets subset)
+- mark self-forgets (marker can't be called twice)
+- pvtmargin basic
+
+**Files:** `ff64.asm` (_dotstr_rt fix, _semi fix),
+`ff64.boot` (_mark loop rewrite),
+`exp/045-markvar64/Makefile` (8 tests),
+`exp/Makefile` (added 045 to experiment list)

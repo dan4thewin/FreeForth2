@@ -307,6 +307,9 @@ variable mrk 0 mrk 8 + !
 ( Dictionary operations )
 : execute >r ;
 : :.` :` pvt` ;
+: create` :` 1 H@ ct|! anon:` ;
+: variable` create` 0 , anon:` ;
+: pvtmargin $10 H@ ct|! ;
 
 ( Vector words — :^ creates push/ret preamble, 6 bytes )
 ( Vector xt layout: $68 <target32> $C3 <body...> )
@@ -372,3 +375,17 @@ variable base
 ( System words )
 : bye` ;` cr 0 exit ;
 : EOF` tp @ >in ! ;` ;
+
+( Dictionary state save/restore — mark/marker )
+\ _mark: called from a marker word's body. Restores here and H to
+\ the state when the marker was created. r> gets the return address
+\ (inside the marker word); -5 gives the call instruction address;
+\ subtracting from here and calling allot restores the code pointer.
+\ Then walks headers from H@ via h.next, comparing each xt with here,
+\ until finding the marker's header. The header after it becomes the
+\ new H (discarding the marker and all later definitions).
+:. _mark ;` r> 5 - here - allot anon:`
+  H@ BEGIN dup@ swap h.sz + c@+ + 1 + swap here = 2drop UNTIL H ! ;
+: marker 2dup + dup c@ >r dup >r $60 swap c! 1 +
+  here 0 header 2r> c! _mark ' call, anon:` ;
+: mark` ;` wsparse marker ;

@@ -1929,3 +1929,106 @@ For i386, the `see` word provides similar capability without markers:
 
 **Running total:** ~220 words/macros ported. 245 tests across 44
 experiments, all passing.
+
+---
+
+## Part 20: Dictionary State Save/Restore — mark/marker
+
+### The Problem
+
+When developing Forth code interactively, you often want to "undo"
+definitions — redefine a word after discovering a bug, or load a
+file repeatedly during development. `mark` and `marker` provide this
+by saving the dictionary state and later restoring it.
+
+### How `mark` Works
+
+`mark foo` creates a word `foo` in the dictionary. When `foo` is called,
+it restores the dictionary to the state it was in when `mark foo` was
+executed — all words defined after `foo` (including `foo` itself) are
+forgotten.
+
+Two things must be restored:
+1. **`here`** (compilation pointer, rbp) — restored via `allot` with a
+   negative argument
+2. **`H`** (dictionary header chain pointer) — restored by walking
+   headers until finding the marker's own entry
+
+### Implementation
+
+```forth
+:. _mark ;` r> 5 - here - allot anon:`
+  H@ BEGIN dup@ swap h.sz + c@+ + 1 + swap here = 2drop UNTIL H ! ;
+```
+
+Step by step:
+- `;`` — end the current anonymous definition (needed because `mark` is
+  a compile-time word that uses `;``)
+- `r>` — pop the return address from the call to `_mark`
+- `5 -` — back up to the `call _mark` instruction (call = 5 bytes)
+- `here -` — compute how far here has advanced since the marker was created
+- `allot` — subtract that amount, restoring `here` to its saved value
+- `anon:\`` — reset the anonymous definition state
+- The `BEGIN...UNTIL` loop walks headers from H@ via h.next, comparing
+  each header's xt with `here`. When they match, that header is the
+  marker itself, and H is set to the NEXT header (forgetting the marker
+  and everything after it)
+
+### h.next — Walking Headers
+
+Headers grow downward from the top of the dictionary. Each header is:
+```
+offset 0: xt (8 bytes)     — execution token (code pointer)
+offset 8: ct (1 byte)      — compilation type
+offset 9: sz (1 byte)      — name length
+offset 10: name (sz bytes) — null-terminated name string
+```
+Total header size = sz + 11. `h.next` = header + h.sz + c@+ + 1 +
+(read sz byte, add to current address, skip null terminator).
+
+### FLAGS Preservation Through `2drop`
+
+A critical detail: `=` in FreeForth sets CPU FLAGS but does NOT modify the
+data stack. After `here =`, both comparison operands (xt and here) are
+still on the stack. `2drop` removes them. But `UNTIL` needs the FLAGS
+from `=` to survive through `2drop`.
+
+This works because `drop` generates:
+```
+mov rbx, rdx           ; move doesn't affect FLAGS
+mov rdx, [r15]          ; memory load doesn't affect FLAGS
+lea r15, [r15+8]        ; LEA doesn't affect FLAGS (unlike ADD)
+```
+All three instructions are flags-preserving. `2drop` = two drops = still
+flags-preserving. This is a deliberate design choice in the x86-64 port —
+using LEA instead of ADD for the stack pointer adjustment.
+
+### Three Bugs and Their Lessons
+
+This experiment revealed three bugs in the interaction between runtime
+execution and compile-time machinery:
+
+1. **`_dotstr_rt` register clobbering** — The `write` syscall used rdx
+   (NOS register) as the byte count parameter, silently destroying the
+   second stack item. Fix: save/restore rdx and rbx around the syscall.
+
+2. **`_semi` missing empty-check** — When `_mark` calls `;\`` at runtime,
+   `_semi` must detect that the anonymous definition is empty and skip
+   execution. Without this check (which i386 has), `_semi` overwrote
+   currently-executing code. Fix: check `[anon] == rbp` before proceeding.
+
+3. **FLAGS-based comparison stack semantics** — Comparisons in FreeForth
+   only set CPU flags; they don't modify the stack. After `= WHILE`, the
+   comparison operands are still on the stack. Must explicitly drop them.
+
+### `create` and `variable`
+
+These simpler dictionary words were also validated:
+
+- `create name` — defines a word that pushes the address of the memory
+  immediately following the definition (`here` at define time)
+- `variable name` — `create` + allocate 8 bytes, initialized to zero
+- `allot` — advance `here` by n bytes (used with `create` for buffers)
+
+**Running total:** ~220 words/macros ported. 226 tests across 45
+experiments, all passing.
