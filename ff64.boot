@@ -279,3 +279,13 @@ variable base
 : .ux .ux\ space ;
 : .x\ .sign $10 .ub\ ;
 : .x .x\ space ;
+
+( Hex digit output — .#s prints N hex digits of a value )
+: .#s TIMES dup r@ 4* >> $F and .digit LOOP drop ;
+: .b 2 .#s ;
+: .w 4 .#s ;
+
+( Dictionary listing )
+: h.next dup h.sz + c@ h.nm + 1 + + ;
+: h.name dup h.nm + over h.sz + c@ type space ;
+: words H@ BEGIN dup h.sz + c@ 0- 0<> drop WHILE h.name h.next REPEAT drop cr ;

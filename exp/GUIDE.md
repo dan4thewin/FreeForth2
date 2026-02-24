@@ -1609,3 +1609,66 @@ AFTER `>r'`:
 
 **Running total:** ~175 words/macros ported. 164 tests across 37
 experiments, all passing.
+
+---
+
+## Part 19: Utility Words and a Critical Bugfix (Exp 038)
+
+### The ct=1 Compiler Bug
+
+While implementing `words` (dictionary listing), we discovered a bug that
+silently corrupted the compile-time stack. Any ct=1 word (constant, TRUE,
+FALSE, bl, noop) used inside a colon definition would overwrite the
+compile-time TOS with its value. This destroyed flow control addresses
+saved by BEGIN, IF, TIMES, etc.
+
+The root cause was a single instruction in the compiler's `.compilelit`
+handler:
+```asm
+.compilelit:
+        mov rbx, rax        ; ← BUG: overwrites compile-time TOS!
+        call _lit_compile
+```
+
+`_lit_compile` only uses rax (which already has the value from `_find`).
+The `mov rbx, rax` was leftover from an earlier design. Removing it fixed
+the bug. Numeric literals were unaffected because they go through a
+different code path (`_number` → `_lit_compile`) that doesn't touch rbx.
+
+### Hex Output
+
+```forth
+: .#s TIMES dup r@ 4* >> $F and .digit LOOP drop ;
+: .b 2 .#s ;
+: .w 4 .#s ;
+```
+
+`.#s` uses the TIMES/LOOP counted loop with `r@` to select nibbles from
+most-significant to least-significant. Each nibble is masked with `$F and`
+and passed to `.digit` for output.
+
+### Dictionary Listing
+
+The dictionary is a contiguous block of entries growing downward from a
+sentinel. Each entry: xt(8) + ct(1) + sz(1) + name(sz) + NUL(1).
+
+```forth
+: h.next dup h.sz + c@ h.nm + 1 + + ;   \ stride = sz + 11
+: h.name dup h.nm + over h.sz + c@ type space ;
+: words H@ BEGIN dup h.sz + c@ 0- 0<> drop WHILE h.name h.next REPEAT drop cr ;
+```
+
+`words` walks upward from H@ (latest entry), printing names until the
+sentinel (sz=0). The sentinel's zero-length name causes `0- 0<>` to fail,
+exiting the WHILE loop.
+
+### Debugging Technique: GDB
+
+When the WHILE-based `words` crashed, we used GDB to disassemble the
+generated machine code. This revealed `jmp 0x9` instead of a backward
+jump to the loop top — the constant value 9 (from `h.sz`) had overwritten
+the BEGIN address on the compile-time stack. Without GDB, this would have
+been nearly impossible to diagnose from Forth alone.
+
+**Running total:** ~183 words/macros ported. 151 tests across 38
+experiments, all passing.

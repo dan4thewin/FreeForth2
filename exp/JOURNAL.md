@@ -2671,3 +2671,66 @@ still works, mixed WHILE/TIMES, TIMES in separate word.
 
 **Files:** `ff64.boot` (+2 lines: TIMES`/LOOP`),
 `exp/037-countedloops64/Makefile` (12 tests)
+
+---
+
+## Experiment 038: Utility Words and ct=1 Bugfix
+
+**Goal:** Add hex output (.#s, .b, .w), dictionary listing (h.next, h.name,
+words), and fix a critical compiler bug discovered during testing.
+
+### The ct=1 Stack Corruption Bug
+
+The `words` function — a simple WHILE loop walking the dictionary — crashed
+with a segfault. GDB revealed the backward jump in REPEAT targeted address
+0x9 instead of the loop top. Address 9 is the value of the `h.sz` constant.
+
+Root cause: in the compiler's `.compilelit` handler (for ct=1 words like
+constants), there was a `mov rbx, rax` before calling `_lit_compile`. This
+put the constant's VALUE into rbx (the compile-time TOS register),
+overwriting whatever compile-time data was there — in this case, the BEGIN
+address saved for REPEAT's backward jump.
+
+`_lit_compile` only needs the value in rax (which it already has from
+`_find`). The `mov rbx, rax` was unnecessary and destructive. Removing it
+fixed the bug.
+
+This bug affected ANY colon definition containing a ct=1 constant (like
+`h.sz`, `h.ct`, `h.nm`, `TRUE`, `FALSE`, `bl`, `noop`, `base`) followed by
+flow control (IF/THEN, BEGIN/WHILE/REPEAT, TIMES/LOOP). The compile-time
+stack was silently corrupted, causing wrong jump targets. Simple tests
+didn't trigger it because they used numeric literals (which go through
+`_number` → `_lit_compile` without the `mov rbx, rax`) or didn't use flow
+control after the constant.
+
+### Hex Digit Output
+
+`.#s` prints N hex digits of a value using TIMES/LOOP:
+```forth
+: .#s TIMES dup r@ 4* >> $F and .digit LOOP drop ;
+: .b 2 .#s ;    \ print byte as 2 hex digits
+: .w 4 .#s ;    \ print word as 4 hex digits
+```
+Uses `r@` (loop counter) to select which nibble to print, counting from
+the most significant down. `.digit` outputs a single hex character.
+
+### Dictionary Listing
+
+```forth
+: h.next dup h.sz + c@ h.nm + 1 + + ;   \ advance to next entry
+: h.name dup h.nm + over h.sz + c@ type space ;   \ print entry name
+: words H@ BEGIN dup h.sz + c@ 0- 0<> drop WHILE h.name h.next REPEAT drop cr ;
+```
+
+`words` walks upward from H@ through dictionary entries, printing each
+name, until it reaches the sentinel (sz=0). Each entry has stride
+xt(8) + ct(1) + sz(1) + name(sz) + NUL(1) = sz + 11 bytes.
+
+### Tests (14 total, all PASS)
+
+.b/.w/.#s hex output (5), h.next/h.name (3), words dictionary listing (3),
+ct=1 constant in loop (2), type in loop (1).
+
+**Files:** `ff64.asm` (removed `mov rbx, rax` from `.compilelit`),
+`ff64.boot` (+8 lines: .#s, .b, .w, h.next, h.name, words),
+`exp/038-utilwords64/Makefile` (14 tests)

@@ -1345,7 +1345,7 @@ _compiler:
         jmp _compiler
 .compilelit:
         ;; ct=1: literal word → push xt value as literal
-        mov rbx, rax
+        ;; Value is in rax (xt); do NOT put in rbx (would corrupt compile-time stack)
         call _lit_compile
         jmp _compiler
 .notfound:
