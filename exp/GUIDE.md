@@ -1472,3 +1472,85 @@ $DEADBEEF .x ;              \ prints "deadbeef"
 
 **Running total:** ~155 words/macros ported. 132 tests across 35
 experiments, all passing.
+
+---
+
+## Part 17: The Holy Grail — Flow Control in Forth (Exp 036)
+
+Flow control is the heart of any compiler. In FreeForth, IF/THEN/ELSE and
+the loop words are compile-time macros that emit machine code. Moving them
+from assembly to Forth is the most significant step in honoring the
+FreeForth philosophy: assembly is minimal, Forth does the rest.
+
+### Short vs Long Jumps
+
+The i386 FreeForth uses SHORT conditional jumps: `$7x rel8` (2 bytes total,
+1-byte offset, ±127 range). The x86-64 uses NEAR conditional jumps:
+`$0F $8x rel32` (6 bytes total, 4-byte offset, ±2GB range). This means:
+
+| Aspect | i386 | x86-64 |
+|--------|------|--------|
+| Conditional | `$7x rel8` (2 bytes) | `$0F $8x rel32` (6 bytes) |
+| Unconditional | `$EB rel8` (2 bytes) | `$E9 rel32` (5 bytes) |
+| Offset size | 1 byte | 4 bytes |
+
+The `$10 +` trick converts between the two encoding families: `$74` (JE short)
+→ `$84` (JE near, after $0F prefix).
+
+### How `cond` Works
+
+The assembly condition words (`0=`, `<`, `>`, `=`, etc.) set `cond_jmp` to
+a SHORT opcode like `$74` (JE). The Forth `cond` function:
+```forth
+: cond ? c@ 0 ? c! 1 xor ;
+```
+1. Read `cond_jmp` (via `?` which returns its address)
+2. Clear `cond_jmp` to zero (one-shot)
+3. XOR with 1 to INVERT the condition
+
+Why invert? IF means "if true, execute the body." But the jump must skip
+the body when the condition is FALSE. JE ($74) → JNE ($75). JL ($7C) →
+JGE ($7D). XOR 1 flips the least significant bit, toggling between the
+paired condition codes.
+
+### The 32-bit Store Problem
+
+Jump offsets are 4 bytes, but our cell size is 8 bytes. Standard `!`
+writes 8 bytes. We need `d!` (dword store) to patch only 4 bytes:
+```forth
+: 2dupd!` $49 c, $89 c, $17 c, ;  \ mov [r15], rdx (32-bit)
+: tuckd!` $41 c, $89 c, $1F c, ;  \ mov [r15], rbx (32-bit)
+: d!`     2dupd!` nip` ;           \ store 32-bit and drop addr
+```
+
+### CASE with ;THEN
+
+In the i386, CASE uses SHORT jumps that happen to skip exactly one `pop`
+instruction (1 byte). Our LONG jumps need explicit resolution. The pattern:
+```forth
+: t  0 CASE drop 10 ;THEN
+     1 CASE drop 20 ;THEN
+     drop 99 ;
+```
+CASE compiles `=` + `drop` + `IF` + `drop`. The `IF` leaves a patch address
+resolved by `;THEN` (which compiles a ret and patches the forward jump).
+
+### BOOL and the Flags Protocol
+
+`BOOL` normalizes a condition to 0 or -1. It requires a preceding
+FLAGS-setting operation AND a condition recording:
+```forth
+: t 0- 0= BOOL ;     \ 0- sets flags, 0= records condition
+: t 3 < BOOL ;       \ < sets flags AND records condition
+```
+The `0 lit'` inside BOOL preserves CPU flags because our stack adjustment
+uses `lea r15,[r15-8]` (flags-preserving) rather than `sub r15,8`.
+
+### The Payoff
+
+~155 lines of assembly became 11 lines of Forth. The flow control words
+are now transparent, inspectable, and modifiable from within Forth itself.
+The compiler compiles its own control structures.
+
+**Running total:** ~170 words/macros ported. 152 tests across 36
+experiments, all passing.

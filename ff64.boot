@@ -102,6 +102,11 @@
 : over+!` swap` tuck+!` ;
 : over-!` swap` tuck-!` ;
 
+\ 32-bit (dword) store — for patching jump offsets
+: 2dupd!` $1389, s09 ;
+: tuckd!` 2dupd!` nip` ;
+: d!` tuckd!` drop` ;
+
 \ Return stack inline macros
 : dup>r` $53, s1 ;
 : r>` over`
@@ -172,6 +177,18 @@
 \ Extended scale ops (need >r`/r>` defined above)
 : */mod` >r` m*` r>` m/mod` ;
 : */` */mod` nip` ;
+
+( Flow control — Forth-defined, replacing assembly )
+( ? exposes the cond_jmp byte used by FLAGS-based conditions )
+: d, here d! 4 allot ;
+: cond ? c@ 0 ? c! 1 xor ;
+: IF` >S0 cond $0F c, $10 + c, here 4 allot ;
+: THEN` >S0 here over - 4 - swap d! ;
+: BEGIN` >S0 here ;
+: AGAIN` >S0 $E9 c, dup here 4 + - d, drop ;
+: UNTIL` >S0 cond $0F c, $10 + c, dup here 4 + - d, drop ;
+: WHILE` IF` ;
+: REPEAT` swap AGAIN` THEN` ;
 
 ( Stack manipulation )
 : 2swap rot >r rot r> ;

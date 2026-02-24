@@ -2540,3 +2540,81 @@ unsigned decimal, multi-digit, three-digit.
 
 **Files:** `ff64.boot` (+20 lines: base, _d, .digit, .sign, ., .x, etc.),
 `exp/035-numout64/{macros.ff,Makefile}`
+
+---
+
+## Experiment 036: Flow Control — From Assembly to Forth
+
+**Goal:** Migrate all flow control words (IF/THEN/ELSE/BEGIN/AGAIN/UNTIL/
+WHILE/REPEAT) from assembly to Forth, following FreeForth's philosophy that
+assembly should be minimal and most things belong in Forth.
+
+### The Challenge
+
+The i386 FreeForth uses SHORT jumps (1-byte offset, `$7x rel8` conditional,
+`$EB rel8` unconditional). The x86-64 port uses LONG jumps (4-byte offset,
+`$0F $8x rel32` conditional, `$E9 rel32` unconditional). The flow control
+macros must account for this difference.
+
+### The Approach
+
+**Step 1: Expose `cond_jmp` to Forth.**
+Added `_cond_addr` (assembly) that pushes the address of `cond_jmp` onto
+the stack, registered as WORD64 `"?"`. This lets Forth code read and clear
+the condition byte set by `0=`, `<`, `>`, etc.
+
+**Step 2: Add 32-bit store (`d!`).**
+Jump offsets are 4 bytes, but the cell size is 8 bytes. Added `2dupd!`,
+`tuckd!`, and `d!` as inline macros, plus callable `d,` for compiling
+32-bit values.
+
+**Step 3: Define flow control in Forth.**
+```forth
+: cond ? c@ 0 ? c! 1 xor ;
+: IF`   >S0 cond $0F c, $10 + c, here 4 allot ;
+: THEN` >S0 here over - 4 - swap d! ;
+: BEGIN` >S0 here ;
+: AGAIN` >S0 $E9 c, dup here 4 + - d, drop ;
+: UNTIL` >S0 cond $0F c, $10 + c, dup here 4 + - d, drop ;
+: WHILE` IF` ;
+: REPEAT` swap AGAIN` THEN` ;
+```
+
+**Key insight:** `cond` reads the condition byte (e.g., $74 = JE), clears it,
+and inverts with XOR 1 (e.g., $74 → $75 = JNE). The `$10 +` converts the
+SHORT opcode ($7x) to the NEAR form ($8x, used after the $0F prefix).
+
+**Step 4: Remove assembly.**
+Deleted 16 WORD64 entries (8 backtick + 8 non-backtick) and ~140 lines of
+assembly flow control functions. The Forth definitions shadow the assembly
+via dictionary ordering.
+
+### Debugging the Test Suite
+
+Initial test suite had 18 tests with 6 failures. All turned out to be test
+errors, not implementation bugs:
+
+- **BOOL** requires a FLAGS-setting + condition-recording sequence before it.
+  `0- 0= BOOL` or `< BOOL` — not just `BOOL` alone. Because `0=` only
+  records which condition to check, it doesn't generate test code.
+
+- **CASE** requires `;THEN` or `BREAK` to resolve the IF patch. Pattern:
+  `0 CASE drop 10 ;THEN 1 CASE drop 20 ;THEN drop 99`
+
+- **0;** exits and drops TOS only if zero — the return value is whatever
+  was beneath. Must have a meaningful NOS: `42 swap 0; drop 99`
+
+- **;THEN** early exit needs the tested value in TOS:
+  `dup 0- 0= IF drop 42 ;THEN`
+
+After fixing all tests: 20 pass, 0 fail.
+
+### Results
+
+- Removed ~155 lines of assembly → 11 lines of Forth
+- Binary size: essentially unchanged (code was already similar in size)
+- 99 WORD64 entries remain (was 115 before flow control removal)
+- All 152 tests pass (132 existing + 20 new)
+
+**Files:** `ff64.asm` (-155 lines assembly), `ff64.boot` (+17 lines Forth),
+`exp/036-flowforth64/Makefile` (20 tests)

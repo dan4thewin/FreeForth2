@@ -421,6 +421,13 @@ _SC_addr:                       ; SC ( -- addr ) SWAPbit/condition state
         lea rbx, [SC]
         ret
 
+_cond_addr:                     ; ? ( -- addr ) condition jump opcode byte
+        sub r15, 8
+        mov [r15], rdx
+        mov rdx, rbx
+        lea rbx, [cond_jmp]
+        ret
+
 _anon_colon:                    ; anon:` ( -- ) start new anonymous definition
         mov [anon], rbp
         mov byte [SC], 0
@@ -860,145 +867,9 @@ _zge_flags:
         ret
 
 ;; Compile-time words (ct=2): executed during compilation
-;; These use the data stack (rbx/rdx/r15) to track patch addresses.
-;; rbp = compilation pointer.
-;; =====================================================================
-
-;; IF: use FLAGS set by preceding comparison/test.
-;; Requires an explicit condition (< > = 0< 0= etc.) before IF.
-;; Error if no condition precedes — use IF. for stack booleans.
-_if:
-        call _rst
-        movzx eax, byte [cond_jmp]
-        mov byte [cond_jmp], 0
-        test al, al
-        jz _err_nocond
-        ;; FLAGS-based: invert condition, emit long conditional jump
-        xor al, 1
-        mov byte [rbp], $0F
-        add al, $10
-        mov byte [rbp+1], al
-        add rbp, 2
-        ;; Push patch address onto data stack
-        sub r15, 8
-        mov [r15], rdx
-        mov rdx, rbx
-        mov rbx, rbp
-        add rbp, 4
-        ret
-
-;; THEN: resolve forward jump. TOS = patch address.
-;; Calls _rst to reconcile SWAPbit at join point.
-_then:
-        call _rst
-        ;; Calculate offset: here - (patch_addr + 4)
-        mov rax, rbp
-        sub rax, rbx
-        sub rax, 4
-        mov dword [rbx], eax    ; patch the jump offset
-        ;; Drop patch address
-        mov rbx, rdx
-        mov rdx, [r15]
-        add r15, 8
-        ret
-
-;; ELSE: compile jmp <fwd>, resolve IF, push new patch address
-_else:
-        call _rst
-        ;; Compile: jmp rel32 → E9 xx xx xx xx
-        mov byte [rbp], $E9
-        inc rbp
-        ;; Save new patch address
-        mov rax, rbp
-        add rbp, 4
-        ;; Resolve the IF (TOS = IF's patch address)
-        mov rcx, rbp
-        sub rcx, rbx
-        sub rcx, 4
-        mov dword [rbx], ecx
-        ;; Replace TOS with new patch address
-        mov rbx, rax
-        ret
-
-;; BEGIN: push here (loop target address)
-_begin:
-        call _rst
-        sub r15, 8
-        mov [r15], rdx
-        mov rdx, rbx
-        mov rbx, rbp            ; TOS = current compilation pointer
-        ret
-
-;; AGAIN: compile unconditional jump back to BEGIN address
-_again:
-        call _rst
-        ;; Compile: jmp rel32 → E9 xx xx xx xx
-        mov byte [rbp], $E9
-        inc rbp
-        ;; Calculate backward offset: target - (here + 4)
-        mov rax, rbx
-        lea rcx, [rbp + 4]
-        sub rax, rcx
-        mov dword [rbp], eax
-        add rbp, 4
-        ;; Drop target address
-        mov rbx, rdx
-        mov rdx, [r15]
-        add r15, 8
-        ret
-
-;; UNTIL: use FLAGS to loop. Requires preceding condition.
-_until:
-        call _rst
-        movzx eax, byte [cond_jmp]
-        mov byte [cond_jmp], 0
-        test al, al
-        jz _err_nocond
-        ;; FLAGS-based: invert condition, emit long conditional backward jump
-        xor al, 1
-        mov byte [rbp], $0F
-        add al, $10
-        mov byte [rbp+1], al
-        add rbp, 2
-        ;; Calculate backward offset: target - (here + 4)
-        mov rax, rbx
-        lea rcx, [rbp + 4]
-        sub rax, rcx
-        mov dword [rbp], eax
-        add rbp, 4
-        ;; Drop target address
-        mov rbx, rdx
-        mov rdx, [r15]
-        add r15, 8
-        ret
-
-;; WHILE: like IF but used inside BEGIN...WHILE...REPEAT
-;; (same as IF — pushes patch address)
-_while:
-        jmp _if                 ; identical behavior
-
-;; REPEAT: compile jmp <back to BEGIN>, then resolve WHILE
-_repeat:
-        call _rst
-        ;; TOS = WHILE's patch addr, NOS = BEGIN's target
-        ;; First: compile jmp back to BEGIN (NOS)
-        mov byte [rbp], $E9
-        inc rbp
-        mov rax, rdx            ; BEGIN address
-        lea rcx, [rbp + 4]
-        sub rax, rcx
-        mov dword [rbp], eax
-        add rbp, 4
-        ;; Now resolve WHILE's forward jump (TOS)
-        mov rax, rbp
-        sub rax, rbx
-        sub rax, 4
-        mov dword [rbx], eax
-        ;; Drop both addresses
-        mov rbx, [r15]
-        mov rdx, [r15+8]
-        add r15, 16
-        ret
+;; Flow control (IF/THEN/ELSE/BEGIN/AGAIN/UNTIL/WHILE/REPEAT)
+;; Migrated to ff64.boot — Forth-defined using cond/d!
+;; ~140 lines of assembly replaced by ~10 lines of Forth
 
 ;; ( -- skip input until matching )
 _paren:
@@ -1708,14 +1579,8 @@ WORD64 "tuck", _tuck_inline, 2, 4
 ;; Backtick-named versions (ct=0) for macro composition
 ;; These let macros compile calls to compile-time primitives.
 ;; E.g.: `: 0;` 0-` 0=` IF` drop` ;THEN` ;`
-WORD64 "REPEAT`", _repeat, 0, 7
-WORD64 "WHILE`", _while, 0, 6
-WORD64 "UNTIL`", _until, 0, 6
-WORD64 "AGAIN`", _again, 0, 6
-WORD64 "BEGIN`", _begin, 0, 6
-WORD64 "ELSE`", _else, 0, 5
-WORD64 "THEN`", _then, 0, 5
-WORD64 "IF`", _if, 0, 3
+; Flow control (IF/THEN/ELSE/BEGIN/AGAIN/UNTIL/WHILE/REPEAT)
+; moved to ff64.boot — Forth-defined using cond/d!
 WORD64 "0>=`", _zge_flags, 0, 4
 WORD64 "0<=`", _zle_flags, 0, 4
 WORD64 "0>`", _zgt_flags, 0, 3
@@ -1766,6 +1631,7 @@ WORD64 ",", _comma, 0, 1
 WORD64 "allot", _allot, 0, 5
 WORD64 "here", _here, 0, 4
 WORD64 "SC", _SC_addr, 0, 2
+WORD64 "?", _cond_addr, 0, 1
 WORD64 "anon", _anon_addr, 0, 4
 WORD64 "H", _H_addr, 0, 1
 WORD64 "depth", _depth, 0, 5
@@ -1796,14 +1662,7 @@ WORD64 ",4", _comma4, 0, 2
 WORD64 ",3", _comma3, 0, 2
 WORD64 ",2", _comma2, 0, 2
 WORD64 ",1", _comma1, 0, 2
-WORD64 "REPEAT", _repeat, 2, 6
-WORD64 "WHILE", _while, 2, 5
-WORD64 "UNTIL", _until, 2, 5
-WORD64 "AGAIN", _again, 2, 5
-WORD64 "BEGIN", _begin, 2, 5
-WORD64 "ELSE", _else, 2, 4
-WORD64 "THEN", _then, 2, 4
-WORD64 "IF", _if, 2, 2
+; (IF/THEN/ELSE/BEGIN/AGAIN/UNTIL/WHILE/REPEAT now in ff64.boot)
 WORD64 "anon:`", _anon_colon, 0, 6
 WORD64 ";`", _semi, 0, 2
 WORD64 ":`", _colon, 0, 2
