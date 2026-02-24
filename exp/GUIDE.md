@@ -1796,3 +1796,29 @@ the call/return stack discipline.
 
 **Running total:** ~205 words/macros ported. 220 tests across 42
 experiments, all passing.
+
+---
+
+## Part 24: Shifts and System Words (Experiment 043)
+
+With the vector and tail-call infrastructure solid, we turned to practical
+building blocks. Shift operations (`<<`, `>>`) follow the established
+SWAPbit pattern: `mov ecx, ebx` copies TOS (shift count) to ecx, then the
+shift instruction operates on NOS with a REX.W prefix for 64-bit width. The
+key realization: `mov ecx, ebx` doesn't need a REX prefix because the shift
+count only uses the low 6 bits.
+
+We also exposed the parser's internal state as Forth words: `>in` (the parse
+pointer) and `tp` (the input limit). These are DATA-type words (ct=1) that
+push their address, enabling Forth-level input manipulation. We added `parse`
+(scan for delimiter) and `lnparse` (parse to end of line) as assembly words,
+and built `bye` (clean exit), `EOF` (skip rest of input), and `exit` (sys_exit
+syscall) on top.
+
+A subtle lesson: adding new words to ff64.boot can break existing tests that
+depend on `H@` returning a specific word or that use names already taken.
+The `bye` macro shadowed a test alias, and `EOF` became the new "last word"
+in the dictionary, breaking tests that assumed otherwise.
+
+**Running total:** ~215 words/macros ported. 236 tests across 43
+experiments, all passing.

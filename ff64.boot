@@ -67,6 +67,8 @@
 : flip` $FB86, s09 ;
 : 8+` $48, ,1 $C383, s01 $08, ,1 ;
 : 8-` $48, ,1 $EB83, s01 $08, ,1 ;
+: <<` $D989, s08 $48, ,1 $E2D3, s01 drop` ;
+: >>` $D989, s08 $48, ,1 $EAD3, s01 drop` ;
 
 \ Memory load
 : @` $48, ,1 $1B8B, s09 ;
@@ -318,3 +320,7 @@ variable base
 : .hdr+ dup .x\ ." : " dup @ .x space dup h.ct + c@ .x space dup h.sz + c@ . dup h.name ;
 : .hdrs H@ BEGIN dup h.sz + c@ 0- 0<> drop WHILE .hdr+ cr h.next REPEAT drop ;
 : .hdr .hdr+ cr drop ;
+
+( System words )
+: bye` ;` cr 0 exit ;
+: EOF` tp @ >in ! ;` ;

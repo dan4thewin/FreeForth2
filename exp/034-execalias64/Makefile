@@ -25,7 +25,7 @@ test:
 		": add3 3 + ; H@ @ 5 swap execute . cr ;" \
 		"8"; \
 	run_test "alias: create synonym" \
-		": hi 72 emit 105 emit cr ; H@ @ alias bye bye ;" \
+		": hi 72 emit 105 emit cr ; H@ @ alias greet greet ;" \
 		"Hi"; \
 	run_test "alias: preserves arithmetic" \
 		": add3 3 + ; H@ @ alias plus3 5 plus3 . cr ;" \

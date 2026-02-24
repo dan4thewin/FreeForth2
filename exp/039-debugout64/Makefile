@@ -24,8 +24,8 @@ test: $(FF)
 	run ".h shows free" '.h ;' 'free:'; \
 	run ".h shows SC" '.h ;' 'SC='; \
 	run ".l prints 8 hex" '$$DEADBEEF .l cr ;' 'deadbeef'; \
-	run ".hdr shows entry" 'H@ .hdr ;' '.hdr'; \
-	run ".hdr shows xt" 'H@ .hdr ;' ':'; \
+	run ".hdr shows entry" ': test ; H@ .hdr ;' 'test'; \
+	run ".hdr shows xt" ': test ; H@ .hdr ;' ':'; \
 	run ".hdrs lists entries" '.hdrs ;' 'words'; \
 	run ".hdrs shows ct" '.hdrs ;' ' 0 '; \
 	echo "  ----"; \

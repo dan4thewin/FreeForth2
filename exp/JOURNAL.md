@@ -2935,3 +2935,71 @@ multi-call preserves last-only opt (1).
 **Files:** `ff64.asm` (_semi tail-call),
 `ff64.boot` (;;` redefinition),
 `exp/042-tailcall64/Makefile` (7 tests)
+
+---
+
+## Experiment 043: Shifts, Parser, and System Words
+
+**Date:** 2025-07-15
+**Goal:** Add shift operations, expose parser infrastructure, and implement
+basic system words (`bye`, `EOF`, `exit`).
+
+### Shifts (`<<`, `>>`)
+
+The i386 version uses `mov ecx, ebx; shl/shr edx, cl` (4 bytes). On
+x86-64, the shift instruction needs a REX.W prefix for 64-bit operands:
+`mov ecx, ebx; REX.W shl/shr rdx, cl` (5 bytes).
+
+The macro pattern follows our established litcomma+s08/s01 convention:
+```
+: <<` $D989, s08 $48, ,1 $E2D3, s01 drop` ;
+: >>` $D989, s08 $48, ,1 $EAD3, s01 drop` ;
+```
+
+Key insight: `mov ecx, ebx` (2 bytes, no REX needed — shift count only
+uses low 6 bits). s08 patches the source register. The shl/shr instruction
+needs REX.W: `$48 $D3 $E2/EA`. s01 patches the destination register.
+
+### Parser infrastructure
+
+Exposed internal variables as Forth-accessible words:
+- `>in` (ct=1, DATA) — pushes address of `tin` (input parse pointer)
+- `tp` (ct=1, DATA) — pushes address of `tp` (input limit pointer)
+
+Added new words:
+- `parse` ( sep -- @ # ) — scan for delimiter, return start and length
+- `lnparse` ( -- @ # ) — parse to end of line (separator=LF)
+- `exit` ( n -- ) — exit process with status code n
+
+### System words (ff64.boot)
+
+- `bye`` — `;`` then `cr 0 exit` (clean exit)
+- `EOF`` — set >in to tp value, closing current input processing
+
+### Test fixes
+
+The new `bye`` macro conflicted with an existing alias test that used `bye`
+as a test name. Changed to `greet`. The `.hdr` test relied on `H@` returning
+a specific last-defined word, now `EOF`` — fixed by defining a test word.
+
+### Words added
+
+- `<<`` ( x n -- x<<n ) — left shift
+- `>>`` ( x n -- x>>n ) — logical right shift
+- `parse` ( sep -- @ # ) — parse input for delimiter
+- `lnparse` ( -- @ # ) — parse to end of line
+- `exit` ( n -- ) — exit process
+- `>in` — address of input parse pointer
+- `tp` — address of input limit pointer
+- `bye`` — clean exit macro
+- `EOF`` — skip rest of input
+
+### Tests (16 total, all PASS)
+
+Shifts (10), comments (1), parser (2), system (3).
+
+**Files:** `ff64.asm` (parse/lnparse/exit/_exit_word, >in/tp WORD64s),
+`ff64.boot` (<<`/>>`/bye`/EOF`),
+`exp/043-shifts64/Makefile` (16 tests),
+`exp/034-execalias64/Makefile` (test fix),
+`exp/039-debugout64/Makefile` (test fix)

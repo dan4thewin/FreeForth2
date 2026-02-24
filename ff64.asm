@@ -939,6 +939,59 @@ _backslash:
 .done:  mov [tin], rdi
         ret
 
+;; parse ( sep -- @ # ) — scan for delimiter, return start and length
+_parse:
+        movzx eax, bl           ; al = separator character
+        mov rbx, rdx
+        mov rdx, [r15]
+        add r15, 8              ; drop separator from data stack
+        mov rdi, [tin]
+        mov rsi, [tp]
+        ;; skip leading separators
+.skip:  cmp rdi, rsi
+        jae .eof
+        cmp byte [rdi], al
+        jne .start
+        inc rdi
+        jmp .skip
+.start: sub r15, 8
+        mov [r15], rdx
+        mov rdx, rdi            ; rdx = start of parsed string
+.scan:  cmp rdi, rsi
+        jae .end
+        cmp byte [rdi], al
+        je .end
+        inc rdi
+        jmp .scan
+.end:   mov [tin], rdi
+        cmp rdi, rsi
+        jae .noskip
+        inc qword [tin]         ; skip past the separator
+.noskip:
+        mov rbx, rdi
+        sub rbx, rdx            ; rbx = length
+        ret
+.eof:   mov [tin], rdi
+        sub r15, 8
+        mov [r15], rdx
+        mov rdx, rdi            ; rdx = start (= end)
+        xor ebx, ebx            ; rbx = 0 length
+        ret
+
+;; lnparse ( -- @ # ) — parse to end of line (LF=10)
+_lnparse:
+        sub r15, 8
+        mov [r15], rdx
+        mov rdx, rbx
+        mov rbx, 10             ; LF separator
+        jmp _parse
+
+;; exit ( n -- ) — exit process with status code n
+_exit_word:
+        mov rdi, rbx            ; exit code in rdi
+        mov rax, 60             ; sys_exit
+        syscall
+
 ;; Runtime helper: print inline string after call instruction
 ;; Called via: call _dotstr_rt / db len / db "string..."
 ;; Return address on stack points to the length byte
@@ -1721,6 +1774,13 @@ WORD64 "zlen", _zlen, 0, 4
 WORD64 "r@", _rfetch, 0, 2
 WORD64 "r>", _rfrom, 0, 2
 WORD64 ">r", _tor, 0, 2
+WORD64 "parse", _parse, 0, 5
+WORD64 "lnparse", _lnparse, 0, 7
+WORD64 "exit", _exit_word, 0, 4
+
+;; Data words (ct=1) — push address/value
+WORD64 ">in", tin, 1, 3
+WORD64 "tp", tp, 1, 2
 
 ;; Compile-time words (ct=1)
 WORD64 "swap`", _swap_inline, 0, 5
