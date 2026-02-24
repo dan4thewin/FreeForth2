@@ -1672,3 +1672,43 @@ been nearly impossible to diagnose from Forth alone.
 
 **Running total:** ~183 words/macros ported. 151 tests across 38
 experiments, all passing.
+
+---
+
+## Part 20: Debug Output (Exp 039)
+
+### Depth Fix
+
+The `depth` word had an off-by-one: it counted the NOS value that depth
+itself pushed to the memory stack. Adding `dec rbx` after the division
+fixed it. This is an x86-64-specific issue — the i386 version uses the
+`xchg eax,esp` trick which handles the counting differently.
+
+### The Recursive Stack Printer
+
+`_s` is a clever recursive word that prints N stack items bottom-to-top:
+
+```forth
+:. _s 1 - 0; swap >r _s depth 0- 0= drop IF space THEN r> . ;
+```
+
+It works by peeling items one at a time onto the return stack, recursing
+until the count reaches zero (`0;` exits when TOS is 0). Then as each
+recursion level returns, it prints the saved item with `r> .`. The
+`depth 0= IF space THEN` inserts an extra space at the point where the
+real stack data begins, creating a visual separator:
+
+```
+ 3;  0 0 0 0 0  1 2 3
+                ^^ double space marks real data
+```
+
+### .h\` System State
+
+`.h\`` shows free memory (KB between `here` and `H@`), the SWAPbit/
+condition state byte (SC), and the full stack. In ff64, dictionary
+entries grow downward from H@ while compilation grows upward from here,
+so free space = `here H@ -` (positive when there's space remaining).
+
+**Running total:** ~195 words/macros ported. 163 tests across 39
+experiments, all passing.

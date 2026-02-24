@@ -289,3 +289,15 @@ variable base
 : h.next dup h.sz + c@ h.nm + 1 + + ;
 : h.name dup h.nm + over h.sz + c@ type space ;
 : words H@ BEGIN dup h.sz + c@ 0- 0<> drop WHILE h.name h.next REPEAT drop cr ;
+
+( Debug output — .s` shows stack, .h` shows system state )
+:. prompt space depth .\ $3B anon@ 0- 0= drop IF 1 - THEN emit space ;
+:. _s 1 - 0; swap >r _s depth 0- 0= drop IF space THEN r> . ;
+: .s` prompt 9 _s cr ;
+: .h` ." free:" here H@ - $400 / .\ ." k SC=" SC c@ . .s` ;
+: .l 8 .#s ;
+
+( Dictionary inspector )
+: .hdr+ dup .x\ ." : " dup @ .x space dup h.ct + c@ .x space dup h.sz + c@ . dup h.name ;
+: .hdrs H@ BEGIN dup h.sz + c@ 0- 0<> drop WHILE .hdr+ cr h.next REPEAT drop ;
+: .hdr .hdr+ cr drop ;

@@ -2734,3 +2734,49 @@ ct=1 constant in loop (2), type in loop (1).
 **Files:** `ff64.asm` (removed `mov rbx, rax` from `.compilelit`),
 `ff64.boot` (+8 lines: .#s, .b, .w, h.next, h.name, words),
 `exp/038-utilwords64/Makefile` (14 tests)
+
+---
+
+## Experiment 039: Debug Output and Depth Fix
+
+**Goal:** Add interactive debugging tools (.s`, .h`, .l, .hdr, .hdrs) and
+fix the `depth` off-by-one error.
+
+### Depth Fix
+
+`depth` reported 1 too many because it counted the NOS item that depth
+itself pushed onto the memory stack. The computation was
+`(dstack_top - r15) / 8` but after depth's own `sub r15,8`, r15 has moved
+down. Adding `dec rbx` after the division corrects the count.
+
+Before fix: empty stack → depth=1, 3 items → depth=4.
+After fix: empty stack → depth=0, 3 items → depth=3. Matches i386.
+
+### Debug Output Words
+
+**prompt** (private): Prints ` depth; ` or ` depth: ` depending on
+whether we're inside an anonymous definition (anon@ ≠ 0 → `;`, else `:`)
+Uses $3B (`;`) and subtracts 1 to get $3A (`:`) — no character literal
+syntax yet.
+
+**_s** (private, recursive): `1 - 0; swap >r _s depth 0= IF space THEN r> .`
+Peels up to 9 items from the stack via the return stack, prints bottom-to-top.
+Inserts an extra space when depth=0, creating a visual marker between
+garbage below the stack and real data.
+
+**.s\`**: `prompt 9 _s cr` — show stack state. Example: ` 3; 0 0 0 0 0 1 2 3`
+
+**.h\`**: Shows free memory (kb between here and H@), SC state, then .s.
+
+**.l**: 8 hex digits (like .b=2, .w=4).
+
+**.hdr+**: Prints one dictionary entry: address, xt, ct, sz, name.
+**.hdrs**: Lists all entries with full details (address/xt/ct/sz/name).
+**.hdr**: Single entry display.
+
+### Tests (12 total, all PASS)
+
+depth (3), .s (2), .h (2), .l (1), .hdr (2), .hdrs (2).
+
+**Files:** `ff64.asm` (depth fix: +1 line), `ff64.boot` (+11 lines),
+`exp/039-debugout64/Makefile` (12 tests)

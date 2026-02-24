@@ -370,6 +370,7 @@ _depth: sub r15, 8              ; depth ( -- n )
         lea rbx, [dstack_top]
         sub rbx, r15
         sar rbx, 3              ; divide by 8 (cell size)
+        dec rbx                 ; don't count the item depth itself pushed
         ret
 
 ;; Memory compilation words

@@ -23,7 +23,7 @@ test: $(FF)
 	run ".#s custom width" '$$ABC 3 .#s cr ;' 'abc'; \
 	run "h.next advances" ': t H@ h.next H@ - . cr ; t ;' '12'; \
 	run "h.name prints name" ': t H@ h.name cr drop ; t ;' 't'; \
-	run "h.name second entry" ': t H@ h.next dup h.name cr drop ; t ;' 'words'; \
+	run "h.name second entry" ': t H@ h.next dup h.name cr drop ; t ;' '.'; \
 	run "words lists dict" 'words cr ;' 'words'; \
 	run "words has builtins" 'words cr ;' 'emit'; \
 	run "words has macros" 'words cr ;' 'dup'; \
