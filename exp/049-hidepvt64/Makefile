@@ -27,10 +27,15 @@ test:
 	else echo "  FAIL: hide=0 disables hidepvt (got $$R)"; FAIL=$$((FAIL+1)); fi; \
 	echo "  --- pvtmargin ---"; \
 	R=$$(printf '%s\n' ':. early 1 ; pvtmargin :. late 2 ; hidepvt early . cr ;' \
+	  | $(FF) -f $(BOOT) 2>/dev/null | sed 's/^> //;/^ok$$/d;/^>$$/d' | head -1); \
+	if [ "$$R" = "1 " ]; then \
+	  echo "  PASS: early protected by pvtmargin"; PASS=$$((PASS+1)); \
+	else echo "  FAIL: early should be protected (got $$R)"; FAIL=$$((FAIL+1)); fi; \
+	R=$$(printf '%s\n' ':. early 1 ; pvtmargin :. late 2 ; hidepvt late . cr ;' \
 	  | $(FF) -f $(BOOT) 2>&1 | head -1); \
 	if echo "$$R" | grep -q 'error:'; then \
-	  echo "  PASS: late hidden, early protected by pvtmargin"; PASS=$$((PASS+1)); \
-	else echo "  FAIL: early should be hidden (got $$R)"; FAIL=$$((FAIL+1)); fi; \
+	  echo "  PASS: late hidden by hidepvt"; PASS=$$((PASS+1)); \
+	else echo "  FAIL: late should be hidden (got $$R)"; FAIL=$$((FAIL+1)); fi; \
 	R=$$(printf '%s\n' ':. early 1 ; pvtmargin :. late 2 ; : pub late . cr ; hidepvt pub ;' \
 	  | $(FF) -f $(BOOT) 2>/dev/null | sed 's/^> //;/^ok$$/d;/^>$$/d' | head -1); \
 	if [ "$$R" = "2 " ]; then \

@@ -407,21 +407,20 @@ variable noauto pvt
 ( key — read a single character from stdin )
 : key tib 1 accept drop tib c@ ;
 
-( bye — exit the system )
-: bye` ;` cr 0 exit ;
-
 ( type — output a counted string: addr len -- )
 : type stdout write drop ;
 
-( Hide private words — zero out pvt-marked header names )
+( Hide private words — zero the first name byte of pvt-marked headers )
 ( Stops at pvtmargin. Does not compact memory. )
+( hidepvt` is a compile-time macro; _hidepvt is the runtime callable version )
 variable hide hide on
-: hidepvt` hide@ 0; drop
+:. _hidepvt hide@ 0; drop
   H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
     dup h.ct+ c@ dup $10& 0<> drop IF 2drop ;THEN
-    8& 0<> drop IF 0 over h.sz+ c! THEN
+    8& 0<> drop IF 0 over h.nm+ c! THEN
     h.next
   REPEAT drop ;
+: hidepvt` _hidepvt ;
 
 ( Error recovery: show location, print message, restore dict/code state )
 ( saved_here holds the compilation pointer before each eval., for error recovery )
@@ -436,3 +435,14 @@ variable saved_here pvt
   tib 80 accept dup 0- 0= drop IF drop 0 exit THEN
   here saved_here! tib swap eval. ' catch dup 0- 0<> drop IF _recover ELSE drop THEN
 AGAIN
+
+( Command-line arguments — ff_argc and ff_argv set by assembly at startup )
+: argc ff_argc@ ;
+:. _argv 8* ff_argv@ + @ ;
+: argv _argv zlen ;
+
+( Boot sequence: start Forth REPL )
+( Call `_top ;` to start the Forth REPL from the assembly REPL )
+( Call `hidepvt` at compile time, or `_boot ;` for full boot sequence )
+:^ ossetup ;
+:. _boot ossetup _hidepvt _top ;

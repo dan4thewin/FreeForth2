@@ -28,6 +28,9 @@ tin     dq 0
 tp      dq 0
 filebuf_ptr dq 0
 xfp     dq 0                    ; exception frame pointer for catch/throw
+ff_argc dq 0                    ; command-line argument count
+ff_argv dq 0                    ; pointer to argv[0] (array of char*)
+bootxt  dq 0                    ; xt of _boot (set by ff64.boot)
 SC      db 0                    ; SWAPbit in bit 1: 0=rbx is TOS, 2=rdx is TOS
 cond_jmp db 0                   ; ?# : pending conditional jump opcode (0=none)
 
@@ -216,14 +219,18 @@ _rfetch: pop rax                ; r@ ( -- x ) R:( x -- x )
         jmp rax
 
 ;; String/memory operations
-_zlen:  mov rax, rbx            ; zlen ( addr -- len )
+_zlen:                          ; zlen ( addr -- addr len )
+        sub r15, 8              ; DUP: push NOS
+        mov [r15], rdx
+        mov rdx, rbx            ; NOS = addr (copy of original TOS)
+        mov rax, rbx            ; scan from addr
         xor ecx, ecx
 .loop:  cmp byte [rax], 0
         je .done
         inc rax
         inc ecx
         jmp .loop
-.done:  mov rbx, rcx
+.done:  mov rbx, rcx            ; TOS = length
         ret
 
 _cmove: push rsi                ; cmove ( src dst n -- )
@@ -2268,6 +2275,9 @@ WORD64 "call,", _call_comma, 0, 5
 WORD64 "dcall,", _dcall_comma, 0, 6
 WORD64 "anon", anon, 1, 4
 WORD64 "H", H, 1, 1
+WORD64 "ff_argc", ff_argc, 1, 7
+WORD64 "ff_argv", ff_argv, 1, 7
+WORD64 "_bootxt", bootxt, 1, 7
 WORD64 "depth", _depth, 0, 5
 WORD64 "/mod", _divmod, 0, 4
 WORD64 "mod", _mod, 0, 3
@@ -2345,6 +2355,8 @@ _start:
         ;; Process command-line arguments: -f <file> loads file
         mov r13, [rsp]          ; argc
         lea r14, [rsp+8]        ; argv[0]
+        mov [ff_argc], r13      ; save for Forth access
+        mov [ff_argv], r14      ; save for Forth access
         mov r12, 1              ; current arg index (skip argv[0])
 .argloop:
         cmp r12, r13
@@ -2420,6 +2432,7 @@ _start:
         mov [anon], rbp
         mov qword [callmark], 0
         mov byte [SC], 0
+
 .repl_loop:
         mov rax, 1
         mov rdi, 1

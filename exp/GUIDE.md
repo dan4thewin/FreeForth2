@@ -2572,3 +2572,74 @@ assembly `.repl` does before each line.
 
 **Running total:** ~245 words/macros ported. 322 tests across 52
 experiments, all passing.
+
+---
+
+## Part 27: Boot Sequence and Command-Line Access (Experiment 053)
+
+### The boot architecture
+
+FreeForth2's boot sequence has two layers:
+
+**Assembly layer** (always runs):
+1. Initialize registers and memory
+2. Process `-f` files (load and compile)
+3. Enter assembly REPL (`.repl_loop`)
+
+**Forth layer** (opt-in via `_boot ;`):
+1. `ossetup` — OS-specific initialization (currently empty vector)
+2. `_hidepvt` — hide private words from the dictionary
+3. `_top` — enter the Forth REPL with prompt and error recovery
+
+The assembly REPL is intentionally preserved as the default. It's
+simpler (`> ... ok` format), has no catch/throw overhead, and all
+existing tests rely on its output format. The Forth REPL is started
+explicitly when needed.
+
+### argc/argv access
+
+On Linux, the initial stack at `_start` contains `argc` at `[rsp]` and
+the argv array at `[rsp+8]`. These are saved to `ff_argc` and `ff_argv`
+variables before the argloop processes `-f` files (which clobbers the
+r12/r13/r14 registers that initially hold these values).
+
+From Forth:
+```forth
+argc             \ ( -- n ) number of command-line arguments
+0 argv type cr   \ prints program name (e.g., "./ff64")
+1 argv type cr   \ prints first argument (e.g., "-f")
+```
+
+`_argv` computes `ff_argv + index*8` and fetches the pointer. `argv`
+adds `zlen` to get the string length. The `8*` (8 bytes per pointer)
+replaces the i386's `4*`.
+
+### The hidepvt saga
+
+**The bug:** The original ff64 `hidepvt` zeroed the name SIZE byte to
+hide words. But `h.next` (which navigates between headers) uses the
+size byte to compute step size. Zeroing it caused `h.next` to step
+only 11 bytes instead of `11 + namelen`, misaligning all subsequent
+header reads. The walk saw garbage as headers and eventually zeroed
+random bytes throughout the header space.
+
+**Why it wasn't caught earlier:** The experiment 049 tests passed because
+the broken hidepvt happened to also corrupt the test's expected behavior
+in a way that matched. The pvtmargin test expected `early` to be hidden,
+which only happened because the corrupted walk hid everything.
+
+**The fix:** Zero the first name CHARACTER (`h.nm+`) instead of the
+size (`h.sz+`). The size is preserved for navigation. `_find` won't
+match any search because the first character is null — no valid Forth
+word starts with a null byte.
+
+### zlen: a subtle stack-effect difference
+
+The i386 `zlen` has stack effect `( addr -- addr len )` — it preserves
+the input address AND pushes the length. The original ff64 port had
+`( addr -- len )` — it replaced the address with the length. This broke
+any code that needed both, like `argv` which calls `_argv zlen` expecting
+`( addr len )` for use with `type`.
+
+**Running total:** ~250 words/macros ported. 333 tests across 53
+experiments, all passing.

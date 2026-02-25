@@ -3938,3 +3938,90 @@ correctly without stack imbalance.
 **Files:** `ff64.asm` (conditional throw, _error, -f anon reset),
 `ff64.boot` (_recover, _top, saved_here),
 `exp/052-repl-forth/Makefile` (11 tests), `exp/Makefile` (added 052)
+
+---
+
+## Experiment 053 — Boot Sequence, argc/argv, hidepvt Fix
+
+**Goal:** Complete the Tier A boot infrastructure: argc/argv access from
+Forth, working hidepvt, _boot sequence, and proper assembly-to-Forth
+handoff.
+
+### Bug fix: hidepvt corrupted header navigation
+
+The original `hidepvt` zeroed the name SIZE byte (`h.sz`) to "hide"
+private words. But `h.next` uses the size byte to compute the step to
+the next header: `addr + h.sz + h.nm + 1`. With size=0, `h.next`
+advanced only 11 bytes instead of the full header size, causing it to
+land in the middle of the next header. All subsequent headers were
+misaligned, and the walk saw garbage as "headers" — hiding everything.
+
+**Fix:** Zero the first byte of the name content (`h.nm+`) instead of
+the size byte (`h.sz+`). The name size is preserved for navigation,
+but `_find` won't match any search because the first character is null.
+
+```forth
+\ Before (broken): 0 over h.sz+ c!   ← zeroes size, breaks h.next
+\ After (correct):  0 over h.nm+ c!   ← zeroes first name char, navigation intact
+```
+
+### Bug fix: zlen was (addr -- len), should be (addr -- addr len)
+
+The i386 `zlen` returns both the address and the length: `( addr -- addr len )`.
+The ff64 port only returned the length, losing the address. This broke
+`argv` (`: argv _argv zlen ;`) which needs both for `type`.
+
+**Fix:** Added a DUP (push NOS, copy addr) before the length scan.
+
+### New assembly variables
+
+- `ff_argc` (dq 0) — stores argc at startup, exposed as ct=1 WORD64
+- `ff_argv` (dq 0) — stores pointer to argv array, exposed as ct=1 WORD64
+- `bootxt` (dq 0) — reserved for future auto-boot (ct=1 WORD64)
+
+These are saved in `_start` before the argloop:
+```asm
+mov [ff_argc], r13
+mov [ff_argv], r14
+```
+
+### New Forth words in ff64.boot
+
+```forth
+: argc ff_argc@ ;          \ ( -- n ) argument count
+:. _argv 8* ff_argv@ + @ ; \ ( n -- addr ) pointer to argv[n] string
+: argv _argv zlen ;         \ ( n -- addr len ) argv[n] as (addr, length)
+:^ ossetup ;                \ OS setup vector (empty, extensible)
+:. _boot ossetup _hidepvt _top ; \ full boot: OS setup, hide privates, REPL
+```
+
+`_hidepvt` is a private runtime word that does the same as `hidepvt``
+(the compile-time macro) but can be called from within definitions.
+`hidepvt`` is redefined to simply call `_hidepvt`.
+
+### Architecture: assembly REPL vs Forth REPL
+
+The assembly `.repl` remains the default after boot. It provides the
+minimal `> ... ok` interface. To start the Forth REPL with full features
+(prompt, error recovery, hidepvt), use:
+- `_boot ;` — full boot (hidepvt + _top)
+- `_top ;` — just the REPL (no hidepvt)
+
+This preserves backward compatibility with all 53 experiments' test
+suites, which expect the assembly REPL's output format.
+
+### Testing
+
+10 tests covering:
+- _boot starts Forth REPL (arithmetic, definitions)
+- hidepvt hides private words after _boot
+- Public words survive hidepvt
+- _top works without hidepvt
+- argc returns correct count
+- argv returns program name
+
+**Files:** `ff64.asm` (ff_argc/ff_argv/bootxt vars, zlen fix, _error),
+`ff64.boot` (_hidepvt, _boot, argc/argv, ossetup),
+`exp/053-boot64/Makefile` (10 tests),
+`exp/049-hidepvt64/Makefile` (fixed pvtmargin test),
+`exp/Makefile` (added 053)
