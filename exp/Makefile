@@ -40,7 +40,9 @@ EXPERIMENTS = 001-hello64 002-stack64 003-codegen64 004-subrthread64 \
 058-picnum \
 059-misc \
 060-rtimes-dump \
-061-peephole
+061-peephole \
+062-fileio \
+063-loadfile
 
 test:
 	@for d in $(EXPERIMENTS); do \

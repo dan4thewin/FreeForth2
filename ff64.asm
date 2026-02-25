@@ -31,6 +31,7 @@ xfp     dq 0                    ; exception frame pointer for catch/throw
 ff_argc dq 0                    ; command-line argument count
 ff_argv dq 0                    ; pointer to argv[0] (array of char*)
 bootxt  dq 0                    ; xt of _boot (set by ff64.boot)
+hereatexec dq 0                 ; rbp saved by _semi_exec before reset (safe code position)
 SC      db 0                    ; SWAPbit in bit 1: 0=rbx is TOS, 2=rdx is TOS
 cond_jmp db 0                   ; ?# : pending conditional jump opcode (0=none)
 
@@ -1399,6 +1400,7 @@ _semi:
 _semi_exec:
         mov byte [rbp], $C3
         inc rbp
+        mov [hereatexec], rbp   ; save safe code position past anonymous code
         mov rax, [anon]
         mov rbp, rax            ; reset rbp to anon start (for execution)
         call rax                ; execute anonymous code (may advance rbp via allot)
@@ -2262,6 +2264,45 @@ _accept:
         pop rax
         ret
 
+;; openr ( addr len -- fd ) open file read-only, fd<0 on error
+_openr:
+        push rsi
+        push rdi
+        push rcx
+        ;; Null-terminate filename in-place (save byte, write NUL, syscall, restore)
+        lea rcx, [rdx + rbx]    ; rcx = addr + len (end of string)
+        movzx esi, byte [rcx]   ; save byte after string
+        mov byte [rcx], 0       ; NUL-terminate
+        push rsi                ; save original byte on stack
+        push rcx                ; save end-of-string pointer
+        ;; sys_open(filename, O_RDONLY, 0)
+        mov rdi, rdx            ; arg1 = filename addr (before rdx clobbered)
+        xor esi, esi            ; arg2 = O_RDONLY
+        xor edx, edx            ; arg3 = mode (unused)
+        mov rax, 2              ; sys_open
+        syscall
+        ;; Restore the overwritten byte
+        pop rcx                 ; end-of-string pointer
+        pop rsi                 ; original byte value
+        mov byte [rcx], sil     ; restore byte
+        pop rcx
+        pop rdi
+        pop rsi
+        mov rbx, rax            ; TOS = fd (or negative errno)
+        mov rdx, [r15]
+        add r15, 8              ; pop addr
+        ret
+
+;; close ( fd -- result ) close file descriptor
+_close:
+        push rdi
+        mov rax, 3              ; sys_close
+        mov rdi, rbx            ; fd = TOS
+        syscall
+        mov rbx, rax            ; TOS = result
+        pop rdi
+        ret
+
 ;; =====================================================================
 ;; Line-based I/O (internal)
 ;; =====================================================================
@@ -2362,6 +2403,113 @@ _include:
         lea rsi, [err_read_msg]
         mov rdx, err_read_len
         syscall
+        pop qword [filebuf_ptr]
+        pop qword [tp]
+        pop qword [tin]
+        ret
+
+;; loadfile ( addr len -- ) load and compile file from data stack
+;; Like _include but takes filename string from stack instead of parsing.
+;; Uses filebuf for storage and saves/restores input state.
+_loadfile:
+        ;; Copy filename to namebuf and NUL-terminate (avoid corrupting code buffer)
+        ;; addr=NOS=rdx, len=TOS=rbx
+        mov rcx, rbx            ; rcx = len
+        push rdi
+        push rsi
+        lea rdi, [namebuf]      ; dest = namebuf
+        mov rsi, rdx            ; source = addr (NOS)
+        rep movsb               ; copy filename
+        mov byte [rdi], 0       ; NUL-terminate
+        pop rsi
+        pop rdi
+        ;; Pop both args from data stack
+        mov rbx, [r15+8]       ; restore TOS from stack
+        mov rdx, [r15]         ; restore NOS from stack
+        add r15, 16             ; pop addr + len
+        ;; Save current input state and filebuf position
+        push qword [tin]
+        push qword [tp]
+        push qword [filebuf_ptr]
+        ;; Open file (sys_open=2, O_RDONLY=0)
+        push rdx
+        push rbx
+        lea rdi, [namebuf]     ; filename from scratch buffer
+        xor esi, esi            ; O_RDONLY
+        xor edx, edx            ; mode (ignored for read)
+        mov rax, 2              ; sys_open
+        syscall
+        pop rbx
+        pop rdx
+        test rax, rax
+        js .lf_err_open
+        mov r12, rax            ; save fd in r12
+        ;; Read file into current filebuf position
+        push rdx
+        xor eax, eax            ; sys_read
+        mov rdi, r12            ; fd
+        mov rsi, [filebuf_ptr]  ; buffer
+        mov rdx, 65536          ; max 64KB per file
+        syscall
+        pop rdx
+        test rax, rax
+        js .lf_err_read
+        ;; Close file
+        push rax
+        push rdx
+        mov rax, 3              ; sys_close
+        mov rdi, r12
+        syscall
+        pop rdx
+        pop rax
+        ;; Set up input from file buffer, advance filebuf_ptr
+        mov rcx, [filebuf_ptr]
+        mov [tin], rcx
+        lea rcx, [rcx + rax]
+        mov [tp], rcx
+        lea rcx, [rcx + 16]
+        mov [filebuf_ptr], rcx
+        ;; Save code generation state. Use hereatexec (saved by _semi_exec)
+        ;; as safe rbp position past the executing anonymous code.
+        push qword [anon]
+        mov qword [callmark], 0
+        push rbp                ; save anonymous-code-start rbp
+        mov rbp, [hereatexec]   ; safe position past anonymous code
+        mov [anon], rbp         ; set anon for new definitions
+        push rbx
+        push rdx
+        call _compiler
+        pop rdx
+        pop rbx
+        pop rbp                 ; restore original rbp
+        pop qword [anon]
+        ;; Restore input state
+        pop qword [filebuf_ptr]
+        pop qword [tp]
+        pop qword [tin]
+
+        ret
+.lf_err_open:
+        mov rax, 1
+        mov rdi, 1
+        lea rsi, [err_open_msg]
+        mov rdx, err_open_len
+        syscall
+        pop qword [filebuf_ptr]
+        pop qword [tp]
+        pop qword [tin]
+        ret
+.lf_err_read:
+        push rdx
+        mov rax, 3              ; close fd
+        mov rdi, r12
+        syscall
+        mov rax, 1
+        mov rdi, 1
+        lea rsi, [err_read_msg]
+        mov rdx, err_read_len
+        syscall
+        pop rdx
         pop qword [filebuf_ptr]
         pop qword [tp]
         pop qword [tin]
@@ -2499,6 +2647,9 @@ WORD64 "catch", _catch, 0, 5
 WORD64 "throw", _throw, 0, 5
 WORD64 "write", _write_word, 0, 5
 WORD64 "read", _read_word, 0, 4
+WORD64 "openr", _openr, 0, 5
+WORD64 "close", _close, 0, 5
+WORD64 "loadfile", _loadfile, 0, 8
 WORD64 "accept", _accept, 0, 6
 WORD64 "compiler", _compiler, 0, 8
 
@@ -2700,6 +2851,7 @@ headbuf    rb 65536
 heads64:   GENWORDS64
 
 inbuf      rb 4096
+namebuf    rb 256                ; scratch buffer for NUL-terminated filenames
 filebuf    rb 65536
 dstack     rb 8192
 dstack_top:

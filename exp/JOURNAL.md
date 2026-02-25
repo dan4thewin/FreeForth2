@@ -4614,3 +4614,107 @@ with bare number literals like `0 [IF]` or `1 [IF]` because ff64's
 stack at compile time. In i386 FreeForth, the number handler leaves
 values on the data stack during compilation, enabling `0 [IF]`.
 This is a known behavioral difference; use `[0] [IF]` and `[1] [IF]`.
+
+---
+
+## Experiment 062: File I/O — openr, close, loadfile
+
+### Goal
+
+Implement the file I/O primitives needed for FreeForth's `needs`/file
+loading mechanism: `openr` (open file read-only), `close` (close fd),
+and `loadfile` (load and evaluate a file from the data stack).
+
+### Background
+
+The i386 FreeForth has an `include` keyword handled directly in the
+assembly compiler. But higher-level file loading (like `needs`) requires
+callable words that can open, read, and evaluate files from Forth code.
+
+### Implementation
+
+**openr** (`_openr` in ff64.asm): Takes (addr len -- fd). Copies the
+filename to a scratch area, NUL-terminates it (since sys_open needs a
+C string), calls sys_open with O_RDONLY. Returns the fd (negative on
+error). Critical detail: the NUL byte is written to a saved/restored
+location to avoid corrupting inline string literals in the code buffer.
+
+**close** (`_close` in ff64.asm): Takes (fd -- result). Simple wrapper
+around sys_close.
+
+**loadfile** (`_loadfile` in ff64.asm): Takes (addr len -- ). This is
+the complex one. It:
+1. Copies the filename to a 256-byte `namebuf` BSS buffer (NUL-terminated)
+2. Saves the current input state (tin, tp, filebuf_ptr)
+3. Opens the file, reads it into the current filebuf position
+4. Closes the file
+5. Sets tin/tp to the file content
+6. Saves code generation state (anon, rbp) and calls _compiler
+7. Restores everything
+
+### The _semi_exec overwrite bug
+
+The most challenging aspect was that `loadfile` is called from compiled
+code (anonymous or named). When called from the REPL, it runs during
+`_semi_exec`'s anonymous code execution, where `rbp` has been reset to
+the start of the anonymous code. If _compiler compiles new definitions
+at this rbp, it OVERWRITES the currently executing anonymous code.
+
+**Failed approaches:**
+- Setting `anon = rbp` naively → _colon's _semi_exec call is a no-op
+  but code still compiles at the anonymous code's address
+- Scanning forward from rbp for the $C3 (ret) byte → fragile: $C3 can
+  appear as part of other instructions (e.g., in filename bytes)
+
+**Solution: hereatexec variable.** We added a `hereatexec` variable that
+`_semi_exec` saves rbp into BEFORE resetting it. This gives _loadfile
+a safe code position past the executing anonymous code:
+
+```asm
+_semi_exec:
+    mov byte [rbp], $C3
+    inc rbp
+    mov [hereatexec], rbp   ; save safe position
+    mov rax, [anon]
+    mov rbp, rax            ; reset rbp to anon start
+    call rax
+    ...
+```
+
+_loadfile then uses `hereatexec` instead of scanning:
+```asm
+    mov rbp, [hereatexec]   ; safe position past anonymous code
+```
+
+### The _readline batching gotcha
+
+Another puzzle: `loadfile` appeared to fail when both the loadfile call
+and the subsequent word usage were piped as input. The assembly REPL's
+`_readline` reads up to 4096 bytes at once, so both lines get compiled
+together. The compiler tries to resolve "hello" before loadfile has
+executed. Solution: send lines with sleep delays between them, or use
+the Forth REPL (_top) which reads 80 bytes per iteration.
+
+### FreeForth string underscore convention
+
+FreeForth treats `_` as space in string literals. So `"/tmp/test_file.ff"`
+becomes "/tmp/test file.ff" which doesn't exist. Use filenames without
+underscores.
+
+### Tests (exp/062-fileio, exp/063-loadfile)
+
+**exp/062-fileio:**
+| Test | Description | Result |
+|------|-------------|--------|
+| test-openr | Open existing file, check fd > 0 | PASS |
+| test-read | Read file content | PASS |
+| test-close | Close fd | PASS |
+| test-nonexist | Open nonexistent file, check fd < 0 | PASS |
+
+**exp/063-loadfile:**
+| Test | Description | Result |
+|------|-------------|--------|
+| test-loadfile | loadfile defines hello, call returns 42 | PASS |
+| test-loadfile-value | loadfile defines answer, call returns 99 | PASS |
+| test-loadfile-multi | Load 3 definitions, composed result = 30 | PASS |
+| test-loadfile-nofile | Nonexistent file prints error, no crash | PASS |
