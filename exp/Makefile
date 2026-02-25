@@ -44,7 +44,8 @@ EXPERIMENTS = 001-hello64 002-stack64 003-codegen64 004-subrthread64 \
 062-fileio \
 063-loadfile \
 064-segv \
-065-needed
+065-needed \
+066-doargv
 
 test:
 	@for d in $(EXPERIMENTS); do \

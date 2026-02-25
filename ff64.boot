@@ -524,6 +524,15 @@ AGAIN
   find 2r> c! 0= IF 2drop ;THEN 1-
   2dup marker swap loadfile ;
 
+( needs` — compile-time: semicolons, reads filename, loads via needed )
+: needs` ;` wsparse needed ;
+
+( -f` — compile-time handler for -f flag in command-line args )
+: -f` ;` wsparse needed ;
+
+( doargv — evaluate command line arguments as FreeForth words )
+:^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap _eval ;
+
 ( Call `hidepvt` at compile time, or `_boot ;` for full boot sequence )
 :^ ossetup ;
-:. _boot ossetup _hidepvt _top ;
+:. _boot ossetup doargv _hidepvt _top ;

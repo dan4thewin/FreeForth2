@@ -4820,3 +4820,75 @@ code start.
 | test-needed | needed loads file, word works | PASS |
 | test-needed-guard | Second needed skips, word still works | PASS |
 | test-needed-find | find returns xt+0 for known word | PASS |
+
+---
+
+## Experiment 066: needs`, -f`, doargv
+
+**Goal**: Implement compile-time file loading (`needs\``), the `-f`
+command-line flag handler (`-f\``), and the argument-processing word
+`doargv`.
+
+**Background**: In the i386 FreeForth, the boot file is embedded in the
+binary — there is no `-f` flag on the command line to load it. Instead,
+`_boot` calls `doargv` which copies all command-line arguments to `tib`
+and evaluates them as Forth words. The `-f` flag is handled by a
+compile-time macro `-f\`` that calls `needs\`` to load the named file.
+
+In ff64, the assembly argloop currently handles `-f ff64.boot` on the
+command line. The Forth-level `doargv` provides the infrastructure for
+the future when ff64.boot is embedded in the binary.
+
+**Understanding `needs\``**: The definition is:
+```forth
+: needs` ;` wsparse needed ;
+```
+When the compiler encounters `needs somefile.ff` in Forth source:
+1. Appends backtick → `needs\`` (ct=2) → calls it immediately
+2. `;\`` (which is `_semi`) ends the current compilation
+3. `wsparse` reads the next word from input ("somefile.ff")
+4. `needed` loads the file (with double-load guard via marker)
+
+This is the same pattern as `mark\`` (`;\` wsparse marker`).
+
+**Understanding `doargv`**: The definition is:
+```forth
+:^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap _eval ;
+```
+Stack trace for `./ff -f myapp.ff` (argc=3):
+- `argc 1-` → 2 (args after program name)
+- `0;` → nonzero, continue
+- `1 _argv` → argv[1] pointer (to "-f" string)
+- `swap 2+` → argc+1 = 4
+- `_argv` → argv[4] which is envp[0] (first environment pointer)
+- `over-` → envp[0] - argv[1] = total byte span of all arg strings
+- `tuck tib place` → copy all arg bytes to tib
+- `swap _eval` → evaluate tib content as Forth
+
+The trick: on Linux, argv strings are contiguous in memory with NUL
+separators. `wsparse` treats NUL (< space) as whitespace, so NUL bytes
+between args act as word separators.
+
+**`-f\``**: Simplified version without turnkey/mainxt support:
+```forth
+: -f` ;` wsparse needed ;
+```
+Same body as `needs\`` — when the compiler encounters `-f somefile.ff`,
+it semicolons, reads the filename, and loads it via `needed`.
+
+**`_boot` update**: Added `doargv` between `ossetup` and `_hidepvt`:
+```forth
+:. _boot ossetup doargv _hidepvt _top ;
+```
+Since the assembly argloop already consumes `-f ff64.boot`, and `doargv`
+would find no unprocessed args, this is safe. When ff64.boot is embedded
+in the future, doargv will process all command-line args.
+
+### Tests (exp/066-doargv)
+
+| Test | Description | Result |
+|------|-------------|--------|
+| test-needs | needs` loads hello.ff, hello prints 42 | PASS |
+| test-needs-guard | Second needs` skips (marker guard), word works | PASS |
+| test-fback | -f` loads hello.ff, hello prints 42 | PASS |
+| test-doargv | Boot with doargv in _boot still works | PASS |
