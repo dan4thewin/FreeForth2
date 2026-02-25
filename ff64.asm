@@ -1604,6 +1604,11 @@ _compiler:
         call _lit_compile
         jmp _compiler
 .error:
+        ;; If a catch frame is active (xfp != 0), throw the error.
+        ;; Otherwise, print "error: <word>\n" and continue compiling.
+        cmp qword [xfp], 0
+        jne .error_throw
+        ;; No catch frame: print error inline and continue
         push rcx
         push rax
         mov rax, 1
@@ -1613,7 +1618,7 @@ _compiler:
         syscall
         pop rsi
         pop rdx
-        and rsi, -2
+        and rsi, -2             ; clear low bit (wsparse artifact)
         mov rax, 1
         mov rdi, 1
         syscall
@@ -1623,6 +1628,9 @@ _compiler:
         mov rdx, 1
         syscall
         jmp _compiler
+.error_throw:
+        call _error
+        db 3, "???"
 _compiler_done:
         ret
         ;; ─── Suffix handlers ───
@@ -1976,7 +1984,10 @@ _catch:
         xor ebx, ebx            ; TOS = 0 (no exception)
         ret
 
-;; _error: called from compiler when !" prefix is found
+;; _error: inline counted-string error. Usage: call _error / db count, "msg"
+;; Pops return address (= counted string) into TOS, falls through to throw.
+_error:
+        pop rbx                 ; return addr → TOS (pointer to counted string)
 ;; throw ( message -- ) unwind to catch, TOS = exception message
 _throw:
         mov rsp, [xfp]          ; restore call stack
@@ -2378,6 +2389,10 @@ _start:
         mov [tp], rcx
         lea rcx, [rcx + 16]
         mov [filebuf_ptr], rcx
+        ;; Reset anon so anonymous code in loaded files gets executed
+        mov [anon], rbp
+        mov qword [callmark], 0
+        mov byte [SC], 0
         call _compiler
 .argfile_done:
         pop qword [filebuf_ptr]

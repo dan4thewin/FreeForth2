@@ -2467,3 +2467,108 @@ code.
 
 **Running total:** ~240 words/macros ported. 311 tests across 51
 experiments, all passing.
+
+---
+
+## Part 26: Forth-based REPL (_top) (Experiment 052)
+
+The culmination of the REPL work: a self-contained Forth REPL that can
+be launched from the assembly REPL.
+
+### The i386 pattern and why it doesn't port
+
+The original FreeForth REPL is an intertwined masterpiece. Three words
+(`_eval`, `_exec`, `_top`) share a single `START`/`ENTER` loop that
+crosses definition boundaries. `_exec` wraps `_eval` in `catch` for
+error handling. `_top` handles input and prompt. The flow jumps between
+them via `START`/`ENTER`/`TILL` constructs that would make a structured
+programmer faint.
+
+On x86-64, this pattern fails because `_eval` is the last named
+definition before the unnamed `_exec`/`_top` code. After boot, the
+compilation pointer (`rbp`) equals `_eval`'s code address. The assembly
+REPL's auto-execute feature (exp 051) writes through `rbp`, destroying
+`_eval`'s compiled code. When `_exec` later calls `_eval`, it crashes.
+
+### The self-contained approach
+
+The x86-64 `_top` is a single, self-contained `BEGIN`/`AGAIN` loop:
+
+```forth
+:^ _top pvt BEGIN
+  ui 0 noauto!
+  tib 80 accept dup 0- 0= drop IF drop 0 exit THEN
+  here saved_here! tib swap eval. ' catch
+  dup 0- 0<> drop IF _recover ELSE drop THEN
+AGAIN
+```
+
+Each iteration: show prompt → read input → save compilation state →
+evaluate under exception protection → on error, recover and continue.
+
+### Error flow: compiler → throw → catch → recover
+
+**Without catch (assembly REPL):**
+The compiler's `.error` handler checks `xfp`. If zero (no catch frame),
+it prints `error: <word>\n` directly to stdout and continues. This is
+the safe fallback — the assembly REPL never set up a catch frame.
+
+**With catch (Forth REPL):**
+`_top` wraps `eval.` in `catch`. The compiler's `.error` checks `xfp`,
+finds it non-zero, and calls `_error` which pops the inline error message
+("???") and falls through to `_throw`. `_throw` unwinds the call stack
+to the catch frame, restoring the data stack. `catch` returns the error
+message pointer as TOS (non-zero = error occurred).
+
+**Recovery (`_recover`):**
+1. Shows input context: `tib >in@ over - type` prints everything from
+   the input buffer start to where the compiler was parsing when the
+   error occurred.
+2. Shows error: `." <-error: " c@+ type cr` prints the counted error
+   string ("???").
+3. Drops the two items that `catch` restored to the data stack
+   (`tib_addr` and `bytes_read` from before the eval.).
+4. Dictionary cleanup: if `anon@ = 0`, a named definition was in
+   progress — unlink it from the dictionary chain.
+5. Code cleanup: restore `here` to its saved value, clear compiler state.
+
+### The `eval. '` idiom
+
+This is a FreeForth gem. `eval.` compiles a `call eval.` instruction.
+`'` (tick) then uncompiles that call and pushes `eval.`'s execution
+token as a literal. At runtime, the stack holds `eval.`'s xt, which
+`catch` consumes and calls. The effect: `eval.` runs under `catch`'s
+exception protection, with the call stack properly framed.
+
+### The 80-byte accept trick
+
+For testing with piped input, `accept` reads up to 80 bytes. Test lines
+are padded to exactly 80 characters:
+
+```makefile
+pad() { printf '%-80s' "$$1"; }
+run() {
+  for line; do INPUT="$$INPUT$$(pad "$$line")"; done
+  printf '%s' "$$INPUT" | ./ff64 -f ff64.boot -f launch.ff
+}
+```
+
+Each `accept` call reads exactly one 80-byte "line." Without this trick,
+`sys_read` on a pipe returns all available data at once, making multi-line
+tests impossible with a large buffer.
+
+### `-f` file `anon` reset
+
+A subtle bug: after boot (processing the first `-f ff64.boot`), `anon`
+is left at 0 because the last definition (`_top`) used `:^` which calls
+`_colon`, which sets `anon = 0`. The second `-f` file contains `_top ;`.
+The compiler processes `_top` (compiles `call _top`) and `;` (which
+should trigger `_semi_exec`). But `_semi_exec` checks `anon` — if it's
+0, it treats this as a named definition ending, not anonymous code to
+execute. Result: `_top` never gets called.
+
+Fix: reset `anon = rbp` before compiling each `-f` file, just like the
+assembly `.repl` does before each line.
+
+**Running total:** ~245 words/macros ported. 322 tests across 52
+experiments, all passing.

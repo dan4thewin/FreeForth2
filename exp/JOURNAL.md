@@ -3796,3 +3796,145 @@ jmp cr            ← tail-call newline
 
 **Files:** `ff64.asm` (auto-execute in .repl_loop),
 `exp/051-repl-autoexec/Makefile` (6 tests), `exp/Makefile` (added 051)
+
+---
+
+## Experiment 052 — Forth-based REPL (_top)
+
+**Goal:** Replace the intertwined i386 `_exec`/`_top` REPL pattern with a
+self-contained Forth REPL (`_top`) that features: prompt, error handling
+via `catch`/`throw`, error recovery (undo partial compilation), and a
+clean read-eval loop.
+
+**Background:** The i386 FreeForth REPL uses an unusual intertwined
+`START`/`ENTER` pattern where `_exec` (error handler) and `_top`
+(input handler) share a loop via flow-control words that cross definition
+boundaries. This pattern breaks on x86-64 because `_eval`'s compiled code
+gets overwritten by subsequent compilation (the compilation pointer `rbp`
+advances through the same memory). A self-contained REPL avoids this.
+
+### Changes to ff64.asm
+
+**1. `-f` file loading resets `anon`:**
+Before calling `_compiler` for each `-f` file, the `anon` variable is
+reset to `rbp` (the current compilation pointer). Without this, anonymous
+code in loaded files (like `_top ;`) wasn't executed because `anon` was
+left at 0 from the previous named definition.
+
+```asm
+;; In .argfile handler, before call _compiler:
+mov [anon], rbp
+mov qword [callmark], 0
+mov byte [SC], 0
+```
+
+**2. Compiler `.error` uses conditional throw:**
+The compiler's error handler now checks whether a `catch` frame is active
+(`xfp != 0`). If yes, it throws via `_error` with the counted string
+`"???"`, propagating the error to the catch handler. If no catch frame
+exists (assembly REPL), it prints `error: <word>\n` directly and
+continues compiling — matching the pre-throw behavior.
+
+This dual-mode design is essential: the assembly REPL has no `catch`
+wrapper, so a bare `_throw` with `xfp=0` would crash (setting
+`rsp` to 0). The Forth `_top` REPL wraps `eval.` in `catch`, so it
+receives the thrown error for display and recovery.
+
+```asm
+.error:
+    cmp qword [xfp], 0
+    jne .error_throw
+    ;; No catch: print and continue (assembly REPL path)
+    ... print "error: <word>\n" ...
+    jmp _compiler
+.error_throw:
+    call _error
+    db 3, "???"
+```
+
+**3. `_error` defined before `_throw`:**
+`_error` pops the return address (an inline counted string) into TOS
+and falls through to `_throw`, matching the i386 pattern exactly:
+
+```asm
+_error: pop rbx         ; return addr → TOS
+_throw: mov rsp, [xfp]  ; unwind to catch
+        ...
+```
+
+### Changes to ff64.boot
+
+**New words defined:**
+
+`saved_here` — A private variable that stores the compilation pointer
+(`here`) before each `eval.` call. Used by `_recover` to restore `here`
+after a throw, undoing any partial compilation.
+
+`_recover` — Private word called on error. Displays the input context
+up to the error point (`tib >in@ over - type`), prints the error message
+(`c@+ type`), then:
+1. If a named definition was in progress (`anon@ = 0`), removes the
+   partial header from the dictionary chain.
+2. Restores `here` to its pre-eval value via `saved_here@`.
+3. Clears the compiler state (`SC`, `anon`).
+
+```forth
+:. _recover tib >in@ over - type ." <-error: " c@+ type cr 2drop
+  anon@ 0- 0= drop IF H@ dup @ swap h.sz+ c@ h.nm+ 1+ + H! THEN
+  saved_here@ here swap - allot 0 SC c! anon:` ;
+```
+
+`_top` — The Forth REPL, defined as a vector (`:^`). Self-contained
+`BEGIN`/`AGAIN` loop:
+1. `ui` — calls the prompt vector (shows depth and `;`/`:`)
+2. `0 noauto!` — resets auto-semicolon flag
+3. `tib 80 accept` — reads up to 80 bytes from stdin
+4. EOF check — if accept returns 0, exits with `0 exit`
+5. `here saved_here!` — saves compilation pointer for recovery
+6. `tib swap eval. ' catch` — evaluates input under exception protection
+7. Error/success dispatch — `IF _recover ELSE drop THEN`
+
+```forth
+:^ _top pvt BEGIN
+  ui 0 noauto!
+  tib 80 accept dup 0- 0= drop IF drop 0 exit THEN
+  here saved_here! tib swap eval. ' catch dup 0- 0<> drop IF _recover ELSE drop THEN
+AGAIN
+```
+
+### Design decisions
+
+**80-byte accept buffer:** For piped-input testing, each `accept` call
+reads at most 80 bytes. Test lines are padded to exactly 80 characters
+with trailing spaces, simulating line-at-a-time terminal input. For
+interactive terminal use, 80 bytes is adequate (standard terminal width).
+
+**`eval. '` + `catch` pattern:** `eval. '` compiles a call to `eval.`,
+then `'` (tick) uncompiles it and pushes `eval.`'s xt as a literal.
+At runtime, `catch` receives the xt and calls `eval.` under exception
+protection. If the compiler throws (via `.error`/`_error`), `catch`
+catches it and returns the error message as TOS.
+
+**Stack balance after throw:** When `catch` saves the data stack state
+(r15, rdx), and `throw` restores them, the stack reverts to its state at
+`catch` entry time. This means `tib_addr` and `bytes_read` (which were
+on the stack before `catch` consumed the xt) reappear. `_recover` uses
+`2drop` to discard them after processing the error.
+
+**Why `ELSE drop` not trailing `drop`:** The success path has one extra
+item (the 0 from `catch`) that the error path doesn't (consumed by
+`_recover`). Using `IF _recover ELSE drop THEN` handles both paths
+correctly without stack imbalance.
+
+### Testing
+
+11 tests covering:
+- Basic evaluation (literal, arithmetic, multi-definition)
+- Error handling (message display, context display, recovery)
+- Stack balance (depth=0 after success and after error)
+- Prompt (shows stack depth)
+- Error cleanup (partial definitions removed, subsequent code runs)
+
+**Files:** `ff64.asm` (conditional throw, _error, -f anon reset),
+`ff64.boot` (_recover, _top, saved_here),
+`exp/052-repl-forth/Makefile` (11 tests), `exp/Makefile` (added 052)

@@ -423,13 +423,16 @@ variable hide hide on
     h.next
   REPEAT drop ;
 
-( Forth-based REPL — _top/_exec/_back )
-( _back: on error, show the input up to the error point )
-:. _back tib >in@ over - type ;
-( _exec: catch wraps eval. from _eval's tick. error recovery. )
-( On error: show location, print message, restore dict/code state. )
-:. _exec catch 0; _back ." <-error: " c@+ type cr 2drop
+( Error recovery: show location, print message, restore dict/code state )
+( saved_here holds the compilation pointer before each eval., for error recovery )
+variable saved_here pvt
+:. _recover tib >in@ over - type ." <-error: " c@+ type cr 2drop
   anon@ 0- 0= drop IF H@ dup @ swap h.sz+ c@ h.nm+ 1+ + H! THEN
-  here - allot 0 SC c! anon:` 0<>` START _eval ENTER
-( _top: display prompt, read line, evaluate, repeat until EOF )
-:^ _top pvt ui 0 noauto! tib 1024 under accept 0- 0= TILL
+  saved_here@ here swap - allot 0 SC c! anon:` ;
+( Forth REPL: prompt, read, eval with catch, error recovery, loop )
+( accept buffer is 80 bytes — adequate for line-at-a-time terminal input )
+:^ _top pvt BEGIN
+  ui 0 noauto!
+  tib 80 accept dup 0- 0= drop IF drop 0 exit THEN
+  here saved_here! tib swap eval. ' catch dup 0- 0<> drop IF _recover ELSE drop THEN
+AGAIN
