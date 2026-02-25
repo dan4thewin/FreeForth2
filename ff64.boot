@@ -290,6 +290,10 @@ variable mrk 0 mrk 8+ !
 -1 constant TRUE
 0 constant FALSE
 
+( FLAGS helpers — set FLAGS from known values )
+: zFALSE 0 0- drop ;
+: nzTRUE 1 0- drop ;
+
 ( Header layout constants )
 8 constant h.ct
 9 constant h.sz
@@ -365,6 +369,25 @@ variable base
 : ds prompt depth _s cr ;
 : .h` ."free:" here H@ - $400/ .\ ."k_SC=" SC c@ . .s` ;
 : .l 8 .#s ;
+
+( Pictured numeric output — ANS-style <# # #s hold sign #> )
+( Builds a number string right-to-left in pnbuf )
+46 constant pnmaxlen
+create pnbuf pvt pnmaxlen 2+ allot
+: <# pnmaxlen pnbuf c! 0 pnbuf pnmaxlen+ 1+ c! ; <#
+: #> 2drop pnbuf c@+ swap over + swap pnmaxlen swap - ;
+:. _len1- pnbuf dupc@ 1- swap c! ;
+: hold pnbuf dupc@ + c! _len1- ;
+:. _dh 9 u> drop IF over+ THEN nip $30+ $7A u> drop IF drop $3F THEN hold ;
+:. _# >r um/mod r> rot _dh 0 ;
+: # base@ 7 _# ;
+: x# $10 39 _# ;
+: X# $10 7 _# ;
+:. _ps >r BEGIN r@ execute over 0- drop 0= UNTIL rdrop ;
+: #s # ' _ps ;
+: x#s x# ' _ps ;
+: X#s X# ' _ps ;
+: sign 0- drop 0< IF $2D hold THEN ;
 
 ( Dictionary inspector )
 : .hdr+ dup .x\ .":_" dup @ .x space dup h.ct+ c@ .x space dup h.sz+ c@ . dup h.name ;

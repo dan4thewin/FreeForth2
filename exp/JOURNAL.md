@@ -4341,3 +4341,52 @@ zero-check, TILL. in START context, IF./ELSE combination.
 
 **Files:** `ff64.boot` (added `cond.`/`IF.`/`WHILE.`/`TILL.`/`UNTIL.`),
 `exp/057-dotcond/Makefile` (6 tests), `exp/Makefile` (added 057)
+
+---
+
+## Experiment 058: Pictured Numeric Output + FLAGS Helpers
+
+**Goal:** Implement ANS-style pictured numeric output (`<#`, `#`, `#s`,
+`hold`, `sign`, `#>`) and FLAGS helpers (`nzTRUE`, `zFALSE`).
+
+**Background:** Pictured numeric output builds number strings right-to-left
+in a buffer, converting each digit with modular division. This is the
+standard Forth way to format numbers and is prerequisite for many display
+words. The FLAGS helpers set CPU flags to known states for use with the
+conditional tail-call mechanism (`?`).
+
+**Implementation:**
+
+All definitions are pure Forth, ported from ff.ff (the i386 standard
+library file). Key adaptations for x86-64:
+
+1. **Character literals with suffixes** — i386's `'0'+` (character literal
+   with + suffix) doesn't work in ff64 because the character literal parser
+   requires exactly 3 characters (`'x'`). Used hex equivalents instead:
+   `$30+` for `'0'+`, `$7A` for `'z'`, `$3F` for `'?'`, `$2D` for `'-'`.
+
+2. **_s name conflict** — ff.boot defines `_s` for `.s` (stack display),
+   while ff.ff redefines `_s` for `#s` (pictured iteration). Used `_ps`
+   (pictured-string) in ff64.boot to avoid confusion.
+
+3. **um/mod argument order** — `um/mod` takes `( lo hi divisor )` as a
+   double-cell dividend. For single-cell formatting: `42 0 #s` (hi=0).
+
+**nzTRUE and zFALSE:**
+
+These are FLAGS helpers used with the `?` conditional tail-call:
+- `nzTRUE` = `1 0- drop` → sets ZF=0 (nonzero)
+- `zFALSE` = `0 0- drop` → sets ZF=1 (zero)
+
+Key insight: In the pattern `nzTRUE ? zFALSE ;` (used in `within`), the
+`?` uncompiles the preceding `call nzTRUE`. nzTRUE never actually executes
+— it's just a placeholder for `?` to uncompile. The `?` emits a default JNZ
+backward jump using FLAGS from whatever comparison preceded it. `zFALSE`
+only executes in the fall-through (false) path.
+
+**Tests:** 9 tests: decimal, hex (lowercase/uppercase), multi-digit,
+negative sign, positive sign, hold character, nzTRUE tail-call, zFALSE
+existence.
+
+**Files:** `ff64.boot` (added `zFALSE`, `nzTRUE`, pictured numeric output),
+`exp/058-picnum/Makefile` (9 tests), `exp/Makefile` (added 058)
