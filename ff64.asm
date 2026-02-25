@@ -13,6 +13,10 @@ format elf64
 section '.flat' writeable executable
 public _start
 
+extrn dlopen
+extrn dlsym
+extrn dlerror
+
 h.ct = 8
 h.sz = 9
 h.nm = 10
@@ -2194,11 +2198,29 @@ _error:
         pop rbx                 ; return addr → TOS (pointer to counted string)
 ;; throw ( message -- ) unwind to catch, TOS = exception message
 _throw:
+        cmp qword [xfp], 0
+        jz .throw_nocatch
         mov rsp, [xfp]          ; restore call stack
         pop qword [xfp]        ; restore previous frame pointer
         pop rdx                 ; restore NOS
         pop r15                 ; restore data stack pointer
         ret                     ; return to catch's caller with TOS=message
+.throw_nocatch:
+        ;; No catch frame: print the error message and return
+        movzx edx, byte [rbx]   ; string count
+        lea rsi, [rbx + 1]      ; string data
+        mov rax, 1              ; sys_write
+        mov rdi, 1              ; stdout
+        syscall
+        ;; Print newline
+        push rax
+        mov rax, 1
+        mov rdi, 1
+        lea rsi, [nl_char]
+        mov rdx, 1
+        syscall
+        pop rax
+        ret
 
 ;; =====================================================================
 ;; I/O — Forth-callable read/write/accept
@@ -2591,6 +2613,116 @@ _loadfile:
         ret
 
 ;; =====================================================================
+;; Dynamic library interface — dlopen/dlsym/dlerror wrappers
+;; =====================================================================
+;; x86-64 SysV ABI: args in rdi,rsi,rdx,rcx,r8,r9; result in rax.
+;; Callee-saved (preserved across C calls): rbx,rbp,r12,r13,r14,r15.
+;; Stack must be 16-byte aligned before call instruction.
+
+saveSP  dq 0                    ; saved return stack across C calls
+dl_errbuf rb 256                ; buffer for dlerror() counted strings
+
+;; #lib ( addr len -- libh )
+;; dlopen(filename, RTLD_LAZY|RTLD_GLOBAL=0x101)
+_dllib:
+        mov byte [rdx + rbx], 0 ; NUL-terminate filename at addr+len
+        mov rdi, rdx            ; rdi = filename address (NOS)
+        mov rsi, 0x101          ; RTLD_LAZY | RTLD_GLOBAL
+        mov [saveSP], rsp
+        and rsp, -16
+        xor eax, eax
+        call dlopen
+        mov rsp, [saveSP]
+        test rax, rax
+        jz dl_err
+        mov rbx, rax            ; TOS = library handle
+        mov rdx, [r15]          ; NOS = item below addr
+        add r15, 8              ; pop addr from data stack
+        ret
+
+;; #fun ( addr len libh -- funh )
+;; dlsym(handle, symbol_name)
+_dlfun:
+        mov rdi, rbx            ; rdi = library handle (TOS)
+        mov rsi, [r15]          ; rsi = symbol address (3rd item)
+        mov byte [rsi + rdx], 0 ; NUL-terminate at addr+len
+        mov [saveSP], rsp
+        and rsp, -16
+        xor eax, eax
+        call dlsym
+        mov rsp, [saveSP]
+        test rax, rax
+        jz dl_err
+        mov rbx, rax            ; TOS = function handle
+        mov rdx, [r15+8]       ; NOS = item below addr+len
+        add r15, 16             ; pop addr and len
+        ret
+
+dl_err:
+        ;; Error: call dlerror(), copy string to dl_errbuf (NOT here), throw.
+        ;; Copying to here (rbp) would overwrite compiled code that the catch
+        ;; frame's return address points to — causing SEGV on throw return.
+        mov [saveSP], rsp
+        and rsp, -16
+        call dlerror
+        mov rsp, [saveSP]
+        ;; rax = NUL-terminated error string. Copy to dl_errbuf+1, count at dl_errbuf.
+        mov rsi, rax
+        lea rdi, [dl_errbuf + 1]
+        xor ecx, ecx
+dl_ecopy:
+        lodsb
+        test al, al
+        jz .dl_ecopy_done
+        stosb
+        inc ecx
+        cmp ecx, 254           ; max 254 chars
+        jge .dl_ecopy_done
+        jmp dl_ecopy
+.dl_ecopy_done:
+        mov byte [dl_errbuf], cl ; store count at first byte
+        lea rbx, [dl_errbuf]    ; TOS = counted error string
+        jmp _throw
+
+;; #call ( argN ... arg1 N funh -- result )
+;; Call C function via x86-64 SysV ABI. Supports up to 6 args.
+;; For variadic C functions, al=0 (no SSE args).
+_dlcall:
+        mov r12, rbx            ; r12 = function pointer (callee-saved)
+        mov r13, rdx            ; r13 = N arg count (callee-saved)
+        ;; Args sit at [r15], [r15+8], ..., [r15+8*(N-1)]
+        test r13, r13
+        jz dc_call
+        mov rdi, [r15]          ; arg1
+        cmp r13, 1
+        je dc_call
+        mov rsi, [r15+8]       ; arg2
+        cmp r13, 2
+        je dc_call
+        mov rdx, [r15+16]      ; arg3
+        cmp r13, 3
+        je dc_call
+        mov rcx, [r15+24]      ; arg4
+        cmp r13, 4
+        je dc_call
+        mov r8, [r15+32]       ; arg5
+        cmp r13, 5
+        je dc_call
+        mov r9, [r15+40]       ; arg6
+dc_call:
+        mov [saveSP], rsp
+        and rsp, -16
+        xor eax, eax            ; no SSE args (for variadic functions)
+        call r12
+        mov rsp, [saveSP]
+        ;; Pop N args, load new TOS/NOS
+        lea r15, [r15 + r13*8]  ; skip past N args in data stack
+        mov rdx, [r15]          ; new NOS (first item below args)
+        add r15, 8              ; pop it from memory stack
+        mov rbx, rax            ; TOS = C function result
+        ret
+
+;; =====================================================================
 ;; Header generation macros
 ;; =====================================================================
 
@@ -2725,6 +2857,9 @@ WORD64 "read", _read_word, 0, 4
 WORD64 "openr", _openr, 0, 5
 WORD64 "close", _close, 0, 5
 WORD64 "loadfile", _loadfile, 0, 8
+WORD64 "#lib", _dllib, 0, 4
+WORD64 "#fun", _dlfun, 0, 4
+WORD64 "#call", _dlcall, 0, 5
 WORD64 "find", _find_forth, 0, 4
 WORD64 "accept", _accept, 0, 6
 WORD64 "compiler", _compiler, 0, 8
@@ -2734,6 +2869,7 @@ WORD64 ">in", tin, 1, 3
 WORD64 "tp", tp, 1, 2
 WORD64 "tib", inbuf, 1, 3
 WORD64 "helpbuf", helpbuf, 1, 7
+WORD64 "xfp", xfp, 1, 3
 
 ;; Compile-time words (ct=1)
 WORD64 "swap`", _swap_inline, 0, 5

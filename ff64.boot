@@ -537,6 +537,13 @@ AGAIN
 ( help` — on first call, loads lib/help64.ff which redefines help` )
 : help` ;` "lib/help64.ff" needexec ;
 
+( Dynamic library interface )
+variable libc
+:. dlsetup libc@ 0<>; drop "libc.so.6" #lib libc! ;
+dlsetup
+: libc.` wsparse libc@ #fun lit` #call ' call, ;
+: libc_ libc@ #fun #call ;
+
 ( doargv — evaluate command line arguments as FreeForth words )
 :^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap _eval ;
 

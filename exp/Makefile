@@ -46,7 +46,8 @@ EXPERIMENTS = 001-hello64 002-stack64 003-codegen64 004-subrthread64 \
 064-segv \
 065-needed \
 066-doargv \
-067-help
+067-help \
+068-dynlink
 
 test:
 	@for d in $(EXPERIMENTS); do \

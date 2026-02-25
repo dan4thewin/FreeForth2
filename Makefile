@@ -1,6 +1,6 @@
 SHELL=/bin/bash
 LD=ld -m elf_i386 -lc --dynamic-linker=/lib/ld-linux.so.2 -s
-LD64=ld -m elf_x86_64
+LD64=ld -m elf_x86_64 -lc -ldl --dynamic-linker=/lib64/ld-linux-x86-64.so.2
 
 all: ff ff64
 

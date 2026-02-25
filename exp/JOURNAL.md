@@ -4998,3 +4998,111 @@ and exits. On no match, `_skipline` and continues.
 | test-help-noarg | `help` (no arg) shows help topic itself | PASS |
 | test-help-notfound | `help zzzznonexistent` shows "no help found" | PASS |
 | test-help-second | Two help calls in sequence both work | PASS |
+
+---
+
+## Experiment 068 — Dynamic Library Linking (#lib, #fun, #call)
+
+**Goal:** Port i386 FreeForth's dynamic library linking (fflinio.asm)
+to x86-64, enabling Forth code to call C library functions at runtime.
+
+### Background
+
+The i386 FreeForth used `#lib` (dlopen), `#fun` (dlsym), and `#call`
+to access shared libraries. The `#call` implementation used an elegant
+`xchg eax, esp` trick to switch between the Forth stack and C's cdecl
+calling convention. On x86-64, the SysV ABI passes args in registers
+(rdi, rsi, rdx, rcx, r8, r9), making `#call` fundamentally different.
+
+### Changes to ff64.asm
+
+**Dynamic linker integration:**
+- Added `extrn dlopen, dlsym, dlerror` for PLT-based dynamic linking.
+- Changed the linker command to: `ld -m elf_x86_64 -lc -ldl
+  --dynamic-linker=/lib64/ld-linux-x86-64.so.2` — the binary is now
+  dynamically linked rather than fully static.
+
+**`_dllib` (#lib)** — `( addr len -- libh )`:
+NUL-terminates the filename at addr+len, calls `dlopen(filename,
+RTLD_LAZY|RTLD_GLOBAL)`. On success, returns the library handle.
+On failure, jumps to `dl_err`.
+
+**`_dlfun` (#fun)** — `( addr len libh -- funh )`:
+NUL-terminates the symbol name, calls `dlsym(handle, name)`. Returns
+the function pointer on success, jumps to `dl_err` on failure.
+
+**`_dlcall` (#call)** — `( argN ... arg1 N funh -- result )`:
+Maps Forth stack args to SysV ABI registers. Supports 0–6 arguments.
+Saves rsp, aligns to 16 bytes, sets `al=0` for variadic functions,
+calls through the function pointer, then restores rsp and adjusts
+the Forth data stack to remove consumed args.
+
+**`dl_err` — error handling:**
+Calls `dlerror()` to get the error string, copies it as a counted
+string into `dl_errbuf` (a dedicated 256-byte buffer), and throws
+via `_throw`.
+
+### The dl_err Crash — A Debugging Story
+
+The error path initially crashed with SEGV when `_throw` tried to
+return to the catch frame's saved return address. Extensive debugging
+(GDB breakpoints, register inspection, xfp save/restore attempts)
+eventually revealed the root cause:
+
+**The error string was being copied to `here` (rbp).** In FreeForth,
+`here` points into the same memory region where the compiler generates
+code. The catch frame's return address pointed to compiled code near
+`here`. When `dl_err` copied the dlerror() message string to `here`,
+it **overwrote the compiled code** that the catch frame needed to
+return to. On `ret`, execution jumped into the error string — garbage
+instructions that immediately faulted.
+
+The fix was simple: use a dedicated `dl_errbuf` (256 bytes in the data
+section) instead of `here`. This is a general lesson: **never write to
+`here` from error paths** — the catch frame's return address may point
+to nearby generated code.
+
+### Changes to ff64.boot
+
+**`variable libc`** — stores the libc.so.6 handle after dlsetup.
+
+**`dlsetup`** — opens libc.so.6 and stores the handle in `libc`.
+
+**`libc.`** (backtick macro) — compile-time convenience:
+`libc. funcname` parses the next word, resolves it via `#fun` from
+the libc handle, then calls it via `#call`. This matches the i386
+pattern where C library functions can be called inline.
+
+**`libc_`** — runtime helper for libc. calls with handle lookup.
+
+### Changes to Makefile
+
+The `LD64` variable now links dynamically:
+```
+LD64=ld -m elf_x86_64 -lc -ldl --dynamic-linker=/lib64/ld-linux-x86-64.so.2
+```
+
+### Tests (exp/068-dynlink)
+
+| Test | Description | Result |
+|------|-------------|--------|
+| test-lib | `#lib` returns nonzero handle for libc.so.6 | PASS |
+| test-fun | `#fun` resolves `puts` from libc | PASS |
+| test-call | `libc. abs` computes abs(-42)=42 | PASS |
+| test-libc-puts | `libc. strlen` returns 5 for "hello" | PASS |
+| test-libc-getpid | `libc. getpid` returns positive value | PASS |
+| test-libc-abs | `libc. abs` computes abs(-7)=7 | PASS |
+| test-dlerror | Bad `#lib` throws error, catch catches it | PASS |
+
+### Technical Notes
+
+- **SysV ABI register mapping:** args in rdi, rsi, rdx, rcx, r8, r9.
+  Our Forth registers (rbx, r15, rbp) are callee-saved and survive C
+  calls. However, rdx (NOS) is caller-saved — it gets clobbered.
+  `_dlcall` saves and restores the Forth stack around the call.
+- **Stack alignment:** x86-64 requires 16-byte stack alignment before
+  `call`. We use `and rsp, -16` with saveSP for save/restore.
+- **Variadic functions:** Must set `al=0` (number of SSE register args)
+  for functions like printf. We always set `xor eax, eax`.
+- **GOT/PLT layout:** .got.plt at 0x402fe8, .flat at 0x403018 — no
+  overlap. Dynamic linker writes resolved addresses to GOT entries.
