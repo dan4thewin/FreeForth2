@@ -4516,3 +4516,101 @@ iterations due to the ELSE branch corruption bug:
 
 **Files:** `ff64.boot` (RTIMES` fallthrough, dump), `exp/060-rtimes-dump/Makefile`
 (4 tests), `exp/Makefile` (added 060)
+
+---
+
+## Experiment 061 — Peephole Optimization: ++\` and --\`
+
+**Goal:** Port the i386 `>mov`/`++\``/`--\`` peephole optimization to x86-64.
+On i386, `base@ ++` compiles to `inc dword [base]` instead of
+`mov ebx,[base]; inc ebx; mov [base],ebx`. We want the same
+single-instruction optimization for x86-64.
+
+### The i386 pattern
+
+In ff.boot (lines 220–224):
+```
+:^ >mov mov? dst? $90 here 7- c! here 6- w! ;
+: ++` $5FF >mov swap` ;
+: --` $DFF >mov swap` ;
+```
+
+`>mov` checks that the preceding instruction is a MOV from memory
+(`mov?`), then replaces the opcode with INC or DEC and NOPs the
+preceding `under` instruction. The `swap\`` undoes the SWAPbit effect
+of the fetch.
+
+### x86-64 adaptation
+
+The x86-64 `_litfetch` suffix handler generates:
+```
+DUP1 (10 bytes: lea r15,[r15-8]; mov [r15],rdx; mov rdx,rbx)
+MOV  (7 bytes: 48 8B 1D disp32  — mov rbx,[rip+disp32])
+```
+
+Our `>mov` must:
+1. Verify the MOV opcode at `here-7` (`$48`) and `here-6` (`$8B`)
+2. Save the `disp32` from `here-4`
+3. Adjust `disp32` by +10 (the INC is 10 bytes closer to the target,
+   since we removed the 10-byte DUP1 prefix)
+4. Rewind `here` by 17 bytes (`-17 allot`)
+5. Emit `48 FF 05 disp32` (INC) or `48 FF 0D disp32` (DEC)
+
+### The stack-order bug
+
+The initial definition had a subtle stack-order bug:
+```
+: >mov ... here 4- d@ 10+ -17 allot $48 c, $FF c, c, d, ;
+```
+
+After `10+`, the stack is: `modrm, disp32+10`. The next `c,` writes
+`disp32+10` (TOS) as the modrm byte, and `d,` writes `modrm` as
+the displacement — exactly backwards! GDB revealed this: the emitted
+bytes were `48 FF EA ...` instead of `48 FF 05 ...` (EA was the
+truncated disp32, not the $05 modrm).
+
+**Fix:** Insert `swap` after `10+`:
+```
+: >mov here 7- c@ $48- here 6- c@ $8B- or drop
+  here 4- d@ 10+ swap -17 allot $48 c, $FF c, c, d, ;
+```
+
+### The 16KB buffer limit
+
+After fixing the stack order, the definitions compiled but were
+invisible in the dictionary. Investigation revealed that `ff64.boot`
+had grown to 17,112 bytes — exceeding the 16,384-byte file read
+buffer in the assembly `-f` handler. Everything past byte 16,384
+(including `>mov`, `++\``, `--\``, the conditional compilation words,
+and `_boot`) was silently truncated.
+
+**Fix:** Increased both file read calls in `ff64.asm` from 16,384 to
+65,536 bytes, matching the existing `filebuf` allocation of 64KB.
+
+### The "base@ . always prints 10" illusion
+
+During testing, `base@ ++ base@ . cr` appeared to show no change
+(printing "10" both before and after). This led to a long debugging
+session before the realization: N printed in base N is always "10".
+After incrementing base from 10 to 11, printing in base 11 shows "10"
+(1×11 + 0 = 11). Using `.l` (hex long, base-independent) confirmed
+the increment worked: `0000000a` → `0000000b`.
+
+### Tests (exp/061-peephole)
+
+| Test | Description | Result |
+|------|-------------|--------|
+| test-inc | `base@ ++` increments base from 10→11 | PASS |
+| test-dec | `base@ --` decrements base from 10→9 | PASS |
+| test-inc-var | `v@ ++` on Forth variable 0→1 | PASS |
+| test-multi | Three `v@ ++` gives 0→3 | PASS |
+
+### Conditional compilation note
+
+`[IF]`/`[ELSE]`/`[THEN]` work correctly with `[1]` and `[0]` constants
+(ct=1 words that push onto the compile-time stack). They do NOT work
+with bare number literals like `0 [IF]` or `1 [IF]` because ff64's
+`_lit_compile` generates code without putting the value on the data
+stack at compile time. In i386 FreeForth, the number handler leaves
+values on the data stack during compilation, enabling `0 [IF]`.
+This is a known behavioral difference; use `[0] [IF]` and `[1] [IF]`.

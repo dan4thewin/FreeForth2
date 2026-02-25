@@ -499,6 +499,12 @@ AGAIN
 ( Hex memory dump )
 : dump bounds dup .l .":" BEGIN space c@+ .b 2dup u<= UNTIL 2drop cr ;
 
+( Peephole: >mov replaces variable fetch with inc/dec for ++`/--` )
+: >mov here 7- c@ $48- here 6- c@ $8B- or drop
+  here 4- d@ 10+ swap -17 allot $48 c, $FF c, c, d, ;
+: ++` $05 >mov ;
+: --` $0D >mov ;
+
 ( Conditional compilation — ported from ff.boot )
 ( _[] scans input for matching [ELSE] or [THEN], handling nesting )
 :. _[] '[' parse 2drop wsparse 0- 0= drop IF drop >in! !"unbalanced" ;THEN
@@ -510,8 +516,6 @@ AGAIN
 1 constant [1]`
 0 constant [0]`
 
-( Boot sequence: start Forth REPL )
-( Call `_top ;` to start the Forth REPL from the assembly REPL )
 ( Call `hidepvt` at compile time, or `_boot ;` for full boot sequence )
 :^ ossetup ;
 :. _boot ossetup _hidepvt _top ;

@@ -39,7 +39,8 @@ EXPERIMENTS = 001-hello64 002-stack64 003-codegen64 004-subrthread64 \
 057-dotcond \
 058-picnum \
 059-misc \
-060-rtimes-dump
+060-rtimes-dump \
+061-peephole
 
 test:
 	@for d in $(EXPERIMENTS); do \

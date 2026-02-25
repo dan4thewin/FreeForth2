@@ -2307,7 +2307,7 @@ _include:
         xor eax, eax            ; sys_read
         mov rdi, r12            ; fd
         mov rsi, [filebuf_ptr]  ; buffer at current nesting level
-        mov rdx, 16384          ; max 16KB per file
+        mov rdx, 65536          ; max 64KB per file
         syscall
         test rax, rax
         js .err_read
@@ -2580,7 +2580,7 @@ _start:
         xor eax, eax            ; sys_read
         mov rdi, r12
         mov rsi, [filebuf_ptr]
-        mov rdx, 16384
+        mov rdx, 65536
         syscall
         push rax
         mov rax, 3              ; sys_close
