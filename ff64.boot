@@ -275,6 +275,13 @@ variable mrk 0 mrk 8+ !
 : _resolve_breaks cs> 0; _then _resolve_breaks ;
 : END` >S0 $E9 c, mrk@ here 4+ - d, _resolve_breaks cs> cs> mrk 2! ;
 
+( Dotted conditionals: for stack-boolean values instead of FLAGS )
+: cond.` 0-` drop` 0<>` ;
+: IF.` cond.` IF` ;
+: WHILE.` cond.` WHILE` ;
+: TILL.` cond.` TILL` ;
+: UNTIL.` cond.` UNTIL` ;
+
 ( Utilities )
 : bl $20 ;
 : noop ;

@@ -4285,3 +4285,59 @@ with THEN.
 added backtick ct=1 dispatch), `ff64.boot` (fixed `?``, fixed THEN,
 ported `[IF]/[ELSE]/[THEN]` from ff.boot), `exp/056-condcomp/Makefile`
 (8 tests), `exp/Makefile` (added 056)
+
+---
+
+## Experiment 057: Dotted Conditionals
+
+**Goal:** Implement `IF.`/`WHILE.`/`UNTIL.`/`TILL.` — the stack-boolean
+variants of FreeForth's FLAGS-based conditionals.
+
+**Background:** FreeForth's conditionals (`IF`, `WHILE`, `UNTIL`, `TILL`)
+operate directly on CPU FLAGS set by comparison words (`0-`, `0=`, `<`, etc.).
+This is a defining feature: no boolean on the stack, no test instruction,
+no wasted DROP. But sometimes you have a stack boolean (e.g., from ANS-style
+code or computed conditions). The dotted variants bridge this gap.
+
+**How they work:**
+
+`cond.` converts a stack boolean to FLAGS:
+```
+: cond.` 0-` drop` 0<>` ;
+```
+
+At compile time, this emits:
+1. `0-`` → `test rbx,rbx` (sets FLAGS based on TOS)
+2. `drop`` → nip code (removes TOS, FLAGS preserved by LEA)
+3. `0<>`` → sets cond_jmp = $75 (JNZ)
+
+Each dotted conditional just prefixes its FLAGS counterpart:
+```
+: IF.` cond.` IF` ;
+: WHILE.` cond.` WHILE` ;
+: TILL.` cond.` TILL` ;
+: UNTIL.` cond.` UNTIL` ;
+```
+
+**i386 comparison:** The i386 versions use fall-through rather than explicit
+calls. For example, `IF.`` falls through to `IF``:
+```
+: IF.` cond.
+: IF` cond c, SC, ;
+```
+Our ff64 version uses explicit calls (`cond.` IF``), which is functionally
+identical but more readable. The i386's fall-through saves one `call`
+instruction at compile time — a negligible optimization.
+
+**Testing insight:** UNTIL. means "loop UNTIL the boolean is TRUE." A
+nonzero counter is already TRUE, so `dup UNTIL.` exits immediately on
+count=3. The correct pattern is `dup 0= BOOL UNTIL.` (or simply use
+FLAGS-based `0= UNTIL` which is the idiomatic FreeForth way). Similarly,
+WHILE. loops WHILE the boolean is TRUE: `dup WHILE.` naturally works for
+counting down to zero.
+
+**Tests:** 6 tests covering IF. true/false, WHILE. countdown, UNTIL. with
+zero-check, TILL. in START context, IF./ELSE combination.
+
+**Files:** `ff64.boot` (added `cond.`/`IF.`/`WHILE.`/`TILL.`/`UNTIL.`),
+`exp/057-dotcond/Makefile` (6 tests), `exp/Makefile` (added 057)
