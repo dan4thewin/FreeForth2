@@ -4082,3 +4082,94 @@ ds), ds-after-ops (3+4=7 displayed correctly).
 **Files:** `ff64.boot` (_s, .s`, ds definitions fixed),
 `exp/054-dots64/Makefile` (7 tests),
 `exp/Makefile` (added 054)
+
+---
+
+## Experiment 055 — $- string comparison and string literals
+
+**Goal:** Implement `$-` (string comparison) and the FreeForth string
+literal compiler (`"text"`, `."text"`, `!"text"`, `,"text"` syntax).
+
+**Problem:** Two capabilities were missing:
+1. `$-` — byte-by-byte string comparison returning 0 on match
+2. String literal syntax — the compiler had no way to create inline
+   strings. The old `."` was a dictionary word that did its own parsing;
+   this doesn't match i386 FreeForth's design where `."text"` is handled
+   by the string compiler.
+
+**Implementation:**
+
+*$- (string comparison):*
+Added `_strcmp` in ff64.asm using `repz cmpsb`:
+```asm
+_strcmp: push rsi/rdi
+         mov rcx, rbx      ; count from TOS
+         mov rdi, rdx      ; @2 from NOS
+         mov rsi, [r15]    ; @1 from data stack
+         repz cmpsb
+         movzx ebx/edx from [rsi-1]/[rdi-1]
+         sub rbx, rdx      ; result: 0=match
+```
+Special case: count=0 returns 0 (avoids reading [rsi-1] with uninitialized rsi).
+
+*Quote-aware wsparse:*
+The i386 `_wsparse` tracks a within-quote flag, toggling on every `"`
+character. This allows spaces inside quoted strings (`."hello world"`
+is one token). Added the same logic to ff64's `_wsparse`:
+```asm
+.scan:  movzx ecx, byte [rdi]
+        inc rdi
+        ...
+        cmp cl, '"'
+        jne .nq
+        xor r8d, 1        ; toggle quote flag
+.nq:    cmp r8d, 1
+        je .scan           ; inside quotes: ignore whitespace
+```
+
+*String compiler (trailing " detection):*
+When the compiler sees a token ending in `"`, it dispatches on the
+initial character:
+- `"XYZ"` (initial `"`) — compile `call _litstr_rt` + counted string.
+  Runtime pushes `addr count` onto the data stack.
+- `."XYZ"` (initial `.`) — compile `call _dotstr_rt` + counted string.
+  Runtime prints the string.
+- `!"XYZ"` (initial `!`) — compile `call _error` + counted string.
+  Runtime throws an error with the string as message.
+- `,"XYZ"` (initial `,`) — raw memcomma, no call, no count.
+
+String encoding handles: `_` → space, `\` → literal next, `^` → toggle
+bit6, `~` → toggle bit7 of previous, `"` → ignored (for balanced quotes).
+
+*_litstr_rt (new runtime):*
+Push both old TOS and NOS to the data stack (DUP2 pattern), then set
+TOS=count, NOS=string_address, and resume execution past the string.
+
+*Removed `."` dictionary entry:*
+The old `."` was a ct=2 word that parsed input separately. Removed it;
+`."text"` is now handled by the string compiler. Updated ff64.boot:
+`." text"` → `."text"` with `_` for embedded spaces.
+
+**Bugs encountered:**
+
+1. *wsparse first-char skip:* Initial implementation incremented rdi
+   before reading the character, skipping the first `"`. Fixed by
+   reading the char first (matching the i386 structure).
+
+2. *_litstr_rt overwrite:* `mov rdx, rbx` (save old TOS) followed by
+   `mov rdx, rsi` (set string addr) overwrote the saved TOS. Fixed
+   with DUP2 pattern: `sub r15,16; mov [r15+8],rdx; mov [r15],rbx`.
+
+3. *Zero terminator skip:* The string compiler appends a zero byte
+   after the string. The runtimes (`_dotstr_rt`, `_litstr_rt`) need
+   `+1` to skip past it when computing the resume address.
+
+**Tests (13):** 8 for `$-` (equal, diff, reverse, single char, zero
+length, first-differs, stack depth) + 5 for strings (dotstr print,
+dotstr space, litstr type, litstr count, litstr+$- comparison).
+
+**Status:** PASS — 13 tests, full suite (55 experiments, 304 tests) clean.
+
+**Files:** `ff64.asm` (_strcmp, wsparse quote handling, string compiler,
+_litstr_rt, removed ." dictionary entry), `ff64.boot` (." → ."text"
+format), `exp/055-strcmp64/Makefile` (13 tests), `exp/Makefile` (added 055)

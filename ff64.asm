@@ -268,6 +268,27 @@ _erase: push rdi                ; erase ( addr n -- )
         add r15, 16
         ret
 
+_strcmp: push rsi                ; $- ( @1 @2 # -- n ) 0=match
+        push rdi
+        mov rcx, rbx            ; # = count
+        mov rdi, rdx            ; @2
+        mov rsi, [r15]          ; @1
+        test rcx, rcx
+        jz .strcmp_done
+        repz cmpsb
+        movzx ebx, byte [rsi-1]
+        movzx edx, byte [rdi-1]
+        sub rbx, rdx
+        jmp .strcmp_out
+.strcmp_done:
+        xor ebx, ebx
+.strcmp_out:
+        mov rdx, [r15+8]       ; restore NOS (item below @1)
+        add r15, 16             ; pop @1 and old NOS
+        pop rdi
+        pop rsi
+        ret
+
 ;; Emit a single character
 _emit:  push rax                ; emit ( char -- )
         push rdi
@@ -1070,9 +1091,24 @@ _dotstr_rt:
         pop rdx                 ; restore string length
         pop rsi                 ; restore string start
         add rsi, rdx            ; skip past string data
+        inc rsi                 ; skip zero terminator
         pop rbx                 ; restore TOS
         pop rdx                 ; restore NOS
         jmp rsi                 ; "return" to after the string
+
+;; Runtime helper: push inline counted string as ( addr count )
+;; Called via: call _litstr_rt / db len / db "string..."
+_litstr_rt:
+        pop rsi                 ; rsi = address of length byte
+        sub r15, 16
+        mov [r15+8], rdx        ; push old NOS
+        mov [r15], rbx          ; push old TOS
+        movzx rbx, byte [rsi]  ; TOS = count
+        inc rsi                 ; rsi = string data
+        lea rax, [rsi + rbx + 1] ; rax = past string end + zero terminator
+        mov rdx, rsi            ; NOS = string address
+        push rax                ; push resume address
+        ret                     ; jump past string
 
 ;; ." compile-time word: scan until " and compile inline string print
 _dotquote:
@@ -1137,15 +1173,26 @@ _wsparse:
 .eof:   xor ecx, ecx
         mov [tin], rdi
         ret
-.word:  mov rax, rdi
-.scan:  inc rdi
+.word:  mov rax, rdi            ; rax = token start
+        xor r8d, r8d           ; r8 = within-quote flag
+.scan:  movzx ecx, byte [rdi]  ; read char at current position
+        inc rdi                 ; advance past it
         cmp rdi, rsi
-        jae .done
-        cmp byte [rdi], ' '
-        ja .scan
+        ja .done               ; past EOF → done
+        and cl, $7F
+        cmp cl, '"'
+        jne .nq
+        xor r8d, 1             ; toggle quote flag
+.nq:    cmp r8d, 1
+        je .scan               ; inside quotes: skip whitespace check
+        cmp cl, ' '
+        ja .scan               ; non-whitespace: continue
+        ;; Found whitespace outside quotes. rdi is past the whitespace char.
+        ;; Token is rax..rdi-2 (rdi-1 is the whitespace we just read).
+        ;; But we want tin to point past the delimiter for next parse.
 .done:  mov [tin], rdi
-        mov rcx, rdi
-        sub rcx, rax
+        lea rcx, [rdi - 1]     ; rcx = past last char of token
+        sub rcx, rax            ; rcx = token length
         ret
 
 _find:  push r8
@@ -1541,6 +1588,161 @@ _compiler:
         call _lit_compile
         jmp _compiler
 .not_charlit:
+        ;; ─── String compiler ───
+        ;; Check if last char is " (trailing quote = string literal)
+        cmp ecx, 2
+        jb .not_string
+        cmp byte [rax + rcx - 1], '"'
+        jne .not_string
+        ;; Token ends with " — dispatch on initial character
+        ;; rax = token start, ecx = token length (including trailing ")
+        push rax
+        push rcx
+        movzx edi, byte [rax]   ; edi = initial character
+        inc rax                 ; skip initial
+        sub ecx, 2              ; ecx = string content length (excl initial and final ")
+        ;; Save content start/length for strcomma
+        push rax                ; content start
+        push rcx                ; content length
+        cmp dil, ','
+        je .str_memcomma
+        call _rst
+        cmp dil, '"'
+        je .str_litstr
+        cmp dil, '.'
+        je .str_dotstr
+        cmp dil, '!'
+        je .str_error
+        ;; Unknown initial — not a valid string, fall through
+        add rsp, 32             ; discard 4 pushes
+        jmp .not_string
+.str_litstr:
+        ;; Compile: call _litstr_rt
+        mov byte [rbp], $E8
+        inc rbp
+        lea rdi, [_litstr_rt]
+        lea rsi, [rbp + 4]
+        sub rdi, rsi
+        mov dword [rbp], edi
+        add rbp, 4
+        jmp .str_strcomma
+.str_dotstr:
+        ;; Compile: call _dotstr_rt
+        mov byte [rbp], $E8
+        inc rbp
+        lea rdi, [_dotstr_rt]
+        lea rsi, [rbp + 4]
+        sub rdi, rsi
+        mov dword [rbp], edi
+        add rbp, 4
+        jmp .str_strcomma
+.str_error:
+        ;; Compile: call _error
+        mov byte [rbp], $E8
+        inc rbp
+        lea rdi, [_error]
+        lea rsi, [rbp + 4]
+        sub rdi, rsi
+        mov dword [rbp], edi
+        add rbp, 4
+        jmp .str_strcomma
+.str_strcomma:
+        ;; Compile counted string: db length, db string...
+        pop rcx                 ; content length
+        pop rsi                 ; content start
+        mov r8, rbp             ; r8 = address of length byte (to patch later)
+        mov byte [rbp], 0      ; placeholder for length
+        inc rbp
+        ;; Copy string bytes with encoding:
+        ;; _ → space, " → skip, \ → literal next, ^ → toggle bit6 of next
+.str_copy:
+        test ecx, ecx
+        jz .str_end
+        movzx edi, byte [rsi]
+        inc rsi
+        dec ecx
+        cmp dil, '\'            ; prefix \ escapes next
+        jne .str_c1
+        movzx edi, byte [rsi]
+        inc rsi
+        dec ecx
+        jmp .str_emit
+.str_c1:
+        cmp dil, '^'            ; prefix ^ toggles bit6 of next
+        jne .str_c2
+        movzx edi, byte [rsi]
+        inc rsi
+        dec ecx
+        xor dil, $40
+        jmp .str_emit
+.str_c2:
+        cmp dil, '~'            ; suffix ~ toggles bit7 of previous
+        jne .str_c3
+        xor byte [rbp-1], $80
+        jmp .str_copy
+.str_c3:
+        cmp dil, '"'            ; ignore embedded quotes
+        je .str_copy
+        cmp dil, '_'            ; _ → space
+        jne .str_emit
+        mov dil, ' '
+.str_emit:
+        mov byte [rbp], dil
+        inc rbp
+        jmp .str_copy
+.str_end:
+        ;; Patch the length byte with actual compiled string length
+        mov rdi, rbp
+        sub rdi, r8
+        dec rdi                 ; subtract the length byte itself
+        mov byte [r8], dil
+        mov byte [rbp], 0      ; zero-terminate
+        inc rbp
+        add rsp, 16             ; discard outer saved rax/rcx
+        jmp _compiler
+.str_memcomma:
+        ;; ,"..." — raw data, no call, no count
+        pop rcx                 ; content length
+        pop rsi                 ; content start
+        add rsp, 16             ; discard outer pushes
+.str_rawcopy:
+        test ecx, ecx
+        jz .str_rawend
+        movzx edi, byte [rsi]
+        inc rsi
+        dec ecx
+        cmp dil, '\'
+        jne .str_r1
+        movzx edi, byte [rsi]
+        inc rsi
+        dec ecx
+        jmp .str_rawemit
+.str_r1:
+        cmp dil, '^'
+        jne .str_r2
+        movzx edi, byte [rsi]
+        inc rsi
+        dec ecx
+        xor dil, $40
+        jmp .str_rawemit
+.str_r2:
+        cmp dil, '~'
+        jne .str_r3
+        xor byte [rbp-1], $80
+        jmp .str_rawcopy
+.str_r3:
+        cmp dil, '"'
+        je .str_rawcopy
+        cmp dil, '_'
+        jne .str_rawemit
+        mov dil, ' '
+.str_rawemit:
+        mov byte [rbp], dil
+        inc rbp
+        jmp .str_rawcopy
+.str_rawend:
+        jmp _compiler
+.not_string:
         ;; ─── Suffix mechanism ───
         ;; Check if last char is an interpreted suffix: +-*/%&|^,@!_
         cmp ecx, 2              ; need at least 2 chars
@@ -2289,6 +2491,7 @@ WORD64 "c!", _cstore, 0, 2
 WORD64 "!", _store, 0, 1
 WORD64 "emit", _emit, 0, 4
 WORD64 "erase", _erase, 0, 5
+WORD64 "$-", _strcmp, 0, 2
 WORD64 "fill", _fill, 0, 4
 WORD64 "cmove", _cmove, 0, 5
 WORD64 "zlen", _zlen, 0, 4
@@ -2332,7 +2535,6 @@ WORD64 ";`", _semi, 0, 2
 WORD64 ":`", _colon, 0, 2
 WORD64 "\", _backslash, 2, 1
 WORD64 "(", _paren, 2, 1
-WORD64 '."', _dotquote, 2, 2
 
 ;; =====================================================================
 ;; Entry point

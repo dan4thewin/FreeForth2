@@ -355,11 +355,11 @@ variable base
 :. _s 0; depth 2 < drop IF drop ;THEN drop 1- swap >r _s r@ . r> ;
 : .s` prompt depth _s cr ;
 : ds prompt depth _s cr ;
-: .h` ." free:" here H@ - $400/ .\ ." k SC=" SC c@ . .s` ;
+: .h` ."free:" here H@ - $400/ .\ ."k_SC=" SC c@ . .s` ;
 : .l 8 .#s ;
 
 ( Dictionary inspector )
-: .hdr+ dup .x\ ." : " dup @ .x space dup h.ct+ c@ .x space dup h.sz+ c@ . dup h.name ;
+: .hdr+ dup .x\ .":_" dup @ .x space dup h.ct+ c@ .x space dup h.sz+ c@ . dup h.name ;
 : .hdrs H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE .hdr+ cr h.next REPEAT drop ;
 : .hdr .hdr+ cr drop ;
 
@@ -426,7 +426,7 @@ variable hide hide on
 ( Error recovery: show location, print message, restore dict/code state )
 ( saved_here holds the compilation pointer before each eval., for error recovery )
 variable saved_here pvt
-:. _recover tib >in@ over - type ." <-error: " c@+ type cr 2drop
+:. _recover tib >in@ over - type ."_<-error:_" c@+ type cr 2drop
   anon@ 0- 0= drop IF H@ dup @ swap h.sz+ c@ h.nm+ 1+ + H! THEN
   saved_here@ here swap - allot 0 SC c! anon:` ;
 ( Forth REPL: prompt, read, eval with catch, error recovery, loop )
