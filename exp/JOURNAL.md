@@ -4025,3 +4025,60 @@ suites, which expect the assembly REPL's output format.
 `exp/053-boot64/Makefile` (10 tests),
 `exp/049-hidepvt64/Makefile` (fixed pvtmargin test),
 `exp/Makefile` (added 053)
+
+---
+
+## Experiment 054 — .s / ds stack display fix
+
+**Goal:** Fix the `.s` (compile-time) and `ds` (runtime) stack display
+words that were crashing with non-empty stacks.
+
+**Problem:** The `_s` recursive helper had two bugs:
+
+1. **Stack pollution from FLAGS-based comparison.** The depth guard
+   `depth 2 < drop IF drop ;THEN` correctly exits early when the stack
+   is too shallow, but the `depth` literal remained on the stack in the
+   non-exit path. After `depth 2 < drop`, the stack is
+   `[items] count depth_val`. The `IF drop ;THEN` only drops `depth_val`
+   in the early-exit path. In the continue path, `depth_val` sat between
+   `count` and the user items, corrupting every subsequent `swap >r`.
+
+2. **Lost items from `r> .` instead of `r@ . r>`.** The i386 `_s` uses
+   `r . r>` — `r` peeks at the return stack and `.` prints it, then
+   `r>` pops the value back to the data stack, making `.s` non-destructive.
+   The ff64 version used `r> .` which pops and prints, consuming the item.
+
+3. **Off-by-one with fixed count.** Using `9 _s` (like i386) with `1-`
+   as the first operation means at most 8 items could be displayed.
+   Changed to `depth _s` so the count matches the actual stack depth.
+
+**Fix:** The corrected `_s`:
+```forth
+:. _s 0; depth 2 < drop IF drop ;THEN drop 1- swap >r _s r@ . r> ;
+```
+
+Key changes:
+- `0;` first (check count before decrementing — moved from `1- 0;` to `0;`)
+- Added `drop` after `IF drop ;THEN` to clean up `depth_val` in continue path
+- `1-` moved after depth check
+- `r@ . r>` instead of `r> .` — peek-print-pop preserves items
+
+Also changed `.s`` and `ds` from `9 _s` to `depth _s` — display actual
+depth, not a fixed maximum.
+
+**Reasoning:** This is a classic FLAGS-comparison stack management issue.
+FreeForth's `<` only sets CPU flags and compiles a CMP — it does NOT pop
+its operands. The `drop` after `<` removes one operand (the `2` literal)
+but leaves the other (`depth_val`). Every FLAGS comparison needs careful
+accounting of what remains on the stack.
+
+**Tests (7):** ds-empty (empty stack shows ` 0;`), ds-one (42 shows
+` 1; 42`), ds-three (1 2 3 in order), ds-order (10 20 30 order
+preserved), ds-nine (all 9 items), ds-no-corrupt (depth unchanged after
+ds), ds-after-ops (3+4=7 displayed correctly).
+
+**Status:** PASS — all 7 tests pass, full suite (54 experiments) clean.
+
+**Files:** `ff64.boot` (_s, .s`, ds definitions fixed),
+`exp/054-dots64/Makefile` (7 tests),
+`exp/Makefile` (added 054)

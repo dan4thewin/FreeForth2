@@ -350,10 +350,11 @@ variable base
 : h.name dup h.nm+ over h.sz+ c@ type space ;
 : words H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE h.name h.next REPEAT drop cr ;
 
-( Debug output — .s` shows stack, .h` shows system state )
+( Debug output — .s` shows compile-time stack, ds shows runtime stack )
 :^ ui : prompt space depth .\ ';' anon@ 0- 0= drop IF 1- THEN emit space ;
-:. _s 1- 0; swap >r _s depth 0- 0= drop IF space THEN r> . ;
-: .s` prompt 9 _s cr ;
+:. _s 0; depth 2 < drop IF drop ;THEN drop 1- swap >r _s r@ . r> ;
+: .s` prompt depth _s cr ;
+: ds prompt depth _s cr ;
 : .h` ." free:" here H@ - $400/ .\ ." k SC=" SC c@ . .s` ;
 : .l 8 .#s ;
 
