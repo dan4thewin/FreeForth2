@@ -4472,3 +4472,47 @@ All 59 experiments pass (only 2 pre-existing failures in pvt-hidden).
 
 **Files:** `ff64.boot` (added `_pick_detect`, `pick``, `2over``),
 `exp/059-misc/Makefile` (added 5 pick/2over tests)
+
+---
+
+## Experiment 060: RTIMES` and dump
+
+**Goal:** Add `RTIMES`` (return-stack counted loop) and `dump` (hex
+memory dump).
+
+**RTIMES` — fallthrough pattern from ff.boot:** The i386 `ff.boot`
+defines `TIMES`` as a fallthrough into `RTIMES``:
+```
+: TIMES` >r`
+: RTIMES` >C1 BEGIN` $007808FF, ,4 ;
+```
+This is a key FreeForth idiom: `: TIMES` >r`` has no `;`, so execution
+falls directly into `RTIMES``. TIMES` = >r` + RTIMES`.
+
+For x86-64, `>C1` is unnecessary (RSP is always the return stack), so:
+```
+: TIMES` >r`
+: RTIMES` >S0 here $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
+```
+The emitted code is `dec qword [rsp]` (48 FF 0C 24) + `js rel32`
+(0F 88 + 4-byte offset), patched later by `LOOP``.
+
+**dump — ELSE bug workarounds:** Implementing `dump` required multiple
+iterations due to the ELSE branch corruption bug:
+1. The i386 `2dump` uses a recursive START/ENTER loop for multi-line
+   output. Porting this directly crashed because the IF inside the
+   START body corrupted subsequent definitions.
+2. Factoring the byte-display into a helper word with IF/THEN also
+   corrupted `dump`'s compilation.
+3. Solution: a single-line dump with the alignment-space logic removed
+   for simplicity. Uses `bounds` to convert (addr len) to (@+len @),
+   then a simple BEGIN/UNTIL loop with `2dup u<=` to preserve operands
+   across the comparison (since `u<=` consumes both stack values).
+
+**Tests (4):** TIMES (countdown), RTIMES (count on rstack), RTIMES-0
+(skip body), dump (hex output).
+
+**Result:** All 4 tests pass. All 60 experiments pass.
+
+**Files:** `ff64.boot` (RTIMES` fallthrough, dump), `exp/060-rtimes-dump/Makefile`
+(4 tests), `exp/Makefile` (added 060)

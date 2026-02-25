@@ -192,7 +192,8 @@
 : UNTIL` >S0 cond $0F c, $10+ c, dup here 4+ - d, drop ;
 : WHILE` IF` ;
 : REPEAT` swap AGAIN` THEN` ;
-: TIMES` >r` >S0 here $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
+: TIMES` >r`
+: RTIMES` >S0 here $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
 : LOOP` >S0 swap AGAIN` THEN` rdrop` ;
 
 ( Stack manipulation )
@@ -494,6 +495,9 @@ AGAIN
 : argc ff_argc@ ;
 :. _argv 8* ff_argv@ + @ ;
 : argv _argv zlen ;
+
+( Hex memory dump )
+: dump bounds dup .l .":" BEGIN space c@+ .b 2dup u<= UNTIL 2drop cr ;
 
 ( Conditional compilation — ported from ff.boot )
 ( _[] scans input for matching [ELSE] or [THEN], handling nesting )
