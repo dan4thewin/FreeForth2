@@ -182,17 +182,7 @@ _cr:    push rax
         pop rax
         ret
 
-_one:   sub r15, 8              ; 1 (push literal 1)
-        mov [r15], rdx
-        mov rdx, rbx
-        mov rbx, 1
-        ret
 
-_two:   sub r15, 8              ; 2 (push literal 2)
-        mov [r15], rdx
-        mov rdx, rbx
-        mov rbx, 2
-        ret
 
 ;; Return stack words
 ;; Note: rsp has the return address from calling >r/r>/r@, so we work
@@ -284,7 +274,7 @@ _strcmp: push rsi                ; $- ( @1 @2 # -- n ) 0=match
         xor ebx, ebx
 .strcmp_out:
         mov rdx, [r15+8]       ; restore NOS (item below @1)
-        add r15, 16             ; pop @1 and old NOS
+        lea r15, [r15+16]      ; pop @1 and old NOS (lea preserves FLAGS)
         pop rdi
         pop rsi
         ret
@@ -480,13 +470,6 @@ _SC_addr:                       ; SC ( -- addr ) SWAPbit/condition state
         mov [r15], rdx
         mov rdx, rbx
         lea rbx, [SC]
-        ret
-
-_cond_addr:                     ; ? ( -- addr ) condition jump opcode byte
-        sub r15, 8
-        mov [r15], rdx
-        mov rdx, rbx
-        lea rbx, [cond_jmp]
         ret
 
 _anon_colon:                    ; anon:` ( -- ) start new anonymous definition
@@ -1546,7 +1529,17 @@ _compiler:
         pop rdi
         pop qword [rdi]        ; restore original bytes
         jc .no_backtick
-        ;; Found via backtick: execute immediately
+        ;; Found via backtick: dispatch by ct
+        test ecx, 1            ; ct bit 0 set = literal/data word
+        jz .bt_exec
+        ;; ct=1 (or ct=3): push xt value as compile-time literal
+        sub r15, 8
+        mov [r15], rdx
+        mov rdx, rbx
+        mov rbx, rax
+        jmp _compiler
+.bt_exec:
+        ;; ct=0 (or ct=2): execute immediately
         call rax
         jmp _compiler
 .no_backtick:
@@ -2459,8 +2452,7 @@ WORD64 "=", _eq_flags, 2, 1
 
 ;; Runtime words (ct=0) — still called via compiled CALL instruction
 WORD64 "cr", _cr, 0, 2
-WORD64 "2", _two, 0, 1
-WORD64 "1", _one, 0, 1
+
 WORD64 ".", _dot, 0, 1
 WORD64 "rshift", _rshift, 0, 6
 WORD64 "lshift", _lshift, 0, 6
@@ -2471,7 +2463,7 @@ WORD64 ",", _comma, 0, 1
 WORD64 "allot", _allot, 0, 5
 WORD64 "here", _here, 0, 4
 WORD64 "SC", SC, 1, 2
-WORD64 "?", _cond_addr, 0, 1
+WORD64 "?#", cond_jmp, 1, 2
 WORD64 "callmark", callmark, 1, 8
 WORD64 "call,", _call_comma, 0, 5
 WORD64 "dcall,", _dcall_comma, 0, 6

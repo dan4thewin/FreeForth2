@@ -185,9 +185,9 @@
 ( Flow control — Forth-defined, replacing assembly )
 ( ? exposes the cond_jmp byte used by FLAGS-based conditions )
 : d, here d! 4 allot ;
-: cond ? c@ 0 ? c! 1 xor ;
+: cond ?# c@ 0 ?# c! 1 xor ;
 : IF` >S0 cond $0F c, $10+ c, here 4 allot ;
-: THEN` >S0 here over - 4- swap d! ;
+: THEN` >S0 here over - 4- swap d! 0 callmark! ;
 : BEGIN` >S0 here ;
 : AGAIN` >S0 $E9 c, dup here 4+ - d, drop ;
 : UNTIL` >S0 cond $0F c, $10+ c, dup here 4+ - d, drop ;
@@ -312,7 +312,10 @@ variable mrk 0 mrk 8+ !
 : n^ ( xt -- ) dup 6+ swap 1+ d! ;
 : x^ ( xt -- ) 6+ >r ;
 : '` -call lit` ;
-: ?` -call 0; call, ;
+( ?` converts preceding call to conditional jump )
+:. _?` ?# c@ 0 ?# c! dup 0- 0= drop IF drop $75 THEN
+  $0F c, $10+ c, dup here 4+ - d, drop ;
+: ?` -call 0; _?` ;
 : _alias H@ ! $20 H@ ct|! anon:` ;
 : alias` :` _alias ;
 : constant` :` 1 H@ ct|! H@ ! anon:` ;
@@ -441,6 +444,17 @@ AGAIN
 : argc ff_argc@ ;
 :. _argv 8* ff_argv@ + @ ;
 : argv _argv zlen ;
+
+( Conditional compilation — ported from ff.boot )
+( _[] scans input for matching [ELSE] or [THEN], handling nesting )
+:. _[] '[' parse 2drop wsparse 0- 0= drop IF drop >in! !"unbalanced" ;THEN
+  1 >in -! dup "ELSE]" $- 0<> drop IF dup "THEN]" $- 0<> drop IF "IF]" $- drop _[] ?
+  BEGIN _[] 0<> UNTIL _[] ;THEN 1+ THEN drop ;
+: [IF]` 0- 0= drop IF
+: [ELSE]` >in@ _[] drop
+: [THEN]` THEN ;
+1 constant [1]`
+0 constant [0]`
 
 ( Boot sequence: start Forth REPL )
 ( Call `_top ;` to start the Forth REPL from the assembly REPL )

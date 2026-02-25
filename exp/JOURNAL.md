@@ -4173,3 +4173,115 @@ dotstr space, litstr type, litstr count, litstr+$- comparison).
 **Files:** `ff64.asm` (_strcmp, wsparse quote handling, string compiler,
 _litstr_rt, removed ." dictionary entry), `ff64.boot` (." → ."text"
 format), `exp/055-strcmp64/Makefile` (13 tests), `exp/Makefile` (added 055)
+
+---
+
+## Experiment 056: Conditional Compilation — [IF] [ELSE] [THEN]
+
+**Goal:** Port the i386 `[IF]/[ELSE]/[THEN]` conditional compilation
+definitions from ff.boot to ff64.boot, using the original code verbatim
+since it is pure Forth.
+
+**Context:** Conditional compilation allows boot code to adapt based on
+compile-time flags — e.g., `[1] [IF] full-feature-set [ELSE] minimal
+[THEN]`. The i386 definitions use several advanced FreeForth mechanisms:
+`?` (conditional tail-call), fall-through between definitions, `$-`
+(string comparison), and the compile-time stack. Getting these to work
+required fixing four separate bugs.
+
+### Bug 1: `?` (conditional tail-call) was broken
+
+The ff64 definition was `: ?`` -call 0; call, ;` — this just un-called
+and re-called the preceding instruction, accomplishing nothing. The
+correct behavior: un-call the preceding call, read the pending condition
+from `cond_jmp`, and emit a backward conditional jump (0F 8x rel32).
+
+The fix introduces `_?``:
+
+```
+:. _?` ?# c@ 0 ?# c! dup 0- 0= drop IF drop $75 THEN
+  $0F c, $10+ c, dup here 4+ - d, drop ;
+: ?` -call 0; _?` ;
+```
+
+Key detail: `$10+` converts short jump opcodes ($7x) to near jump opcodes
+($8x) for the two-byte 0F prefix form. Without this, `0F 75` decodes as
+`pcmpeqw` (an MMX instruction) instead of a conditional jump.
+
+### Bug 2: `?#` naming conflict
+
+The cond_jmp variable was exposed as `?` (ct=0) in the dictionary. But
+the compiler's backtick mangling always tries `word`\`` first — so any
+use of `?` would find `?`` (the compile-time conditional tail-call
+macro) instead of the variable. This made `? c@` and `? c!` impossible.
+
+Fix: Renamed the dictionary entry from `?` to `?#` (matching the i386
+ff.boot name `variable ?#`) with ct=1 so suffix mechanism works.
+Removed the now-unused `_cond_addr` runtime function. Updated `cond`
+to use `?# c@` and `?# c!`.
+
+### Bug 3: Backtick dispatch for ct=1 words
+
+When the compiler found a backtick-named word (e.g., `[1]`` via
+`1 constant [1]``), it would unconditionally `call rax` regardless of
+ct. For ct=1 words, rax IS the value (e.g., 1), not a code address —
+calling address 1 crashes.
+
+The i386 uses a `_classes` dispatch table: ct=0 backtick → `icall`
+(execute), ct=1 backtick → `ilit` (leave value on stack). Added
+equivalent dispatch in ff64: check `ecx & 1`; if set, push rax as
+compile-time value instead of calling it.
+
+### Bug 4: THEN didn't reset callmark
+
+`THEN` patched the forward jump but didn't reset `callmark`. This
+allowed `;` to perform tail-call optimization on the last call inside
+an IF body, converting it from `call; ret` to `jmp` (removing the ret).
+The forward jump from IF then landed past the entire function, executing
+whatever came next in memory.
+
+Fix: Added `0 callmark!` to THEN's definition, matching the i386's
+`_then` which includes `0 callmark!`. Now `;` after THEN always emits
+a proper `ret`.
+
+### Porting the original definitions
+
+With all four bugs fixed, the original i386 definitions compile and
+run correctly, verbatim:
+
+```
+:. _[] '[' parse 2drop wsparse  0- 0= drop IF drop >in! !"unbalanced" ;THEN
+  1 >in -! dup "ELSE]" $- 0<> drop IF dup "THEN]" $- 0<> drop IF "IF]" $- drop _[] ?
+  BEGIN _[] 0<> UNTIL _[] ;THEN 1+ THEN drop ;
+: [IF]` 0- 0= drop IF
+: [ELSE]` >in@ _[] drop
+: [THEN]` THEN ;
+1 constant [1]`
+0 constant [0]`
+```
+
+The `_[]` scanner uses `?` for conditional tail-call recursion when
+encountering nested `[IF]`, and `BEGIN _[] 0<> UNTIL` to scan past
+matching `[IF]/[THEN]` pairs inside a false `[ELSE]` branch. The
+`[IF]/[ELSE]/[THEN]` trio uses fall-through: `[IF]`` opens an IF
+(compiling a forward conditional jump), falls through to `[ELSE]``
+which scans ahead with `_[]`, falls through to `[THEN]`` which closes
+with THEN.
+
+### Tests (8 cases)
+
+- `[1] [IF] body [THEN]` — true: executes body
+- `[0] [IF] body [THEN]` — false: skips body
+- `[1] [IF] A [ELSE] B [THEN]` — true: executes A, skips B
+- `[0] [IF] A [ELSE] B [THEN]` — false: skips A, executes B
+- `[0] [IF] [1] [IF] A [THEN] [THEN]` — outer false: skips all (nested)
+- `[0] [IF] GARBAGE [THEN] body` — false: skips arbitrary text
+- `1 constant YES`` `YES [IF] body [THEN]` — user-defined constant
+- `0 constant NO`` `NO [IF] body [THEN]` — user-defined false constant
+
+**Status:** PASS — 8 tests, full suite (56 experiments) clean.
+
+**Files:** `ff64.asm` (removed `_cond_addr`, renamed `?` → `?#` ct=1,
+added backtick ct=1 dispatch), `ff64.boot` (fixed `?``, fixed THEN,
+ported `[IF]/[ELSE]/[THEN]` from ff.boot), `exp/056-condcomp/Makefile`
+(8 tests), `exp/Makefile` (added 056)
