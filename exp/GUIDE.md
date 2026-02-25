@@ -2727,3 +2727,304 @@ the internal `_find` function:
 ### Running total
 
 ~270 words/macros ported. 416 tests across 65 experiments, all passing.
+
+---
+
+## Phase 3d: Command-Line Arguments (Experiment 066)
+
+With `loadfile`, `needed`, and `find` in place, the system could load
+files from Forth. But it still couldn't process command-line arguments
+the way the i386 FreeForth did — where `ff -f myfile.ff` would load
+`myfile.ff` through the Forth layer rather than the assembly stub.
+
+### doargv — the Forth argument loop
+
+The i386 `doargv` walks the argv array and feeds each argument to
+the compiler:
+
+```forth
+:^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap _eval ;
+```
+
+This is dense. Unpacked:
+
+1. `argc 1-` — number of args minus the program name.
+2. `0;` — if zero args remain, return immediately.
+3. `1 _argv swap 2+ _argv over-` — compute the address and length of
+   the remaining argument string (from argv[1] to the end).
+4. `tuck tib place` — copy the argument string into `tib` (the terminal
+   input buffer) so the compiler can parse it.
+5. `swap _eval` — evaluate the string. `_eval` calls `eval.` (which
+   compiles and auto-executes) followed by `'` (tick, to capture any
+   resulting xt).
+
+The key insight is that arguments are Forth source. `-f myfile.ff`
+works because `-f` is recognized by the compiler, which looks up
+`-f`` (backtick-appended), finding the compile-time macro:
+
+```forth
+: -f` ;` wsparse needed ;
+```
+
+This semicolons (exits the current compilation), parses the next word
+(the filename), and loads it via `needed`. The beauty is that any
+Forth expression can appear on the command line — not just `-f`.
+
+### The _argv helper
+
+```forth
+:. _argv 8* ff_argv@ + @ ;
+```
+
+Takes an index, multiplies by 8 (pointer size on x86-64), adds to the
+argv base pointer, and dereferences. Returns the C string pointer for
+`argv[n]`.
+
+### The boot sequence
+
+With `doargv`, the full boot sequence is:
+
+```forth
+:. _boot ossetup doargv _hidepvt _top ;
+```
+
+1. `ossetup` — a vector (currently a no-op) for OS-level initialization.
+2. `doargv` — process command-line arguments as Forth source.
+3. `_hidepvt` — hide private words from the dictionary.
+4. `_top` — enter the interactive REPL (infinite loop).
+
+`_boot` is defined with `:.` (colon-dot), which registers it as the
+boot execution target. After the assembly loads `ff64.boot`, `_semi_exec`
+calls `_boot` automatically.
+
+### Running total
+
+~280 words/macros ported. 421 tests across 66 experiments, all passing.
+
+---
+
+## Phase 3e: The Help System (Experiment 067)
+
+### The needexec pattern — lazy loading
+
+FreeForth's philosophy is to keep the boot file minimal. The help system
+is large enough that it belongs in a separate file, loaded only on first
+use. The `needexec` pattern achieves this:
+
+```forth
+:. needexec needed H@ @ execute ;
+```
+
+`needexec` loads a file (via `needed`, with double-load guarding), then
+executes the last word defined in that file. The loaded file is expected
+to redefine whatever word triggered the load. On the second call, the
+compiler finds the new definition (more recent in the dictionary) and
+calls it directly — `needexec` is never reached again.
+
+The stub in ff64.boot:
+
+```forth
+: help` ;` "lib/help64.ff" needexec ;
+```
+
+On first call, this loads `lib/help64.ff`, which defines its own
+`help\`` that replaces this stub. The loaded `help\`` calls `wsparse`
+itself to grab the keyword argument — arguments cannot be passed on
+the stack through `needexec` because `loadfile` disrupts the stack.
+
+This is the same pattern used by `see\`` in the i386 FreeForth
+(`fflin.boot`). Lavarenne clearly valued this lazy-loading approach
+for keeping the core small.
+
+### The help file format
+
+`ff.help` is a plain text file where each entry starts with a
+non-indented header line and continues with space-indented body lines:
+
+```
+dup  duplicates TOS
+  stack: ( a -- a a )
+  generated code: ...
+```
+
+The parser (`_help` in lib/help64.ff) scans line-by-line, matching the
+first whitespace-delimited token against the keyword. On match, it
+prints the header and all continuation lines (lines starting with
+a space). On no match, it skips to the next line.
+
+### Variables instead of stack gymnastics
+
+The help system uses three variables — `_hfd` (file descriptor),
+`_hkey` (keyword address), `_hklen` (keyword length) — rather than
+juggling six values on the data stack. This is a pragmatic choice:
+the stack gymnastics for managing file descriptor, buffer position,
+remaining bytes, keyword address, keyword length, and match state
+simultaneously would be heroic but unmaintainable.
+
+### The FLAGS dance
+
+Every conditional in the help code follows the pattern established
+throughout this port:
+
+```forth
+_hfd @ 0- 0< IF ."cannot_open_ff.help" cr ;THEN drop
+```
+
+Recall: `0-` emits `test rbx,rbx` (setting CPU FLAGS). `0<` stores a
+condition code in `cond_jmp` — it emits no machine code. `IF` reads
+`cond_jmp` and emits a conditional jump. The `drop` after `;THEN`
+removes the tested value from the stack in the fall-through (success)
+path.
+
+This pattern appears five times in the 50-line help system. There is
+no boolean — the CPU FLAGS carry the conditional state directly from
+the `test` instruction through the `drop` (which uses LEA, preserving
+FLAGS) to the conditional jump.
+
+### Running total
+
+~285 words/macros ported. 426 tests across 67 experiments, all passing.
+
+---
+
+## Phase 3f: Dynamic Library Linking (Experiment 068)
+
+This is the bridge between FreeForth's self-contained world and the
+vast ecosystem of C libraries. The i386 FreeForth (in `fflinio.asm`)
+used `#lib`, `#fun`, and `#call` with an elegant `xchg eax, esp`
+trick to switch between the Forth stack and C's `cdecl` calling
+convention. On x86-64, the SysV ABI passes arguments in registers,
+making `#call` fundamentally different.
+
+### The three primitives
+
+**`#lib` ( addr len -- libh )** — calls `dlopen(filename, RTLD_LAZY |
+RTLD_GLOBAL)`. NUL-terminates the Forth string in-place at `addr+len`
+before passing it to dlopen. Returns the opaque library handle.
+
+**`#fun` ( addr len libh -- funh )** — calls `dlsym(handle, name)`.
+Returns the resolved function pointer.
+
+**`#call` ( argN ... arg1 N funh -- result )** — the heart of the
+system. Takes N arguments from the Forth data stack, maps them to
+SysV ABI registers (`rdi`, `rsi`, `rdx`, `rcx`, `r8`, `r9`), aligns
+the C stack to 16 bytes, and calls the function pointer. Up to 6
+arguments are supported (the maximum for register-only SysV calls).
+The result in `rax` becomes the new TOS.
+
+### The SysV ABI mapping
+
+The i386-to-x86-64 calling convention change is significant:
+
+| i386 cdecl | x86-64 SysV |
+|------------|-------------|
+| All args on stack | First 6 in registers, rest on stack |
+| `eax` = return | `rax` = return |
+| Caller cleans stack | Caller cleans stack |
+| No alignment req | 16-byte stack alignment required |
+
+The `#call` implementation uses a cascade of compare-and-jump:
+
+```asm
+mov rdi, [r15]          ; arg1
+cmp r13, 1
+je dc_call
+mov rsi, [r15+8]        ; arg2
+cmp r13, 2
+je dc_call
+...
+```
+
+This reads exactly N arguments from the data stack into the correct
+registers, then falls through to the call site.
+
+### Register survival across C calls
+
+A critical detail: in the SysV ABI, `rbx`, `rbp`, `r12`–`r15` are
+callee-saved. These happen to be FreeForth's core registers:
+
+| Register | FreeForth use | SysV status |
+|----------|---------------|-------------|
+| rbx | TOS | Callee-saved ✓ |
+| rdx | NOS | **Caller-saved** ✗ |
+| r15 | Data stack pointer | Callee-saved ✓ |
+| rbp | Here (compilation pointer) | Callee-saved ✓ |
+
+The one problem: `rdx` (NOS) is caller-saved and gets clobbered by
+C calls. `_dlcall` saves and restores the full data stack state around
+the call, so this is handled correctly.
+
+### The dl_err crash — a cautionary tale
+
+The error handling path initially caused a SEGV that took extensive
+debugging to diagnose. The symptom: when `dlopen` failed, `_throw`
+would crash trying to return through the catch frame.
+
+The original code copied the `dlerror()` message string to `here`
+(the compilation pointer, `rbp`). This seemed natural — `here` is
+writable memory, and the string needed to be stored somewhere as a
+counted string for `_throw`.
+
+The problem: `here` points into the same memory region where the
+compiler generates code. The catch frame's return address points to
+compiled code **near** `here` — typically just a few bytes before it.
+When dl_err wrote the 70+ byte error string to `here`, it overwrote
+the compiled code that the catch frame's return address pointed to.
+
+GDB showed the truth immediately. The `ret` in `_throw` jumped to
+address `0x44b64c`, which was now in the middle of the string
+`"nonexistent.so: cannot open shared object file..."`. Disassembly
+showed instructions like `outsb` and `je` — the ASCII bytes
+interpreted as x86 opcodes.
+
+**The fix:** A dedicated `dl_errbuf` (256 bytes in the data section)
+that is nowhere near generated code. This is a general rule: **never
+write to `here` from error paths** — the catch frame's return address
+may point to nearby generated code.
+
+This echoes the cautionary tale of the `ct=1` bug (experiment 038):
+the generated code is the ground truth, and GDB reveals it instantly.
+Hours of manual reasoning about stack states and register values
+paled before one look at the actual crash site.
+
+### Convenience words in ff64.boot
+
+```forth
+variable libc
+:. dlsetup libc@ 0<>; drop "libc.so.6" #lib libc! ;
+dlsetup
+: libc.` wsparse libc@ #fun lit` #call ' call, ;
+: libc_ libc@ #fun #call ;
+```
+
+`dlsetup` runs at boot time, opening `libc.so.6` and caching the
+handle. The `0<>;` pattern returns immediately if libc is already
+loaded (guard against double-init).
+
+`libc.`` is a compile-time macro: `libc. strlen` parses "strlen",
+resolves it via `#fun`, compiles a literal push of the function
+pointer, and emits a `#call`. The function pointer is resolved once
+at compile time and baked into the generated code.
+
+`libc_` is the runtime equivalent for interactive use.
+
+### The linker change
+
+The binary is now dynamically linked:
+
+```
+ld -m elf_x86_64 -lc -ldl --dynamic-linker=/lib64/ld-linux-x86-64.so.2
+```
+
+This adds a `.got.plt` section (at `0x402fe8`) containing GOT entries
+for `dlopen`, `dlsym`, and `dlerror`. The PLT stubs handle lazy
+resolution — the first call to each function goes through the dynamic
+linker, which patches the GOT entry for subsequent direct calls.
+
+Our `.flat` section starts at `0x403018`, immediately after the GOT.
+The two sections are adjacent but non-overlapping — verified by
+examining the ELF section headers.
+
+### Running total
+
+~290 words/macros ported. 428 tests across 68 experiments, all passing.
