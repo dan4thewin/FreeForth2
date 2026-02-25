@@ -37,7 +37,8 @@ EXPERIMENTS = 001-hello64 002-stack64 003-codegen64 004-subrthread64 \
 055-strcmp64 \
 056-condcomp \
 057-dotcond \
-058-picnum
+058-picnum \
+059-misc
 
 test:
 	@for d in $(EXPERIMENTS); do \

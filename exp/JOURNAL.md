@@ -4390,3 +4390,46 @@ existence.
 
 **Files:** `ff64.boot` (added `zFALSE`, `nzTRUE`, pictured numeric output),
 `exp/058-picnum/Makefile` (9 tests), `exp/Makefile` (added 058)
+
+---
+
+## Experiment 059: Miscellaneous Words — within, abs, max, min, double-cell
+
+**Goal:** Port the remaining utility words from `ff.ff` and `ff.boot`:
+`within`, `abs`/`max`/`min` (backtick macro versions), and double-cell
+arithmetic (`s>d``, `adc``, `dnegate``, `dabs``, `d+``).
+
+**Key insight — within and FLAGS:** `within` has stack effect
+`( n x y -- ; nz? )` — it consumes three values and returns only CPU
+FLAGS, not a stack value. It uses the `?` (conditional tail-call)
+mechanism: `u>` sets FLAGS, `nzTRUE ?` emits a conditional jump to
+`nzTRUE`'s code (which sets NZ flag), and `zFALSE` is the fall-through
+(sets Z flag). To use `within` with `IF`, bridge with `0<>` which
+captures the zero flag into `?#`: `within 0<> IF ... THEN`.
+
+**Key insight — backtick naming:** Backtick macros must be *called*
+without the backtick in source code. The compiler auto-appends a
+backtick for lookup. Writing `abs` in a definition causes the compiler
+to find `abs`\` and call it at compile time, generating inline code.
+Writing `abs`\` explicitly causes the compiler to look for `abs`\`\`
+(double backtick), fail, and compile a runtime call to `abs`\` — which
+generates code at the wrong location (after the current definition ends).
+
+**Ordering fix:** `within` uses `nzTRUE`, `zFALSE`, and `?` (conditional
+tail-call), all defined later in `ff64.boot`. Moved `within` to after
+the `?`\` definition (line ~340) to resolve forward reference errors.
+
+**Words added to ff64.boot:**
+- `within` — range check returning FLAGS (`nz?`)
+- `abs`\`, `max`\`, `min`\` — inline macro versions of existing runtime words
+- `s>d`\` — sign-extend single to double cell (SAR rbx,63)
+- `adc`\` — add with carry (`adc rdx,rbx`)
+- `dnegate`\`, `dabs`\`, `d+`\` — double-cell arithmetic
+
+**Tests (13):** within-yes, within-no, within-lo (edge), within-hi (edge),
+abs-neg, abs-pos, max, min, s>d-neg, s>d-pos, d-add, dnegate, dabs.
+
+**Result:** All 13 tests pass. All 59 experiments pass.
+
+**Files:** `ff64.boot` (added `within`, backtick macros, double-cell words),
+`exp/059-misc/Makefile` (13 tests), `exp/Makefile` (added 059)

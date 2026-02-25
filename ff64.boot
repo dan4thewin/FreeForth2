@@ -204,6 +204,16 @@
 : max > IF swap THEN nip ;
 : min < IF swap THEN nip ;
 
+( Backtick macro versions — inline at compile time )
+: abs` 0-` 0<` IF` negate` THEN` ;
+: max` >` IF` swap` THEN` nip` ;
+: min` <` IF` swap` THEN` nip` ;
+: s>d` dup` $FBC148, ,3 $3F, ,1 s01 ;
+: adc` $48, ,1 $D311, s09 nip` ;
+: dnegate` ~` swap` negate` swap` ;
+: dabs` 0-` 0<` IF` dnegate` THEN` ;
+: d+` >r` rot` +` swap` r>` adc` ;
+
 ( Output )
 : on -1 swap ! ;
 : off 0 swap ! ;
@@ -325,6 +335,10 @@ variable mrk 0 mrk 8+ !
 :. _?` ?# c@ 0 ?# c! dup 0- 0= drop IF drop $75 THEN
   $0F c, $10+ c, dup here 4+ - d, drop ;
 : ?` -call 0; _?` ;
+
+( Range check — uses FLAGS tail-call pattern )
+: within over- -rot - u> 2drop nzTRUE ? zFALSE ;
+
 : _alias H@ ! $20 H@ ct|! anon:` ;
 : alias` :` _alias ;
 : constant` :` 1 H@ ct|! H@ ! anon:` ;
