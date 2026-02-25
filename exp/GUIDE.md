@@ -2643,3 +2643,87 @@ any code that needed both, like `argv` which calls `_argv zlen` expecting
 
 **Running total:** ~250 words/macros ported. 333 tests across 53
 experiments, all passing.
+
+---
+
+## Phase 3c: File I/O, Signal Handling, and File Loading
+
+### File I/O primitives
+
+Three new assembly words provide file I/O from Forth:
+
+**`openr` ( addr len -- fd )**: Opens a file read-only. Copies the
+filename to a separate `namebuf` buffer and NUL-terminates it (since
+Linux `sys_open` needs a C string). Returns the file descriptor, or
+a negative errno on failure.
+
+**`close` ( fd -- result )**: Closes a file descriptor via `sys_close`.
+
+**`loadfile` ( addr len -- )**: The workhorse. Opens a file, reads it
+into the filebuf area, sets up `tin`/`tp` for the compiler, and calls
+`_compiler` to process the file content. Saves and restores the input
+state so the calling code's parsing position is preserved.
+
+### The hereatexec mechanism
+
+When `loadfile` is called from the REPL, it runs inside anonymous code
+via `_semi_exec`. The problem: `_semi_exec` resets `rbp` to the start
+of anonymous code before executing it. If `loadfile` compiles new
+definitions at this `rbp`, they overwrite the executing anonymous code.
+
+**Solution:** `_semi_exec` saves `rbp` (the position past the anonymous
+code) in a new variable `hereatexec` before resetting it. `_loadfile`
+uses `hereatexec` as the safe starting position for compilation.
+
+### The loadfile rbp preservation rule
+
+A deeper bug: after `_compiler` returns in `_loadfile`, the original
+code restored `rbp` to the anonymous code start. This caused `_semi_exec`
+(which does `mov [anon], rbp` after the call) to reset `[anon]` to the
+anonymous code start. The NEXT REPL line would compile new anonymous
+code there, OVERWRITING the loaded definitions.
+
+**Rule:** `_loadfile` must NOT restore `rbp` after `_compiler` returns.
+Leave rbp past all loaded definitions. When control returns to
+`_semi_exec`, it preserves the space via `mov [anon], rbp`.
+
+### SEGV handler
+
+The SEGV handler uses the `rt_sigaction` syscall (number 13) directly,
+without any libc dependency. Three functions:
+
+- `_segv_handler`: prints `"*** SEGV (segmentation fault) ***"` to
+  stderr and exits with code 139 (128 + SIGSEGV)
+- `_segv_restorer`: required on x86-64 for `SA_RESTORER` flag; calls
+  `rt_sigreturn` (syscall 15)
+- `_install_segv`: builds a `kernel_sigaction` struct on the stack and
+  calls `rt_sigaction`; called early in `_start`
+
+### The needed mechanism
+
+`needed` (in ff64.boot) implements double-load guarding:
+
+```forth
+: needed 2dup + dup c@ >r dup >r $60 swap c! 1+
+  find 2r> c! 0= IF 2drop ;THEN 1-
+  2dup marker swap loadfile ;
+```
+
+It temporarily writes a backtick at the end of the filename, looks for
+that name in the dictionary. If found (a previous `marker` created it),
+the file is already loaded — skip. Otherwise, create a marker with the
+filename+backtick as its name, then load the file.
+
+### The find word
+
+`find` (`_find_forth` in assembly) is a Forth-callable wrapper around
+the internal `_find` function:
+
+```forth
+"dup" find . .    \ → 0 <xt>  (found: xt and 0)
+"xyzzy" find . .  \ → 5 <addr> (not found: original addr and len)
+```
+
+### Running total
+
+~270 words/macros ported. 416 tests across 65 experiments, all passing.
