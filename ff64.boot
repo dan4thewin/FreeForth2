@@ -183,7 +183,6 @@
 : */` */mod` nip` ;
 
 ( Flow control — Forth-defined, replacing assembly )
-( ? exposes the cond_jmp byte used by FLAGS-based conditions )
 : d, here d! 4 allot ;
 : cond ?# c@ 0 ?# c! 1 xor ;
 : IF` >S0 cond $0F c, $10+ c, here 4 allot ;
@@ -206,7 +205,6 @@
 : min < IF swap THEN nip ;
 
 ( Output )
-: ? @ . ;
 : on -1 swap ! ;
 : off 0 swap ! ;
 : space $20 emit ;
