@@ -2304,8 +2304,67 @@ _close:
         ret
 
 ;; =====================================================================
-;; Line-based I/O (internal)
+;; Signal handling — SEGV handler via rt_sigaction
 ;; =====================================================================
+
+;; _segv_handler: called by kernel on SIGSEGV. Prints message and throws.
+;; If catch frame (xfp) is active, throw to it. Otherwise, exit(139).
+_segv_handler:
+        ;; Check if we have a catch frame
+        cmp qword [xfp], 0
+        je .segv_fatal
+        ;; We have a catch frame — print "SEGV" and throw
+        ;; rt_sigreturn first to clean up signal context
+        ;; Actually, we can't easily throw from a signal handler because
+        ;; the stack frame is wrong. Just print and exit.
+.segv_fatal:
+        mov rax, 1              ; sys_write
+        mov rdi, 2              ; stderr
+        lea rsi, [segv_msg]
+        mov rdx, segv_msg_len
+        syscall
+        mov rax, 60             ; sys_exit
+        mov rdi, 139            ; 128 + SIGSEGV(11)
+        syscall
+
+;; _segv_restorer: required on x86-64 (SA_RESTORER flag)
+_segv_restorer:
+        mov rax, 15             ; sys_rt_sigreturn
+        syscall
+
+;; _install_segv: install SEGV handler (called during initialization)
+_install_segv:
+        push rdi
+        push rsi
+        push rdx
+        push r10
+        ;; Set up kernel_sigaction struct on stack (32 bytes)
+        ;; struct kernel_sigaction {
+        ;;   __sighandler_t handler;   // offset 0
+        ;;   unsigned long sa_flags;   // offset 8
+        ;;   __sigrestore_t restorer;  // offset 16
+        ;;   sigset_t sa_mask;         // offset 24
+        ;; }
+        sub rsp, 32
+        lea rax, [_segv_handler]
+        mov [rsp], rax                     ; handler
+        mov qword [rsp+8], $14000004       ; SA_RESTORER | SA_SIGINFO | SA_NODEFER
+        lea rax, [_segv_restorer]
+        mov [rsp+16], rax                  ; restorer
+        mov qword [rsp+24], 0              ; sa_mask (empty)
+        ;; rt_sigaction(SIGSEGV=11, &act, NULL, sizeof(sigset_t)=8)
+        mov rax, 13             ; sys_rt_sigaction
+        mov rdi, 11             ; SIGSEGV
+        mov rsi, rsp            ; act
+        xor edx, edx            ; oldact = NULL
+        mov r10, 8              ; sigsetsize
+        syscall
+        add rsp, 32
+        pop r10
+        pop rdx
+        pop rsi
+        pop rdi
+        ret
 
 _readline:
         mov rax, 0
@@ -2697,6 +2756,9 @@ _start:
         lea rax, [filebuf]
         mov [filebuf_ptr], rax
 
+        ;; Install SEGV handler early for crash diagnostics
+        call _install_segv
+
         ;; Process command-line arguments: -f <file> loads file
         mov r13, [rsp]          ; argc
         lea r14, [rsp+8]        ; argv[0]
@@ -2834,6 +2896,8 @@ err_read_msg: db "error: cannot read file", 10
 err_read_len = $ - err_read_msg
 err_nocond_msg: db "error: requires preceding condition", 10
 err_nocond_len = $ - err_nocond_msg
+segv_msg:     db 10, "*** SEGV (segmentation fault) ***", 10
+segv_msg_len = $ - segv_msg
 minus_char    db '-'
 nl_char       db 10
 numbuf        rb 21

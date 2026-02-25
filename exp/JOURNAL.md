@@ -4718,3 +4718,53 @@ underscores.
 | test-loadfile-value | loadfile defines answer, call returns 99 | PASS |
 | test-loadfile-multi | Load 3 definitions, composed result = 30 | PASS |
 | test-loadfile-nofile | Nonexistent file prints error, no crash | PASS |
+
+---
+
+## Experiment 064: SEGV Handler
+
+### Goal
+
+Install a SEGV (segmentation fault) signal handler via the raw
+`rt_sigaction` syscall, so crashes produce a useful message instead
+of a silent "Segmentation fault" from the kernel.
+
+### Background
+
+The i386 FreeForth installs its SEGV handler through libc's `sigaction`
+function via dynamic linking (`libc_`). Since we don't yet have dynamic
+linking in ff64, we use the raw `rt_sigaction` syscall (number 13)
+directly. This is actually cleaner — no libc dependency.
+
+### Implementation
+
+Three assembly functions:
+
+**`_segv_handler`**: The actual signal handler called by the kernel.
+Writes `"\n*** SEGV (segmentation fault) ***\n"` to stderr and exits
+with code 139 (128 + SIGSEGV). A future enhancement could throw to
+the catch frame if one is active.
+
+**`_segv_restorer`**: Required on x86-64 — the kernel uses this to
+return from the signal handler via `rt_sigreturn` (syscall 15). Set
+via the `SA_RESTORER` flag in the sigaction struct.
+
+**`_install_segv`**: Builds a `kernel_sigaction` struct on the stack
+and calls `rt_sigaction`. Called early in `_start` initialization,
+before processing `-f` arguments.
+
+The `kernel_sigaction` struct on x86-64:
+```
+offset 0:  handler     (8 bytes)
+offset 8:  sa_flags    (8 bytes) = SA_RESTORER | SA_SIGINFO | SA_NODEFER
+offset 16: sa_restorer (8 bytes)
+offset 24: sa_mask     (8 bytes) = 0 (empty mask)
+```
+
+### Tests (exp/064-segv)
+
+| Test | Description | Result |
+|------|-------------|--------|
+| test-segv-message | `0 @` triggers SEGV, prints message | PASS |
+| test-segv-exit-code | SEGV exit code is 139 (128+11) | PASS |
+| test-normal-ok | Normal `42 .` works without false SEGV | PASS |
