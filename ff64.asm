@@ -2204,6 +2204,21 @@ _throw:
 ;; I/O — Forth-callable read/write/accept
 ;; =====================================================================
 
+;; find ( addr len -- addr len | xt 0 )
+;; Look up a word in the dictionary. If found, replace with xt and push 0.
+;; If not found, leave addr and len unchanged.
+_find_forth:
+        mov rax, rdx            ; addr = NOS
+        mov rcx, rbx            ; len = TOS
+        call _find
+        jc .find_not_found
+        ;; Found: rax=xt, ecx=ct. Push xt and 0.
+        mov rdx, rax            ; NOS = xt
+        xor ebx, ebx            ; TOS = 0
+        ret
+.find_not_found:
+        ret
+
 ;; write ( addr count fd -- written )
 _write_word:
         push rax
@@ -2530,9 +2545,9 @@ _loadfile:
         mov [filebuf_ptr], rcx
         ;; Save code generation state. Use hereatexec (saved by _semi_exec)
         ;; as safe rbp position past the executing anonymous code.
-        push qword [anon]
+        ;; After compilation, leave rbp past loaded definitions so
+        ;; _semi_exec's `mov [anon], rbp` preserves the space.
         mov qword [callmark], 0
-        push rbp                ; save anonymous-code-start rbp
         mov rbp, [hereatexec]   ; safe position past anonymous code
         mov [anon], rbp         ; set anon for new definitions
         push rbx
@@ -2540,8 +2555,9 @@ _loadfile:
         call _compiler
         pop rdx
         pop rbx
-        pop rbp                 ; restore original rbp
-        pop qword [anon]
+        ;; rbp is now past all loaded definitions — do NOT restore it.
+        ;; When we return to anonymous code (via its ret), _semi_exec
+        ;; will do `mov [anon], rbp` which preserves loaded code.
         ;; Restore input state
         pop qword [filebuf_ptr]
         pop qword [tp]
@@ -2709,6 +2725,7 @@ WORD64 "read", _read_word, 0, 4
 WORD64 "openr", _openr, 0, 5
 WORD64 "close", _close, 0, 5
 WORD64 "loadfile", _loadfile, 0, 8
+WORD64 "find", _find_forth, 0, 4
 WORD64 "accept", _accept, 0, 6
 WORD64 "compiler", _compiler, 0, 8
 

@@ -4768,3 +4768,55 @@ offset 24: sa_mask     (8 bytes) = 0 (empty mask)
 | test-segv-message | `0 @` triggers SEGV, prints message | PASS |
 | test-segv-exit-code | SEGV exit code is 139 (128+11) | PASS |
 | test-normal-ok | Normal `42 .` works without false SEGV | PASS |
+
+---
+
+## Experiment 065: needed and find
+
+### Goal
+
+Implement the `find` Forth word and the `needed` file loading mechanism
+with double-load guard, enabling the pattern `"file.ff" needed` that
+loads a file only once.
+
+### Implementation
+
+**find** (`_find_forth` in ff64.asm): Forth-callable wrapper around the
+internal `_find` function. Stack effect: `( addr len -- addr len | xt 0 )`.
+When found, returns xt and 0. When not found, returns original addr and len.
+
+**needed** (ff64.boot): Simplified version of the i386 `needed`:
+1. Temporarily writes a backtick (`\``) at addr+len
+2. Calls `find` to check if `<filename>\`` exists in the dictionary
+3. Restores the original byte
+4. If found: file already loaded — return
+5. If not found: create a `marker` word (which includes the backtick
+   in the name), then call `loadfile`
+
+### The hereatexec overwrite bug
+
+The critical discovery was that loaded definitions get overwritten by
+subsequent anonymous code compilation. The REPL compiles anonymous code
+starting at `[anon]`. When `_semi_exec` runs the code, it resets
+`rbp = [anon]` (anonymous code start). If loadfile restored rbp to the
+anonymous code start, `_semi_exec` would set `[anon]` back there,
+causing the NEXT anonymous code to overwrite loaded definitions.
+
+**Fix**: Don't restore `rbp` in `_loadfile` after `_compiler` returns.
+Leave rbp past all loaded definitions. When the anonymous code returns
+to `_semi_exec`, it does `mov [anon], rbp`, which preserves the space
+used by loaded definitions. Subsequent anonymous code starts AFTER the
+loaded code.
+
+This was the root cause of the "answer works once, crashes second time"
+bug: the second REPL line's anonymous code compilation overwrote
+answer's compiled code because [anon] had been reset to the anonymous
+code start.
+
+### Tests (exp/065-needed)
+
+| Test | Description | Result |
+|------|-------------|--------|
+| test-needed | needed loads file, word works | PASS |
+| test-needed-guard | Second needed skips, word still works | PASS |
+| test-needed-find | find returns xt+0 for known word | PASS |

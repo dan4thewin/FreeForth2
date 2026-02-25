@@ -516,6 +516,14 @@ AGAIN
 1 constant [1]`
 0 constant [0]`
 
+( needed — load file if not already loaded )
+( Checks if word with backtick suffix exists in dictionary )
+( If found, file already loaded — skip. If not, create marker and load. )
+( addr len -- )
+: needed 2dup + dup c@ >r dup >r $60 swap c! 1+
+  find 2r> c! 0= IF 2drop ;THEN 1-
+  2dup marker swap loadfile ;
+
 ( Call `hidepvt` at compile time, or `_boot ;` for full boot sequence )
 :^ ossetup ;
 :. _boot ossetup _hidepvt _top ;
