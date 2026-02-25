@@ -354,7 +354,8 @@ variable mrk 0 mrk 8+ !
 
 ( Bracket state switching )
 : [` anon@ SC c@ anon:` ;
-: ]` 2>r ;` 2r> SC c! anon! ;
+:. _] SC c! anon! ;
+: ]` 2>r ;` 2r> _] ;
 
 ( Number output )
 variable base
@@ -524,11 +525,17 @@ AGAIN
   find 2r> c! 0= IF 2drop ;THEN 1-
   2dup marker swap loadfile ;
 
+( needexec — load file via needed, then execute its last definition )
+:. needexec needed H@ @ execute ;
+
 ( needs` — compile-time: semicolons, reads filename, loads via needed )
 : needs` ;` wsparse needed ;
 
 ( -f` — compile-time handler for -f flag in command-line args )
 : -f` ;` wsparse needed ;
+
+( help` — on first call, loads lib/help64.ff which redefines help` )
+: help` ;` "lib/help64.ff" needexec ;
 
 ( doargv — evaluate command line arguments as FreeForth words )
 :^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap _eval ;

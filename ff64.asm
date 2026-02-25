@@ -2733,6 +2733,7 @@ WORD64 "compiler", _compiler, 0, 8
 WORD64 ">in", tin, 1, 3
 WORD64 "tp", tp, 1, 2
 WORD64 "tib", inbuf, 1, 3
+WORD64 "helpbuf", helpbuf, 1, 7
 
 ;; Compile-time words (ct=1)
 WORD64 "swap`", _swap_inline, 0, 5
@@ -2934,6 +2935,7 @@ heads64:   GENWORDS64
 inbuf      rb 4096
 namebuf    rb 256                ; scratch buffer for NUL-terminated filenames
 filebuf    rb 65536
+helpbuf    rb 131072             ; 128KB buffer for help file reading
 dstack     rb 8192
 dstack_top:
 codebuf    rb 65536

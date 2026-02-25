@@ -4892,3 +4892,109 @@ in the future, doargv will process all command-line args.
 | test-needs-guard | Second needs` skips (marker guard), word works | PASS |
 | test-fback | -f` loads hello.ff, hello prints 42 | PASS |
 | test-doargv | Boot with doargv in _boot still works | PASS |
+
+---
+
+## Experiment 067: help system
+
+**Goal**: Implement the help system for ff64, searching `ff.help` for
+keyword entries and displaying them. Follow the `needexec` pattern from
+fflin.boot — a stub in ff64.boot loads `lib/help64.ff` on first use,
+then the loaded file redefines `help\`` as the full implementation.
+
+**Context**: FreeForth ships with `ff.help`, a 119KB text file of
+keyword documentation. The i386 version loads the help system on demand
+via `needexec` (see fflin.boot: `: see\` "see.ff" needexec ;`). For
+ff64, we needed a 128KB BSS buffer (`helpbuf`, added in ff64.asm)
+because using `here` (the code pointer) would overwrite compiled code.
+
+### Architecture
+
+**The `needexec` pattern** (from fflin.boot):
+```forth
+:. needexec needed H@ @ execute ;
+: see` "see.ff" needexec ;
+```
+1. `needed` loads the file (first time only, via marker guard)
+2. `H@ @` gets the xt of the most recently defined word
+3. `execute` calls it — this is the file's entry point
+
+The entry point typically redefines the calling word. In see.ff, the
+last definition is `: see\` wsparse ... ;` which replaces the stub.
+Subsequent calls find the new definition directly in the dictionary.
+
+**help64.ff** follows this pattern:
+- Defines pvt helpers: `_skipline`, `_printline`, `_printentry`,
+  `_checkmatch`, `_help`
+- Last definition: `: help\` wsparse 0- 0<> IF _help ;THEN 2drop "help" _help ;`
+- Ends with `hidepvt ;` to hide internal words
+
+**ff64.boot stub**: `": help\` ;\` "lib/help64.ff" needexec ;"` — just
+a loader that semicolons, pushes the filename, and calls needexec.
+
+### Key technical challenges
+
+**loadfile TOS/NOS swap**: `loadfile` saves the caller's TOS/NOS on the
+return stack, compiles the file, then restores them — but the restore
+order swaps TOS and NOS. This broke early attempts where `help\`` passed
+the keyword on the stack (the first call got swapped args, but the
+second call via the `needed` guard didn't). The fix was to have the
+loaded `help\`` call `wsparse` itself (like see.ff does), avoiding
+stack args entirely.
+
+**FLAGS-based comparisons**: The central insight that unlocked the
+implementation. In FreeForth:
+- `0-` emits `test rbx,rbx` (sets CPU FLAGS). It's the only unary
+  "tester" that generates code.
+- `0=`, `0<`, `0>`, `0<>` ONLY store a condition code in `cond_jmp` —
+  they emit NO instructions.
+- `drop` uses `lea r15,[r15+8]; mov rbx,[r15]` which preserves FLAGS.
+- So `value 0- drop 0= IF` tests `value`, drops it, and branches on
+  whether it was zero — all with FLAGS from the original `test`.
+
+This makes patterns like `char 10 - 0- drop 0= IF` correct: subtract
+10, test the result, drop it, branch if zero (char was LF).
+
+**Nested IF/;THEN in loops**: Using `;THEN` inside `BEGIN...WHILE`
+exits the ENTIRE enclosing word, not just the loop iteration. The fix
+was factoring the match check into `_checkmatch` which returns a flag,
+and using the flag to decide between printing (with exit) and skipping
+(loop continues via REPEAT).
+
+**ff.help entry format**: Entries are NOT separated by blank lines.
+Continuation lines are indented with spaces. A non-indented line starts
+a new entry. `_printentry` prints the header line then all indented
+continuation lines, stopping at the first non-space-starting line.
+
+### Implementation
+
+**`_skipline`** (pos remaining → pos' remaining'):
+Advances past the next LF. Byte-by-byte scan using `dupc@ 10 -`.
+
+**`_printline`** (pos remaining → pos' remaining'):
+Emits chars via `emit` until LF, then `cr`.
+
+**`_printentry`** (pos remaining → ):
+Calls `_printline` for the header, then loops printing continuation
+lines (starting with space). Stops at non-space line. Consumes both args.
+
+**`_checkmatch`** (pos remaining → pos remaining flag):
+1. Compares `_hklen` bytes at `pos` with `_hkey` via `$-`
+2. If no match: returns 0
+3. If match: checks delimiter (char at pos+_hklen) — space or backtick
+   returns 1; anything else returns 0
+
+**`_help`** (addr len → ):
+Stores keyword in `_hkey`/`_hklen` variables. Opens `ff.help`, reads
+into `helpbuf` (128KB), scans line by line. On match, calls `_printentry`
+and exits. On no match, `_skipline` and continues.
+
+### Tests (exp/067-help)
+
+| Test | Description | Result |
+|------|-------------|--------|
+| test-help-bye | `help bye` shows "terminate the FreeForth session" | PASS |
+| test-help-dup | `help dup` shows "duplicates TOS" | PASS |
+| test-help-noarg | `help` (no arg) shows help topic itself | PASS |
+| test-help-notfound | `help zzzznonexistent` shows "no help found" | PASS |
+| test-help-second | Two help calls in sequence both work | PASS |

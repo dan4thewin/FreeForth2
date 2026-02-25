@@ -1,0 +1,50 @@
+\ help64.ff — help system for ff64
+\ Loaded on demand via needexec from help` stub in ff64.boot.
+\ Last definition (help`) replaces the stub.
+
+variable _hfd pvt
+variable _hkey pvt
+variable _hklen pvt
+
+:. _skipline
+  BEGIN 0- 0> WHILE
+    swap dupc@ 10 - 0- drop 0= IF 1+ swap 1- ;THEN
+    1+ swap 1-
+  REPEAT ;
+
+:. _printline
+  BEGIN 0- 0> WHILE
+    swap dupc@ dup 10 - 0- drop 0= IF drop 1+ swap 1- cr ;THEN
+    emit 1+ swap 1-
+  REPEAT cr ;
+
+:. _printentry
+  _printline
+  BEGIN 0- 0> WHILE
+    swap dupc@ $20 - 0- drop
+    0<> IF swap 2drop ;THEN
+    swap _printline
+  REPEAT 2drop ;
+
+:. _checkmatch
+  over _hkey @ _hklen @ $- 0- drop
+  0<> IF 0 ;THEN
+  over _hklen @ + c@ $20 - 0- drop 0= IF 1 ;THEN
+  over _hklen @ + c@ $60 - 0- drop 0= IF 1 ;THEN
+  0 ;
+
+:. _help
+  _hklen ! _hkey !
+  "ff.help" openr _hfd !
+  _hfd @ 0- 0< IF ."cannot_open_ff.help" cr ;THEN drop
+  helpbuf 120000 _hfd @ read _hfd @ close drop
+  0- 0<= IF drop ."cannot_read_ff.help" cr ;THEN
+  helpbuf swap
+  BEGIN 0- 0> WHILE
+    _checkmatch 0- drop 0<> IF _printentry ;THEN
+    _skipline
+  REPEAT 2drop ."no_help_found" cr ;
+
+: help` wsparse 0- 0<> IF _help ;THEN 2drop "help" _help ;
+
+hidepvt ;
