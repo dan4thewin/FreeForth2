@@ -240,6 +240,14 @@
 \ Tail-call optimization: redefine ;;` now that IF/ELSE/THEN are available
 : ;;` >S0 callmark@ here - 0= drop IF $E9 callmark@ 5- c! ELSE $C3, ,1 THEN ;
 : ;THEN` ;;` THEN` ;
+: _pick_detect
+  here 5- c@ $BB = IF here 4- d@ -5 allot ;THEN
+  here 3- c@ $6A- here 1- c@ $FE& $5A- or 0<> IF !"not_preceded_by_constant" ;THEN
+  here 2- c@ -3 allot swap` $48 c, $DA89 w, s09 ;
+: pick` _pick_detect
+  dup 0- 0= IF drop ;THEN
+  1- 3 << $49 c, $8B c, $5F c, c, ;
+: 2over` 3 lit` pick` 3 lit` pick` ;
 
 ( Inline macros — miscellaneous )
 \ reverse` pops return address and calls it (turns call into jmp)

@@ -6,7 +6,8 @@ PAD = %-80s
 .PHONY: test
 test: test-within-yes test-within-no test-within-lo test-within-hi \
       test-abs-neg test-abs-pos test-max test-min \
-      test-s2d-neg test-s2d-pos test-d-add test-dnegate test-dabs
+      test-s2d-neg test-s2d-pos test-d-add test-dnegate test-dabs \
+      test-pick0 test-pick1 test-pick2 test-pick3 test-2over
 
 test-within-yes:
 	@echo "--- $@ ---"
@@ -80,3 +81,28 @@ test-dabs:
 	@echo "--- $@ ---"
 	@result=$$(echo ': t -1 -1 dabs . . cr ; t' | timeout 3 $(FF) -f $(BOOT) 2>&1 | tr -d '\r'); \
 	echo "$$result" | grep -q '0 1' && echo "  PASS: $@" || (echo "  FAIL: $@ => $$result"; exit 1)
+
+test-pick0:
+	@echo "--- $@ ---"
+	@result=$$(echo ': t 42 0 pick . . cr ; t' | timeout 3 $(FF) -f $(BOOT) 2>&1 | tr -d '\r'); \
+	echo "$$result" | grep -q '42 42' && echo "  PASS: $@" || (echo "  FAIL: $@ => $$result"; exit 1)
+
+test-pick1:
+	@echo "--- $@ ---"
+	@result=$$(echo ': t 10 20 1 pick . . . cr ; t' | timeout 3 $(FF) -f $(BOOT) 2>&1 | tr -d '\r'); \
+	echo "$$result" | grep -q '10 20 10' && echo "  PASS: $@" || (echo "  FAIL: $@ => $$result"; exit 1)
+
+test-pick2:
+	@echo "--- $@ ---"
+	@result=$$(echo ': t 10 20 30 2 pick . cr ; t' | timeout 3 $(FF) -f $(BOOT) 2>&1 | tr -d '\r'); \
+	echo "$$result" | grep -q '10' && echo "  PASS: $@" || (echo "  FAIL: $@ => $$result"; exit 1)
+
+test-pick3:
+	@echo "--- $@ ---"
+	@result=$$(echo ': t 10 20 30 40 3 pick . cr ; t' | timeout 3 $(FF) -f $(BOOT) 2>&1 | tr -d '\r'); \
+	echo "$$result" | grep -q '10' && echo "  PASS: $@" || (echo "  FAIL: $@ => $$result"; exit 1)
+
+test-2over:
+	@echo "--- $@ ---"
+	@result=$$(echo ': t 1 2 3 4 2over . . . . . . cr ; t' | timeout 3 $(FF) -f $(BOOT) 2>&1 | tr -d '\r'); \
+	echo "$$result" | grep -q '2 1 4 3 2 1' && echo "  PASS: $@" || (echo "  FAIL: $@ => $$result"; exit 1)

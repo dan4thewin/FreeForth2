@@ -4433,3 +4433,42 @@ abs-neg, abs-pos, max, min, s>d-neg, s>d-pos, d-add, dnegate, dabs.
 
 **Files:** `ff64.boot` (added `within`, backtick macros, double-cell words),
 `exp/059-misc/Makefile` (13 tests), `exp/Makefile` (added 059)
+
+---
+
+## Experiment 059b: pick` and 2over` — Indexed Stack Access
+
+**Goal:** Port `pick`` and `2over`` from `ff.ff` to x86-64. `pick``
+is a peephole optimizer that uncompiles a preceding literal and replaces
+it with a memory load from the data stack.
+
+**Key discovery — two literal patterns:** The ff64 compiler has two
+different literal compilation paths:
+1. `_lit_compile` (number handler): emits `dup_nos(7) + mov rdx,rbx(3)
+   + mov ebx,imm32(5)` = 15 bytes. Preceded by `_rst` (SWAPbit=0).
+2. `_lit` (Forth `lit`` word): emits `dup_nos(7) + push imm8/pop(3)` =
+   10 bytes. Toggles SWAPbit.
+
+The i386 `pick`` only handled one pattern. The x86-64 `pick`` must
+handle both because `2over`` uses `3 lit` pick``.
+
+**Key discovery — ELSE branch corruption:** Putting both literal
+pattern detections in an IF/ELSE/THEN block inside `pick`` caused
+`argc` (defined 250+ lines later) to return 16384 instead of 3. This
+is related to the known ct=2 ELSE corruption bug. Fix: factor the
+detection into a separate word `_pick_detect` that uses two
+IF...;THEN early-return paths instead of ELSE.
+
+**Implementation for n≥2:** After uncompiling the literal, the
+dup_nos + mov rdx,rbx code is kept. This pushes NOS to memory and
+copies TOS to NOS. pick` then emits `mov rbx,[r15+(n-1)*8]` (4 bytes:
+`49 8B 5F disp8`) to load the n-th item into TOS. For n=0 (dup), the
+dup+mov code already implements dup — nothing more needed.
+
+**Tests (5):** pick0 (dup), pick1 (over), pick2, pick3, 2over.
+
+**Result:** All 18 tests in exp 059 pass (13 original + 5 new).
+All 59 experiments pass (only 2 pre-existing failures in pvt-hidden).
+
+**Files:** `ff64.boot` (added `_pick_detect`, `pick``, `2over``),
+`exp/059-misc/Makefile` (added 5 pick/2over tests)
