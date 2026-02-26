@@ -187,14 +187,17 @@
 : cond ?# c@ 0 ?# c! 1 ^ ;
 : IF` >S0 cond $0F c, $10+ c, here 4 allot ;
 : THEN` >S0 here over - 4- swap d! 0 callmark! ;
-: BEGIN` >S0 here ;
-: AGAIN` >S0 $E9 c, dup here 4+ - d, drop ;
-: UNTIL` >S0 cond $0F c, $10+ c, dup here 4+ - d, drop ;
+: _jmp_back >S0 $E9 c, dup here 4+ - d, drop ;
+: _cjmp_back >S0 cond $0F c, $10+ c, dup here 4+ - d, drop ;
+: _emit_rdrop $48 c, $83 c, $C4 c, $08 c, ;
+: BEGIN` >S0 0 here ;
+: AGAIN` >S0 _jmp_back drop ;
+: UNTIL` >S0 _cjmp_back drop ;
 : WHILE` IF` ;
-: REPEAT` swap AGAIN` THEN` ;
+: REPEAT` swap _jmp_back THEN` 0- 0<> drop IF _emit_rdrop THEN ;
 : TIMES` >r`
-: RTIMES` >S0 here $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
-: LOOP` >S0 swap AGAIN` THEN` rdrop` ;
+: RTIMES` >S0 -1 here $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
+: LOOP` >S0 swap _jmp_back THEN` drop rdrop` ;
 
 ( Stack manipulation )
 : 2swap rot >r rot r> ;
