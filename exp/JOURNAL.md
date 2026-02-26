@@ -5670,61 +5670,95 @@ After the initial commit, the turnkey mechanism was refined:
 - **`_boot` simplified** from `ossetup doargv _hidepvt _top` to
   `ossetup _postboot _top`.
 
-### Known issue: fragile `here` capture across `_semi_exec`
+### Bug found and fixed: `_semi_exec` missing `_rst` (SWAPbit reconciliation)
 
 During the refinement, an attempt to simplify `_mkname` (which
 manually constructs the string "_boot" byte-by-byte) with the
-backslash escape `"\_boot"` revealed a fragile interaction between
-`here` and `_semi_exec`.
+backslash escape `"\_boot"` revealed a SWAPbit reconciliation bug
+in `_semi_exec`.
 
 **Simplest reproduction** (in a file loaded via `-f`):
 ```forth
 \ File: test.ff — load with: ./ff64 -f test.ff
 here
-: dummy 99 . cr ;
-dup ."saved:_" .x cr
+: dummy 42 ;
+. cr
 0 exit ;
 ```
-**Expected:** `saved: 44XXXX` (some valid code address)
-**Actual:** `saved: 0`
+**Expected:** a valid code address (e.g. `4516140`)
+**Actual (before fix):** `0`
 
-But a literal constant survives:
+The i386 `ff` prints the correct address for the same input.
+
+**Root cause: missing `call _rst` in `_semi_exec`**
+
+The `here\`` backtick macro is defined as:
 ```forth
-\ File: test2.ff — load with: ./ff64 -f test2.ff
+: here` over` $48, ,1 $EB89, s01 ;
+```
+
+When `here\`` runs at compile time, `over\`` calls `swap\`` which
+toggles SWAPbit to 1. The `s01` call patches the ModRM byte so the
+generated instruction becomes `mov rdx, rbp` (value in NOS) instead
+of `mov rbx, rbp` (value in TOS). This is correct — the SWAPbit
+tells the compiler that TOS is currently in rdx, not rbx.
+
+The problem is what happens at the anonymous block boundary. When
+`:` encounters a pending anonymous block, it calls `_semi_exec` to
+close and execute it. But `_semi_exec` was writing `C3` (ret)
+directly without first calling `_rst`. The `_rst` function checks
+the SWAPbit and, if set, emits `xchg rbx, rdx` (48 87 DA) before
+the ret — reconciling the register assignment back to the canonical
+TOS=rbx, NOS=rdx.
+
+Without `_rst`, the anonymous block's code was:
+```
+lea r15, [r15-8]    ; push NOS (under`)
+mov rdx, [r15]
+mov rbp, rdx        ; here value → rdx (NOS), SWAPbit=1
+ret                  ; ← no xchg! returns with value in rdx
+```
+
+The next anonymous block (`. cr 0 exit`) compiled with SWAPbit=0
+(reset by `_semi_exec`), so `.` read rbx (which was 0) instead of
+rdx (which held the here address).
+
+**The i386 difference:** In i386's `_colon`, the pending anonymous
+block is closed via `call _semi` — and `_semi` starts with
+`call _rst`. In ff64's `_colon`, the block was closed via
+`call _semi_exec` (which skipped `_rst`).
+
+**The fix:** Add `call _rst` at the entry of `_semi_exec`. This
+is safe for the path where `_semi` falls through to `_semi_exec`
+(double `_rst` call is a no-op since the first clears SWAPbit).
+It also fixes two other direct callers: the `constant` path in
+`_compiler` and the `_boot ;` execution in `_start`.
+
+**GDB trace that identified the bug:**
+
+Setting a breakpoint at `_semi` entry with the condition
+`*(long long*)0x403020 > 0x44e930` (only break after boot
+compilation) showed `SC=0` — the SWAPbit was already cleared.
+Disassembling the generated anonymous block at `[anon]` showed
+`mov rdx, rbp; ret` with no preceding `xchg`. Tracing the second
+anonymous block showed `.` at 0x44d0c7 printing rbx=0 while
+rdx=0x44e945 (the valid here address).
+
+**Additional reproduction — literal survives but `here` doesn't:**
+```forth
 42
-: dummy 99 . cr ;
-dup ."saved:_" .x cr
+: dummy 99 ;
+. cr
 0 exit ;
 ```
-**Output:** `saved: 2a` (42 decimal — correct)
+This prints `42` correctly because literal compilation (`_lit`)
+manages its own SWAPbit state completely (it calls `_emit_dup_nos_s`
++ `swap\`` + `_emit_drop_nos_s`, balancing the SWAPbit within a
+single macro). The `here\`` macro's `swap\`` (via `over\``) leaves
+SWAPbit=1 for the caller to reconcile — which `_rst` at `;` is
+supposed to do.
 
-**What's happening:** `here` compiles to an inline push of `rbp`
-(the code pointer). When the anonymous block containing `here` is
-executed by `_semi_exec`, `rbp` has been reset to `anon` (the start
-of the anonymous block). So `here` pushes the anon address, not the
-end-of-code address that a programmer might expect.
-
-When a `: definition ;` follows, `_semi_exec` runs again — it saves
-the current rbp to `hereatexec`, resets rbp to anon, and executes
-the anonymous code accumulated between the two semicolons. If there
-IS no anonymous code between them (just the `:` definition), the
-anonymous block is empty and the captured `here` value may be stale
-or zero depending on exact compilation state.
-
-The original `_mkname` definition works because its larger body
-causes enough code to be emitted that the rbp/anon positions align
-correctly for the subsequent anonymous code to capture a valid
-`here`. Changing the body (even to a functionally equivalent but
-shorter definition) shifts these positions and breaks the capture.
-
-**Workaround:** The `_mkname` pattern in `lib/mkimage64.ff` is left
-as-is. Any future refactoring of mkimage64.ff must test the full
-multi-file pipeline (`./ff64 -f program.ff -f lib/mkimage64.ff`)
-to verify that `here` captures a non-zero value.
-
-**Root cause:** The `_semi_exec` mechanism interleaves compilation
-and execution in ways that make rbp (and therefore `here`) context-
-dependent. This is a fundamental aspect of FreeForth's immediate
-compilation model, not a bug per se, but it creates surprising
-behavior for code that captures `here` across definition boundaries
-in loaded files.
+**After the fix:**
+- `"\_boot" find drop` works correctly (no `_mkname` needed)
+- `lib/mkimage64.ff` simplified: removed `_mkname`, uses `"\_boot"`
+- All 455+ tests pass

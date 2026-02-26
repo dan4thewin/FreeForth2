@@ -1359,6 +1359,28 @@ This is why FreeForth doesn't need a separate `[']` or prefix `'` — the
 natural flow of anonymous definition execution provides values to
 compile-time words.
 
+#### SWAPbit reconciliation in `_semi_exec`
+
+A subtle bug was found: `_semi_exec` was missing a `call _rst` before
+writing the `C3` (ret) byte. The `_rst` function checks the SWAPbit
+and, if set, emits `xchg rbx,rdx` to reconcile register assignments
+before the block returns.
+
+Without `_rst`, backtick macros that leave SWAPbit=1 (like `here\``,
+which uses `over\`` → `swap\``) would return with the value in the
+wrong register. The next anonymous block, compiled with SWAPbit=0,
+would read the wrong register.
+
+Example: `here : dummy 42 ; . cr 0 exit ;` printed `0` instead of
+a valid code address. The `here` value was correctly placed in rdx
+(NOS, because SWAPbit=1), but `.` in the next anonymous block read
+rbx (TOS, SWAPbit=0) which was 0.
+
+The i386 original didn't have this bug because `_colon` called
+`_semi` (which starts with `call _rst`), while ff64's `_colon`
+called `_semi_exec` directly (skipping `_rst`). The fix: add
+`call _rst` at the entry of `_semi_exec`.
+
 ### The ct mask bug
 
 Testing aliases revealed a compiler bug: the ct dispatch used the raw
