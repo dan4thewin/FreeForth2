@@ -78,40 +78,11 @@ LOOP` compile-time macro for counted loops
   Used with TIMES: TIMES ... LOOP iterates a counted loop.
   LOOP decrements the counter, branches back if nonzero.
 
-#lib ( addr len -- libh ) open a shared library via dlopen
-  NUL-terminates the filename in place. Returns the library handle.
-  Throws on failure with the dlerror() message.
-
-#fun ( addr len libh -- funh ) resolve a symbol via dlsym
-  Looks up a function name in the given library handle.
-  Throws on failure with the dlerror() message.
-
-#call ( argN ... arg1 N funh -- result ) call a C function
-  Maps up to 6 Forth stack arguments to x86-64 SysV ABI registers
-  (rdi, rsi, rdx, rcx, r8, r9) and calls the function pointer.
-  Returns the C function's result (rax) as TOS.
-
 dlsetup ( -- ) open libc.so.6 and cache the handle in variable libc
   Called automatically at boot. Safe to call multiple times
   (returns immediately if already loaded).
 
 libc. ( <name> -- ) compile-time macro: resolve and call a libc function
-  Usage: -42 1 libc. abs .
-  Parses the function name, resolves it via #fun at compile time,
-  and emits a literal push + #call.
-
-libc_ ( addr len -- result ) runtime: resolve and call a libc function
-  Like libc. but resolves the function name at runtime.
-
-nzTRUE ( -- ) set CPU FLAGS to "nonzero" (true) condition
-  Pushes 1 and does 0- drop. For use with the ? conditional tail-call.
-  Does NOT push a boolean — it only sets FLAGS.
-  see also: zFALSE within
-
-zFALSE ( -- ) set CPU FLAGS to "zero" (false) condition
-  Pushes 0 and does 0- drop. For use with the ? conditional tail-call.
-  Does NOT push a boolean — it only sets FLAGS.
-  see also: nzTRUE within
 
 needexec ( addr len -- ) load a file and execute its last definition
   Calls needed (with double-load guard), then executes the most
