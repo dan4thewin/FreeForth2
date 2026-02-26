@@ -5762,3 +5762,114 @@ supposed to do.
 - `"\_boot" find drop` works correctly (no `_mkname` needed)
 - `lib/mkimage64.ff` simplified: removed `_mkname`, uses `"\_boot"`
 - All 455+ tests pass
+
+---
+
+## Experiment 074: fflin64.boot — OS/Architecture Separation
+
+**Date:** 2026-02-26
+**Status:** PASS (9 tests)
+
+### Goal
+
+Begin separating OS-specific from architecture-specific code in the
+ff64 boot system, following Christophe Lavarenne's original
+fflin.asm/fflinio.asm/fflin.boot pattern. This is the first step
+toward supporting multiple architectures (ARM, AArch64) and
+multiple operating systems (Linux, macOS) in the future.
+
+### Background: Lavarenne's Cross-Platform Architecture
+
+The original FreeForth (i386) elegantly separates concerns across
+five files:
+
+| File | Role |
+|------|------|
+| `ff.asm` | Portable core: compiler, dictionary, headers |
+| `ff.boot` | Portable Forth: backtick macros, stack ops, flow control |
+| `fflin.asm` | Linux glue: OSFORMAT/OSINCLUDE/OSFILE macros, `include "ff.asm"` |
+| `fflinio.asm` | Linux I/O: `int $80` syscalls, dlopen/dlsym interface |
+| `fflin.boot` | Linux Forth: SEGV handler, FFPATH, openlib, needs/needed, -f, _boot |
+
+There's also `ffwin.asm`, `ffwinio.asm`, `ffwin.boot` for Windows.
+The key insight: `ff.asm` and `ff.boot` contain zero OS-specific code.
+
+### Analysis: Can fflin.boot Be Reused As-Is for ff64?
+
+**No.** Several elements are architecture-specific:
+
+1. **`^^` backtick macro** emits i386 machine code (`C7 05` = mov [mem32], imm32)
+2. **struct sigaction** is 140 bytes on i386, 152 on x86-64
+3. **sa_flags offset** is 132 on i386, 136 on x86-64
+4. **`needed`** uses `openlib + read + eval` on i386 vs `loadfile`
+   (assembly word) on ff64
+5. **`eob`** (end-of-buffer) exists in i386 but not ff64
+
+However, **~80% of fflin.boot is pure Forth** that works on both
+architectures: dlsetup, libc., needs/needed, needexec, -f handler,
+mainxt/_main, FFPATH construction, openlib.
+
+### What We Did
+
+Created `fflin64.boot` — the ff64 equivalent of fflin.boot —
+containing Linux-specific definitions extracted from ff64.boot:
+
+**Moved to fflin64.boot** (OS-specific):
+- `[os]` constant (1 = Linux)
+- `libc` variable, `dlsetup`, `libc.`, `libc_` (dynamic linking)
+- `needed`, `needexec`, `needs` (file loading)
+- `mainxt`, `_main` (turnkey support)
+- `see`, `help` (deferred file loaders)
+- `doargv` (command-line processing)
+- `_postboot` (doargv + hidepvt vector)
+- `_f_main`, `-f` (file handler with main detection)
+- `_feat` (feature registration)
+- `ossetup`, `_boot`, `_boot ;` (boot sequence)
+
+**Added (new, not in ff64 before):**
+- `^^` (vector reset — runtime version of i386's backtick macro)
+- `quit` (reset _top to default and call it)
+
+**Stayed in ff64.boot** (architecture-specific):
+- All backtick macros (dup`, drop`, etc. — emit x86-64 opcodes)
+- Stack operations, arithmetic, division
+- Flow control (IF/THEN/BEGIN/UNTIL/etc.)
+- String operations, number formatting
+- Vector word definitions (!^, n^, @^, x^, :^)
+- REPL (_top), error recovery, hidepvt
+- Conditional compilation ([IF]/[THEN])
+
+### Build System Change
+
+The Makefile generates `ff64.boot.min` by concatenating both files:
+```makefile
+ff64.boot.min: ff64.boot fflin64.boot
+grep -h '^[: _A-Za-z0-9]' $^ > $@
+```
+
+The `-h` flag suppresses filename prefixes when grep processes
+multiple files. The concatenated result is embedded in ff64.asm
+exactly as before — ff64.asm needs no changes.
+
+### New Words
+
+**`^^` ( xt -- )** — Reset a vector to its default body. The vector's
+push operand (at xt+1) is rewritten to point to xt+6 (the body).
+This is a runtime word; the i386 version is a compile-time backtick
+macro that generates inline `mov [mem], imm32`.
+
+**`quit`** — Reset `_top` to its default body and call it. Equivalent
+to restarting the REPL.
+
+### Future: Complete the Pattern
+
+This establishes Forth-level separation. The next steps toward full
+multi-axis support would be:
+
+1. **Extract I/O from ff64.asm** into `fflin64io.asm` (Linux syscalls,
+   dlopen/dlsym) — paralleling fflinio.asm
+2. **Create `fflin64.asm`** as the glue file (OSFORMAT/OSINCLUDE/OSFILE
+   macros + `include "ff64.asm"`)
+3. **Port FFPATH/openlib** from fflin.boot to fflin64.boot (currently
+   ff64 uses direct file paths only)
+4. **Port SEGV handler** to Forth (currently in assembly as segvsetup)

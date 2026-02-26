@@ -3484,3 +3484,50 @@ With `6+`, n^ set the target to xt+6 (body start), **restoring** the
 vector to its original behavior. With `5+`, n^ correctly sets the
 target to xt+5 (the ret), creating a true nop: `push xt+5; ret` →
 jumps to ret → returns to caller.
+
+### OS/Architecture Separation (Experiment 074)
+
+Lavarenne's original design cleanly separates OS-specific code from
+the portable core:
+
+```
+Portable:           ff.asm + ff.boot
+Linux-specific:     fflin.asm + fflinio.asm + fflin.boot
+Windows-specific:   ffwin.asm + ffwinio.asm + ffwin.boot
+```
+
+The ff64 port initially put everything in `ff64.asm` + `ff64.boot`.
+Experiment 074 begins restoring the separation by creating
+`fflin64.boot` — extracting OS-specific Forth definitions:
+
+```
+Architecture (x86-64):  ff64.asm + ff64.boot
+OS (Linux):             fflin64.boot
+```
+
+**ff64.boot** contains architecture-specific definitions: backtick
+macros that emit x86-64 opcodes, stack operations, flow control,
+the SWAPbit machinery, the REPL, and error recovery.
+
+**fflin64.boot** contains OS-specific definitions: dynamic library
+interface (dlsetup, libc.), file loading (needed, needexec), command-
+line processing (doargv, -f handler), turnkey support (mainxt, _main,
+_postboot), and the boot sequence (ossetup, _boot).
+
+The Makefile concatenates both into `ff64.boot.min`:
+```makefile
+ff64.boot.min: ff64.boot fflin64.boot
+grep -h '^[: _A-Za-z0-9]' $^ > $@
+```
+
+This establishes the pattern for future ports. An ARM64 port would
+need `ff-arm64.asm` + `ff-arm64.boot` (new compiler and macros) but
+could reuse much of `fflin64.boot` (the Linux Forth layer). A macOS
+port would need `ffmac64.boot` (different library paths and signal
+handling) but reuse `ff64.boot` (same architecture).
+
+**Why fflin.boot can't be reused as-is:** It contains i386-specific
+elements — the `^^` backtick macro emits x86 instructions, struct
+sigaction is 140 bytes (vs 152 on x86-64), and the `needed`
+implementation uses manual buffer+eval instead of ff64's `loadfile`.
+However, ~80% of fflin.boot is pure Forth that works unchanged.
