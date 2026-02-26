@@ -2388,16 +2388,18 @@ modifies the flags set by `0-`'s `or rbx,rbx`.
 
 ### REPL Architecture
 
-The Forth-based REPL matches i386's design:
+The Forth REPL (`_top`) is the only REPL. It matches i386's design:
 
-- **`_eval`**: pushes `eval.`'s address as a literal (via tick)
-- **`_exec`**: `catch 0;` error handler, then `START _eval ENTER` loop
-- **`_top`**: `ui ... accept 0- 0= TILL` — read-eval-print loop
+- **`_top`**: `ui ... tib 4096 accept ... eval. catch` — read-eval-print loop
 - **`ui`**: a vector (`:^`) defaulting to `prompt`, enabling customization
+- **`prompt`**: prints ` N; ` where N is the stack depth
 
-The `_exec` pattern uses START without END — exactly why the cstack was
-needed. The TILL at the end of `_top` jumps backward to START's body
-using `mrk@`.
+`_top` uses a `BEGIN ... AGAIN` infinite loop with `accept`. The
+`accept` primitive reads byte-by-byte until newline, EOF, or count
+limit (4096). On EOF, `_top` calls `exit`.
+
+Errors are caught by `catch`. If a throw occurs, `_recover` prints the
+error and resumes the loop.
 
 **Running total:** ~240 words/macros ported. 304 tests across 50
 experiments, all passing.
@@ -2497,7 +2499,7 @@ The x86-64 `_top` is a single, self-contained `BEGIN`/`AGAIN` loop:
 ```forth
 :^ _top pvt BEGIN
   ui 0 noauto!
-  tib 80 accept dup 0- 0= drop IF drop 0 exit THEN
+  tib 4096 accept dup 0- 0= drop IF drop 0 exit THEN
   here saved_here! tib swap eval. ' catch
   dup 0- 0<> drop IF _recover ELSE drop THEN
 AGAIN
@@ -2540,35 +2542,34 @@ token as a literal. At runtime, the stack holds `eval.`'s xt, which
 `catch` consumes and calls. The effect: `eval.` runs under `catch`'s
 exception protection, with the call stack properly framed.
 
-### The 80-byte accept trick
+### Line-by-line accept
 
-For testing with piped input, `accept` reads up to 80 bytes. Test lines
-are padded to exactly 80 characters:
+The `accept` primitive reads byte-by-byte until it encounters a newline
+(LF=10), EOF (sys_read returns ≤0), or reaches the count limit. This
+replaced the original bulk-read `sys_read(0, addr, count)` which on
+piped input would read all available data at once, making multi-line
+interaction impossible.
+
+With line-by-line accept, test inputs use simple `printf '%s\n'` to
+send multiple lines. Each `accept` call returns one line:
 
 ```makefile
-pad() { printf '%-80s' "$$1"; }
-run() {
-  for line; do INPUT="$$INPUT$$(pad "$$line")"; done
-  printf '%s' "$$INPUT" | ./ff64 -f ff64.boot -f launch.ff
-}
+result=$$(printf '%s\n' 'line one ;' 'line two ;' | $(FF) 2>/dev/null)
 ```
 
-Each `accept` call reads exactly one 80-byte "line." Without this trick,
-`sys_read` on a pipe returns all available data at once, making multi-line
-tests impossible with a large buffer.
+The earlier experiments used an 80-byte padding trick (`printf '%-80s'`)
+to force each "line" to consume exactly one accept call. That trick is
+no longer necessary but some experiments still use it.
 
-### `-f` file `anon` reset
+### `-f` file `anon` reset (historical)
 
-A subtle bug: after boot (processing the first `-f ff64.boot`), `anon`
-is left at 0 because the last definition (`_top`) used `:^` which calls
-`_colon`, which sets `anon = 0`. The second `-f` file contains `_top ;`.
-The compiler processes `_top` (compiles `call _top`) and `;` (which
-should trigger `_semi_exec`). But `_semi_exec` checks `anon` — if it's
-0, it treats this as a named definition ending, not anonymous code to
-execute. Result: `_top` never gets called.
-
-Fix: reset `anon = rbp` before compiling each `-f` file, just like the
-assembly `.repl` does before each line.
+A subtle bug from the era when ff64 had an assembly REPL: after boot
+(processing the first `-f ff64.boot`), `anon` was left at 0 because the
+last definition (`_top`) used `:^` which calls `_colon`, which sets
+`anon = 0`. This was fixed by resetting `anon = rbp` before compiling
+each `-f` file. With the self-booting architecture (Exp 069), `-f` is
+handled by Forth's `doargv` → `-f`` → `needed` → `loadfile`, which
+manages anon/callmark/SC itself via `hereatexec`.
 
 **Running total:** ~245 words/macros ported. 322 tests across 52
 experiments, all passing.
@@ -2579,22 +2580,29 @@ experiments, all passing.
 
 ### The boot architecture
 
-FreeForth2's boot sequence has two layers:
+FreeForth2's ff64 binary embeds a filtered copy of ff64.boot. At
+startup, the assembly kernel compiles this embedded source, then
+executes the final anonymous block `_boot ;`:
 
-**Assembly layer** (always runs):
-1. Initialize registers and memory
-2. Process `-f` files (load and compile)
-3. Enter assembly REPL (`.repl_loop`)
+**Assembly layer** (`_start`):
+1. Initialize registers and memory (rbp, r15, SEGV handler)
+2. Save argc/argv for Forth access
+3. Set tin/tp to the embedded boot source → call `_compiler`
+4. Call `_semi_exec` to execute `_boot ;`
 
-**Forth layer** (opt-in via `_boot ;`):
+**Forth layer** (`_boot`):
 1. `ossetup` — OS-specific initialization (currently empty vector)
-2. `_hidepvt` — hide private words from the dictionary
-3. `_top` — enter the Forth REPL with prompt and error recovery
+2. `doargv` — evaluate command-line arguments (handles `-f`)
+3. `_hidepvt` — hide private words from the dictionary
+4. `_top` — enter the Forth REPL with prompt and error recovery
 
-The assembly REPL is intentionally preserved as the default. It's
-simpler (`> ... ok` format), has no catch/throw overhead, and all
-existing tests rely on its output format. The Forth REPL is started
-explicitly when needed.
+This mirrors how i386 ff works: the assembly kernel is minimal, with
+all user-facing behavior (argument processing, REPL, error recovery)
+implemented in Forth. The build system generates ff64.boot.min by
+filtering out comments and blank lines:
+```
+grep '^[: _A-Za-z0-9]' ff64.boot > ff64.boot.min
+```
 
 ### argc/argv access
 

@@ -5106,3 +5106,99 @@ LD64=ld -m elf_x86_64 -lc -ldl --dynamic-linker=/lib64/ld-linux-x86-64.so.2
   for functions like printf. We always set `xor eax, eax`.
 - **GOT/PLT layout:** .got.plt at 0x402fe8, .flat at 0x403018 — no
   overlap. Dynamic linker writes resolved addresses to GOT entries.
+
+---
+
+## Experiment 069: Self-Booting ff64
+
+**Goal:** Embed ff64.boot directly into the ff64 binary, like ff embeds
+ff.boot. Remove the assembly-level REPL and `-f` argument processing.
+All user-facing behavior should be implemented in Forth.
+
+### Background
+
+The original ff has its boot file (ff.boot) included at build time via
+FASM's `file` directive, compiled at startup by the assembly kernel's
+`_compiler`. This gives it a single self-contained binary. Our ff64 had
+been loading ff64.boot externally via `-f ff64.boot` from the assembly
+REPL — a different architecture that required users to always specify
+the boot file.
+
+DG's direction: "ff64 shouldn't process argv directly, but leave it for
+the forth code to process." This matches Lavarenne's philosophy of
+keeping the assembly kernel minimal, with most behavior in Forth.
+
+### Actions
+
+1. **Filter ff64.boot for embedding.** ff64.boot has comments (lines
+   starting with `(`) and blank lines that are useful for humans but
+   waste space in the binary. Added a Makefile rule:
+   ```
+   ff64.boot.min: ff64.boot
+       grep '^[: _A-Za-z0-9]' $< > $@
+   ```
+   The `_` in the pattern is critical — without it, `_boot ;` (the
+   auto-execute trigger) gets filtered out, causing silent failure.
+
+2. **Embed in ff64.asm.** Added `file "ff64.boot.min"` in the data
+   section. At `_start`, after register init and SEGV handler install:
+   set tin/tp to boot64/boot64_end, call _compiler, call _semi_exec.
+
+3. **Remove assembly REPL.** Deleted ~110 lines: the `-f` argument
+   loop, the `> ` prompt / `ok\n` response REPL, and the prompt/ok_msg
+   data. The assembly kernel now does only: init → compile boot →
+   execute `_boot ;` → done.
+
+4. **Add `_boot ;` to ff64.boot.** This is the auto-execute trigger.
+   When the compiler processes the embedded boot source, `_boot ;` is
+   the last anonymous block. `_semi_exec` executes it, which calls:
+   - `ossetup` (platform init)
+   - `doargv` (evaluate command-line arguments, including `-f`)
+   - `_hidepvt` (hide private words)
+   - `_top` (the Forth REPL loop, never returns)
+
+5. **Fix doargv.** ff64's `_eval` was incomplete (just pushed eval.'s
+   xt). Changed doargv to call `eval.` directly.
+
+6. **Rewrite `_accept` for line-by-line reading.** The old accept did
+   `sys_read(0, addr, count)` which reads up to count bytes in bulk.
+   With piped input, this could batch multiple lines. The new accept
+   reads byte-by-byte until newline (LF=10) or count limit. This is
+   essential for the Forth REPL where each `accept` should return one
+   line. Increased `_top`'s buffer from 80 to 4096.
+
+7. **Update 45 experiment Makefiles.** Every test that used
+   `$(FF64) -f $(BOOT)` needed updating. Changes:
+   - Remove `BOOT = ../../ff64.boot` and `-f $(BOOT)`
+   - Update sed patterns from `s/^> //` to `s/^ *[0-9-]*; *//`
+     (new Forth prompt is ` N; ` not `> `)
+   - Remove ` ok` from expected values
+   - Fix `grep -o` patterns that matched prompt digits
+
+### Key Insight: The Prompt Format Change
+
+The assembly REPL printed `> ` before input and `ok\n` after success.
+The Forth REPL (`_top` via `ui`/`prompt`) prints ` N; ` where N is the
+stack depth. This meant every test that parsed output needed updating.
+The sed pattern `s/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//` strips leading
+and trailing prompt patterns. In Makefiles, the `$` end-of-line anchor
+must be doubled (`$$`) for Make escaping.
+
+### Results
+
+| Test | Description | Status |
+|------|-------------|--------|
+| All 414 tests | Full experiment suite | PASS |
+| exp/041 | callmark set by call | FAIL (pre-existing) |
+
+### Technical Notes
+
+- **Boot embedding flow:** _start → init regs → install SEGV →
+  save argc/argv → set tin/tp to boot64 → _compiler → _semi_exec →
+  (Forth) _boot → ossetup → doargv → _hidepvt → _top
+- **Line-by-line accept:** Uses a scratch byte on the stack (`lea rsi,
+  [rsp]`) for each sys_read of 1 byte. Stops at newline, EOF (read
+  returns ≤0), or count limit.
+- **The filter pattern gotcha:** `grep '^[: A-Za-z0-9]'` misses
+  `_boot ;` because `_` isn't in the character class. Always include
+  `_` in the filter.
