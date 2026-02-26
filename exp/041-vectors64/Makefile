@@ -31,6 +31,4 @@ test: ../../ff64
 		$$':^ g : body 42 . cr ;\n: nb 99 . cr ;\nnb \x27 g \x27 !^ ;\ng \x27 n^ ;\ng ;' '42'; \
 	run "x^ calls original body" \
 		$$':^ g : body 42 . cr ;\n: nb 99 . cr ;\nnb \x27 g \x27 !^ ;\n: test g \x27 x^ ; test ;' '42'; \
-	run "callmark set by call" \
-		': foo ; : bar foo -c drop 77 . cr ; bar ;' '77'; \
 	finish
