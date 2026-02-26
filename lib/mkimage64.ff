@@ -16,9 +16,8 @@
 
 here
 : _save openw dup >r write drop r> close drop ;
-: _mkname ( -- addr 5 ) pad $5F over c! "boot" drop pad 1+ 4 cmove pad 5 ;
 : _writecfg ( -- ) DS0 pad ! segvsetup pad 8 + ! pad 16 "cmpl64.cfg" _save ;
-_mkname find drop _bootxt !
+"\_boot" find drop _bootxt !
 0 libc !
 dup anon !
 H swap over - "cmpl64" _save

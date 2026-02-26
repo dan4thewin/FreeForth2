@@ -1335,6 +1335,7 @@ _semi:
         ret
 .anonymous:
 _semi_exec:
+        call _rst               ; reconcile SWAPbit before closing anonymous block
         mov byte [rbp], $C3
         inc rbp
         mov [hereatexec], rbp   ; save safe code position past anonymous code
@@ -2801,7 +2802,9 @@ WORD64 "w,", _wcomma, 0, 2
 WORD64 "c,", _ccomma, 0, 2
 WORD64 ",", _comma, 0, 1
 WORD64 "allot", _allot, 0, 5
-WORD64 "here", _here, 0, 4
+;; "here" intentionally omitted — defined as backtick macro in ff64.boot
+;; (the assembly _here was ct=0, causing runtime rbp capture instead of
+;; compile-time inline; the boot here` is the correct implementation)
 WORD64 "SC", SC, 1, 2
 WORD64 "?#", cond_jmp, 1, 2
 WORD64 "callmark", callmark, 1, 8
