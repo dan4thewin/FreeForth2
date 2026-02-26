@@ -31,7 +31,7 @@ test:
 		": add3 3 + ; H@ @ alias plus3 5 plus3 . cr ;" \
 		"8"; \
 	run_test "alias: ct has alias flag 0x20" \
-		": foo ; H@ @ alias bar H@ 8 + c@ \$$20 and . cr ;" \
+		": foo ; H@ @ alias bar H@ 8 + c@ \$$20 & . cr ;" \
 		"32"; \
 	run_test "constant (asm): define and use" \
 		"42 constant answer answer . cr ;" \

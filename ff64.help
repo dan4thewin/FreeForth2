@@ -1,0 +1,119 @@
+\ ff64.help — help for words specific to the x86-64 port
+\ These words do not exist in the original i386 FreeForth.
+\ Format: entry lines start at column 0; continuation lines start with space.
+
+d@ ( addr -- n ) fetch 64-bit (double cell) value from memory
+  On i386 FreeForth, @ fetches 32 bits (one cell).
+  On x86-64, @ already fetches 64 bits, so d@ is equivalent to @.
+  Provided for clarity when 64-bit intent matters.
+
+d! ( n addr -- ) store 64-bit (double cell) value to memory
+  On i386 FreeForth, ! stores 32 bits. On x86-64, ! stores 64 bits.
+  d! is equivalent to ! but documents 64-bit intent.
+
+d, ( n -- ) compile a 64-bit value at here and advance here by 8
+  On i386, , compiles 32 bits. On x86-64, , compiles 32 bits (for opcodes).
+  d, compiles a full 64-bit value (addresses, pointers).
+
+w, ( n -- ) compile a 16-bit value at here and advance here by 2
+  Useful for emitting 16-bit opcode fragments in inline code generators.
+
+d@` compile-time macro for d@ (inline code generation)
+d!` compile-time macro for d! (inline code generation)
+d,` compile-time macro for d, (inline code generation)
+2dupd!` compile-time macro for 2dup d! (inline code generation)
+tuckd!` compile-time macro for tuck d! (inline code generation)
+
+8+` compile-time macro: add 8 to TOS (one cell width on x86-64)
+  The x86-64 equivalent of i386's 4+` (cell+).
+
+8-` compile-time macro: subtract 8 from TOS
+  The x86-64 equivalent of i386's 4-`.
+
+>cs ( n -- ) push a value onto the compile-time stack
+  Used by START/ENTER/BREAK/END structured loops to save
+  forward-reference addresses for later resolution.
+
+cs> ( -- n ) pop a value from the compile-time stack
+  Used by END to resolve break addresses saved by BREAK.
+
+ds ( -- ) display the data stack contents (runtime version of .s`)
+  Prints the current stack depth and all values.
+  .s` is the compile-time equivalent (used in prompts).
+
+h.name ( hdr -- ) print the name field of a dictionary header
+  Given a header address, prints the word's name.
+
+h.next ( hdr -- hdr' ) advance to the next dictionary header
+  Computes the address of the following header by adding
+  the name length + fixed header overhead.
+
+loadfile ( addr len -- ) load and compile a Forth source file
+  Opens the named file, reads it into filebuf, and passes
+  the contents through the compiler. Saves and restores
+  the current parsing state (>in, tp).
+
+ff_argc ( -- addr ) variable holding the command-line argument count
+  Set by assembly at startup from the C argc value.
+
+ff_argv ( -- addr ) variable holding the pointer to argv array
+  Set by assembly at startup. Each entry is a pointer to a
+  NUL-terminated string.
+
+helpbuf ( -- addr ) 128KB buffer used by the help system
+  Used by lib/help64.ff to read ff.help into memory.
+
+xfp ( -- addr ) variable: exception frame pointer for catch/throw
+  Points to the current catch frame on the return stack.
+  Zero when no catch frame is active.
+
+stderr ( -- 2 ) file descriptor constant for standard error
+
+cond.` compile-time macro: convert stack boolean to FLAGS condition
+  Emits 0- drop 0<> — tests TOS, drops it, sets FLAGS.
+  Used by IF. WHILE. UNTIL. (dotted conditionals) to bridge
+  stack booleans to FreeForth's FLAGS-based control flow.
+
+LOOP` compile-time macro for counted loops
+  Used with TIMES: TIMES ... LOOP iterates a counted loop.
+  LOOP decrements the counter, branches back if nonzero.
+
+#lib ( addr len -- libh ) open a shared library via dlopen
+  NUL-terminates the filename in place. Returns the library handle.
+  Throws on failure with the dlerror() message.
+
+#fun ( addr len libh -- funh ) resolve a symbol via dlsym
+  Looks up a function name in the given library handle.
+  Throws on failure with the dlerror() message.
+
+#call ( argN ... arg1 N funh -- result ) call a C function
+  Maps up to 6 Forth stack arguments to x86-64 SysV ABI registers
+  (rdi, rsi, rdx, rcx, r8, r9) and calls the function pointer.
+  Returns the C function's result (rax) as TOS.
+
+dlsetup ( -- ) open libc.so.6 and cache the handle in variable libc
+  Called automatically at boot. Safe to call multiple times
+  (returns immediately if already loaded).
+
+libc. ( <name> -- ) compile-time macro: resolve and call a libc function
+  Usage: -42 1 libc. abs .
+  Parses the function name, resolves it via #fun at compile time,
+  and emits a literal push + #call.
+
+libc_ ( addr len -- result ) runtime: resolve and call a libc function
+  Like libc. but resolves the function name at runtime.
+
+nzTRUE ( -- ) set CPU FLAGS to "nonzero" (true) condition
+  Pushes 1 and does 0- drop. For use with the ? conditional tail-call.
+  Does NOT push a boolean — it only sets FLAGS.
+  see also: zFALSE within
+
+zFALSE ( -- ) set CPU FLAGS to "zero" (false) condition
+  Pushes 0 and does 0- drop. For use with the ? conditional tail-call.
+  Does NOT push a boolean — it only sets FLAGS.
+  see also: nzTRUE within
+
+needexec ( addr len -- ) load a file and execute its last definition
+  Calls needed (with double-load guard), then executes the most
+  recently defined word via H@ @ execute. Used for lazy loading
+  of library files (e.g., help`, see`).

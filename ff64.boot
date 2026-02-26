@@ -184,7 +184,7 @@
 
 ( Flow control — Forth-defined, replacing assembly )
 : d, here d! 4 allot ;
-: cond ?# c@ 0 ?# c! 1 xor ;
+: cond ?# c@ 0 ?# c! 1 ^ ;
 : IF` >S0 cond $0F c, $10+ c, here 4 allot ;
 : THEN` >S0 here over - 4- swap d! 0 callmark! ;
 : BEGIN` >S0 here ;
@@ -219,9 +219,7 @@
 : on -1 swap ! ;
 : off 0 swap ! ;
 : space $20 emit ;
-: spaces BEGIN 0- 0> WHILE space 1- REPEAT drop ;
 : type BEGIN 0- 0> WHILE swap dup c@ emit 1+ swap 1- REPEAT 2drop ;
-: count dup 1+ swap c@ ;
 
 ( Memory )
 : fill rot rot BEGIN 0- 0> WHILE 1- -rot 2dup c! 1+ rot REPEAT drop 2drop ;
@@ -243,7 +241,7 @@
 : ;THEN` ;;` THEN` ;
 : _pick_detect
   here 5- c@ $BB = IF here 4- d@ -5 allot ;THEN
-  here 3- c@ $6A- here 1- c@ $FE& $5A- or 0<> IF !"not_preceded_by_constant" ;THEN
+  here 3- c@ $6A- here 1- c@ $FE& $5A- | 0<> IF !"not_preceded_by_constant" ;THEN
   here 2- c@ -3 allot swap` $48 c, $DA89 w, s09 ;
 : pick` _pick_detect
   dup 0- 0= IF drop ;THEN
@@ -300,14 +298,6 @@ variable mrk 0 mrk 8+ !
 : WHILE.` cond.` WHILE` ;
 : TILL.` cond.` TILL` ;
 : UNTIL.` cond.` UNTIL` ;
-
-( Utilities )
-: bl $20 ;
-: noop ;
-
-( Boolean constants )
--1 constant TRUE
-0 constant FALSE
 
 ( FLAGS helpers — set FLAGS from known values )
 : zFALSE 0 0- drop ;
@@ -377,7 +367,7 @@ variable base
 : .x .x\ space ;
 
 ( Hex digit output — .#s prints N hex digits of a value )
-: .#s TIMES dup r@ 4* >> $F and .digit LOOP drop ;
+: .#s TIMES dup r 4* >> $F & .digit LOOP drop ;
 : .b 2 .#s ;
 : .w 4 .#s ;
 
@@ -388,7 +378,7 @@ variable base
 
 ( Debug output — .s` shows compile-time stack, ds shows runtime stack )
 :^ ui : prompt space depth .\ ';' anon@ 0- 0= drop IF 1- THEN emit space ;
-:. _s 0; depth 2 < drop IF drop ;THEN drop 1- swap >r _s r@ . r> ;
+:. _s 0; depth 2 < drop IF drop ;THEN drop 1- swap >r _s r . r> ;
 : .s` prompt depth _s cr ;
 : ds prompt depth _s cr ;
 : .h` ."free:" here H@ - $400/ .\ ."k_SC=" SC c@ . .s` ;
@@ -407,7 +397,7 @@ create pnbuf pvt pnmaxlen 2+ allot
 : # base@ 7 _# ;
 : x# $10 39 _# ;
 : X# $10 7 _# ;
-:. _ps >r BEGIN r@ execute over 0- drop 0= UNTIL rdrop ;
+:. _ps >r BEGIN r execute over 0- drop 0= UNTIL rdrop ;
 : #s # ' _ps ;
 : x#s x# ' _ps ;
 : X#s X# ' _ps ;
@@ -501,7 +491,7 @@ AGAIN
 : dump bounds dup .l .":" BEGIN space c@+ .b 2dup u<= UNTIL 2drop cr ;
 
 ( Peephole: >mov replaces variable fetch with inc/dec for ++`/--` )
-: >mov here 7- c@ $48- here 6- c@ $8B- or drop
+: >mov here 7- c@ $48- here 6- c@ $8B- | drop
   here 4- d@ 10+ swap -17 allot $48 c, $FF c, c, d, ;
 : ++` $05 >mov ;
 : --` $0D >mov ;

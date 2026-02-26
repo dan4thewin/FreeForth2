@@ -34,10 +34,10 @@ test:
 		"anon@ drop ;" \
 		""; \
 	run_test "H @ ct of variable (ct=1)" \
-		"variable tv H@ 8 + c@ 7 and . cr ;" \
+		"variable tv H@ 8 + c@ 7 & . cr ;" \
 		"1"; \
 	run_test "H @ ct of colon def (ct=0)" \
-		": tw ; H@ 8 + c@ 7 and . cr ;" \
+		": tw ; H@ 8 + c@ 7 & . cr ;" \
 		"0"; \
 	run_test "H @ h.sz name length 2" \
 		": tw ; H@ 9 + c@ . cr ;" \
@@ -49,10 +49,10 @@ test:
 		": xy ; H@ 10 + c@ . cr ;" \
 		"120"; \
 	run_test "ct|! ORs value into ct" \
-		": tw ; 4 H@ ct|! H@ 8 + c@ 7 and . cr ;" \
+		": tw ; 4 H@ ct|! H@ 8 + c@ 7 & . cr ;" \
 		"4"; \
 	run_test "pvt sets bit 3" \
-		": tw ; pvt H@ 8 + c@ 8 and . cr ;" \
+		": tw ; pvt H@ 8 + c@ 8 & . cr ;" \
 		"8"; \
 	echo ""; \
 	echo "Results: $$PASS passed, $$FAIL failed"; \

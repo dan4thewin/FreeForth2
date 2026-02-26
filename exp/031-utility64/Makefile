@@ -54,8 +54,8 @@ test:
 	run_test "type: single char" \
 		"variable b 90 b c! b 1 type cr ;" \
 		"Z"; \
-	run_test "count: counted string" \
-		"variable buf 8 allot 3 buf c! 65 buf 1 + c! 66 buf 2 + c! 67 buf 3 + c! buf count type cr ;" \
+	run_test "c@+: counted string" \
+		"variable buf 8 allot 3 buf c! 65 buf 1 + c! 66 buf 2 + c! 67 buf 3 + c! buf c@+ type cr ;" \
 		"ABC"; \
 	run_test "fill: fill 5 bytes" \
 		"variable buf 8 allot buf 5 42 fill buf c@ . buf 1 + c@ . buf 4 + c@ . cr ;" \
@@ -63,12 +63,6 @@ test:
 	run_test "erase: zero 3 bytes" \
 		"variable buf 8 allot buf 3 65 fill buf 3 erase buf c@ . buf 1 + c@ . buf 2 + c@ . cr ;" \
 		"0 0 0"; \
-	run_test "bl: space char" \
-		"bl . cr ;" \
-		"32"; \
-	run_test "noop: does nothing" \
-		"42 noop . cr ;" \
-		"42"; \
 	run_test "reverse: turns call into jmp" \
 		": hi 72 emit 73 emit ; : t reverse hi cr ; t ;" \
 		"HI"; \

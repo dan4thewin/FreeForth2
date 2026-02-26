@@ -206,13 +206,6 @@ _rfrom: pop rax                 ; r> ( -- x ) R:( x -- )
         pop rbx
         jmp rax
 
-_rfetch: pop rax                ; r@ ( -- x ) R:( x -- x )
-        sub r15, 8
-        mov [r15], rdx
-        mov rdx, rbx
-        mov rbx, [rsp]
-        jmp rax
-
 ;; String/memory operations
 _zlen:                          ; zlen ( addr -- addr len )
         sub r15, 8              ; DUP: push NOS
@@ -349,41 +342,6 @@ _div:   mov rcx, rbx            ; / ( a b -- a/b ) — rcx = divisor
         add r15, 8
         ret
 
-_mod:   mov rcx, rbx            ; mod ( a b -- a-mod-b )
-        mov rax, rdx            ; rax = dividend (NOS)
-        cqo
-        idiv rcx
-        mov rbx, rdx            ; remainder
-        mov rdx, [r15]
-        add r15, 8
-        ret
-
-_divmod: mov rcx, rbx           ; /mod ( a b -- rem quot )
-        mov rax, rdx            ; rax = dividend (NOS)
-        cqo
-        idiv rcx
-        mov rbx, rax            ; quotient in TOS
-        mov rdx, rdx            ; remainder already in rdx (NOS)
-        ret
-
-;; Bitwise operations
-_and:   and rbx, rdx            ; and ( a b -- a&b )
-        mov rdx, [r15]
-        add r15, 8
-        ret
-
-_or:    or rbx, rdx             ; or ( a b -- a|b )
-        mov rdx, [r15]
-        add r15, 8
-        ret
-
-_xor:   xor rbx, rdx            ; xor ( a b -- a^b )
-        mov rdx, [r15]
-        add r15, 8
-        ret
-
-_not:   not rbx                 ; not ( a -- ~a )
-        ret
 
 ;; More stack manipulation
 _rot:   xchg rdx, [r15]         ; rot ( a b c -- b c a )
@@ -520,19 +478,6 @@ _ccomma: mov [rbp], bl          ; c, ( c -- ) compile byte
         ret
 
 ;; Shift operations
-_lshift: mov rcx, rbx           ; lshift ( a n -- a<<n )
-        mov rbx, rdx
-        shl rbx, cl
-        mov rdx, [r15]
-        add r15, 8
-        ret
-
-_rshift: mov rcx, rbx           ; rshift ( a n -- a>>n )
-        mov rbx, rdx
-        sar rbx, cl
-        mov rdx, [r15]
-        add r15, 8
-        ret
 
 ;; =====================================================================
 ;; SWAPbit register-swap functions: s01, s08, s09
@@ -788,43 +733,6 @@ _negate_inline:
         mov word [rbp+1], $DBF7     ; neg rbx (default)
         add rbp, 3
         jmp _s01                    ; swap r/m field only
-
-;; not ( a -- ~a ): bitwise complement (3 bytes)
-;; Default: not rbx (48 F7 D3)
-;; Swapped: not rdx (48 F7 D2) — XOR $01 on ModR/M
-_not_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $D3F7     ; not rbx (default)
-        add rbp, 3
-        jmp _s01                    ; swap r/m field only
-
-;; and ( a b -- a&b ): bitwise AND, pop (10 bytes)
-;; Default: and rbx,rdx (48 21 D3); DROP_NOS
-;; Swapped: and rdx,rbx (48 21 DA); DROP_NOS_S
-_and_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $D321     ; and rbx, rdx
-        add rbp, 3
-        call _s09
-        jmp _emit_drop_nos_s
-
-;; or ( a b -- a|b ): bitwise OR, pop (10 bytes)
-;; Default: or rbx,rdx (48 09 D3); DROP_NOS
-_or_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $D309     ; or rbx, rdx
-        add rbp, 3
-        call _s09
-        jmp _emit_drop_nos_s
-
-;; xor ( a b -- a^b ): bitwise XOR, pop (10 bytes)
-;; Default: xor rbx,rdx (48 31 D3); DROP_NOS
-_xor_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $D331     ; xor rbx, rdx
-        add rbp, 3
-        call _s09
-        jmp _emit_drop_nos_s
 
 ;; @ ( addr -- val ): fetch 64-bit value from memory (3 bytes)
 ;; Default: mov rbx,[rbx] (48 8B 1B)
@@ -2750,14 +2658,10 @@ WORD64 "swap", _swap_inline, 2, 4
 WORD64 "drop", _drop_inline, 2, 4
 WORD64 "dup", _dup_inline, 2, 3
 WORD64 "negate", _negate_inline, 2, 6
-WORD64 "not", _not_inline, 2, 3
 WORD64 "nip", _nip_inline, 2, 3
 WORD64 "*", _mul_inline, 2, 1
 WORD64 "-", _sub_inline, 2, 1
 WORD64 "+", _add_inline, 2, 1
-WORD64 "and", _and_inline, 2, 3
-WORD64 "or", _or_inline, 2, 2
-WORD64 "xor", _xor_inline, 2, 3
 WORD64 "@", _fetch_inline, 2, 1
 WORD64 "c@", _cfetch_inline, 2, 2
 WORD64 "rot", _rot_inline, 2, 3
@@ -2809,8 +2713,6 @@ WORD64 "=", _eq_flags, 2, 1
 WORD64 "cr", _cr, 0, 2
 
 WORD64 ".", _dot, 0, 1
-WORD64 "rshift", _rshift, 0, 6
-WORD64 "lshift", _lshift, 0, 6
 WORD64 "d,", _dcomma, 0, 2
 WORD64 "w,", _wcomma, 0, 2
 WORD64 "c,", _ccomma, 0, 2
@@ -2828,8 +2730,6 @@ WORD64 "ff_argc", ff_argc, 1, 7
 WORD64 "ff_argv", ff_argv, 1, 7
 WORD64 "_bootxt", bootxt, 1, 7
 WORD64 "depth", _depth, 0, 5
-WORD64 "/mod", _divmod, 0, 4
-WORD64 "mod", _mod, 0, 3
 WORD64 "/", _div, 0, 1
 WORD64 "+!", _addstore, 0, 2
 WORD64 "d@", _dfetch, 0, 2
@@ -2842,7 +2742,6 @@ WORD64 "$-", _strcmp, 0, 2
 WORD64 "fill", _fill, 0, 4
 WORD64 "cmove", _cmove, 0, 5
 WORD64 "zlen", _zlen, 0, 4
-WORD64 "r@", _rfetch, 0, 2
 WORD64 "r>", _rfrom, 0, 2
 WORD64 ">r", _tor, 0, 2
 WORD64 "parse", _parse, 0, 5
