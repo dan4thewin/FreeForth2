@@ -2288,6 +2288,33 @@ _openr:
         add r15, 8              ; pop addr
         ret
 
+;; openw ( addr len -- fd ) open file write-only, create/truncate, mode 0644
+_openw:
+        push rsi
+        push rdi
+        push rcx
+        lea rcx, [rdx + rbx]    ; rcx = addr + len (end of string)
+        movzx esi, byte [rcx]   ; save byte after string
+        mov byte [rcx], 0       ; NUL-terminate
+        push rsi                ; save original byte
+        push rcx                ; save end-of-string pointer
+        ;; sys_open(filename, O_WRONLY|O_CREAT|O_TRUNC, 0644)
+        mov rdi, rdx            ; arg1 = filename addr
+        mov esi, 0x241          ; arg2 = O_WRONLY|O_CREAT|O_TRUNC
+        mov edx, 0x1A4          ; arg3 = 0644
+        mov rax, 2              ; sys_open
+        syscall
+        pop rcx
+        pop rsi
+        mov byte [rcx], sil     ; restore byte
+        pop rcx
+        pop rdi
+        pop rsi
+        mov rbx, rax            ; TOS = fd (or negative errno)
+        mov rdx, [r15]
+        add r15, 8              ; pop addr
+        ret
+
 ;; close ( fd -- result ) close file descriptor
 _close:
         push rdi
@@ -2805,6 +2832,7 @@ WORD64 "throw", _throw, 0, 5
 WORD64 "write", _write_word, 0, 5
 WORD64 "read", _read_word, 0, 4
 WORD64 "openr", _openr, 0, 5
+WORD64 "openw", _openw, 0, 5
 WORD64 "close", _close, 0, 5
 WORD64 "loadfile", _loadfile, 0, 8
 WORD64 "#lib", _dllib, 0, 4

@@ -483,7 +483,8 @@ variable features 100 allot
 : count c@+ ;
 
 ( move — smart overlapping copy: src dst n -- )
-: move >r 2dup u< IF r> cmove> ELSE r> cmove THEN ;
+:. _move> >r 2dup u< 2drop IF r> cmove> ;THEN r> cmove ;
+: move _move> ;
 
 ( pad — scratch buffer, 256 bytes above here )
 : pad here 256+ ;
@@ -564,6 +565,9 @@ AGAIN
 
 ( -f` — compile-time handler for -f flag in command-line args )
 : -f` ;` wsparse needed ;
+
+( see` — on first call, loads lib/see64.ff which redefines see` )
+: see` ;` "lib/see64.ff" needexec ;
 
 ( help` — on first call, loads lib/help64.ff which redefines help` )
 : help` ;` "lib/help64.ff" needexec ;

@@ -3056,4 +3056,202 @@ examining the ELF section headers.
 
 ### Running total
 
-~290 words/macros ported. 428 tests across 68 experiments, all passing.
+~290 words/macros ported. 428 tests across 72 experiments, all passing.
+
+---
+
+## Phase 3g: Self-Booting — The Assembly REPL Dies (Experiment 069)
+
+This is a pivotal moment in the port. Until now, ff64 required an
+external boot file: you ran `./ff64 -f ff64.boot` and the assembly
+kernel's REPL processed the `-f` flag, loaded the boot file, then
+presented a `> ` prompt. Christophe's original i386 `ff` never worked
+this way — it embedded `ff.boot` directly in the binary via FASM's
+`file` directive, compiled it at startup, and handed control to the
+Forth-defined REPL.
+
+DG's directive was clear: "ff64 shouldn't process argv directly, but
+leave it for the Forth code to process." This reflects Lavarenne's
+core philosophy — the assembly kernel does as little as possible; Forth
+defines everything user-facing.
+
+### What was removed
+
+About 110 lines of assembly disappeared:
+
+- **The `-f` argument loop** — assembly code that walked `argv[]`,
+  checked for `-f`, opened files, and fed them to `_compiler`. This
+  was a brute-force mechanism that duplicated what `doargv` does in
+  Forth.
+- **The interactive REPL** — a `> ` prompt, `sys_read` into `inbuf`,
+  `_compiler` call, `ok\n` response loop. Simple but inflexible —
+  no error handling, no stack display, no catch/throw.
+- **Prompt strings** — `"> "` and `"ok\n"` literal data.
+
+### What replaced it
+
+The assembly `_start` became elegant in its minimality:
+
+```
+_start:
+    init registers (r15, rbx, rdx, rbp)
+    set H to heads64, anon to codebuf
+    install SEGV handler
+    save argc/argv
+    set tin/tp to boot64/boot64_end     ← embedded boot source
+    call _compiler                       ← compile the boot source
+    call _semi_exec                      ← run the last anonymous block
+    exit (never reached)
+```
+
+The last line of `ff64.boot` is `_boot ;` — an anonymous block that
+calls `_boot`. The compiler processes this, and `_semi_exec` executes
+it. `_boot` calls `ossetup`, `doargv`, `_hidepvt`, `_top` — and
+`_top` (the Forth REPL) never returns.
+
+### The filter gotcha
+
+The boot source is filtered before embedding to remove comments and
+blank lines:
+
+```makefile
+ff64.boot.min: ff64.boot
+    grep '^[: _A-Za-z0-9]' $< > $@
+```
+
+The `_` in the character class is critical. Without it, `_boot ;`
+(which starts with `_`) gets filtered out. The binary builds,
+boots, compiles all definitions — but never calls `_boot`. There's
+no error. The program just silently falls through to `exit`. This
+cost hours of debugging until we traced it to the grep pattern.
+
+### The accept rewrite
+
+The old `_accept` did bulk reads: `sys_read(stdin, buf, 4096)`. With
+piped input, this could read multiple lines at once, causing the REPL
+to process them as one giant block. The new `_accept` reads
+byte-by-byte until newline (LF=10) or buffer limit. This is slower
+but correct — each `accept` returns exactly one line, which is what
+the Forth REPL expects.
+
+### The prompt change and the Makefile cascade
+
+The assembly REPL printed `> ` before input and `ok\n` after. The
+Forth REPL (`_top` via `ui`/`prompt`) prints ` N; ` where N is the
+stack depth. This broke every test that parsed output.
+
+All 45 experiment Makefiles needed updating:
+- Remove `BOOT = ../../ff64.boot` and `-f $(BOOT)` from commands
+- Change `sed 's/^> //'` to `sed 's/^ *[0-9-]*; *//'` (strip depth prompt)
+- Remove ` ok` from expected output
+- Double `$` for Make escaping in sed end-of-line anchors (`$$`)
+
+This was tedious but necessary — and it proved the test infrastructure's
+value. Without tests, this transition would have been far riskier.
+
+### Running total
+
+Same ~290 words. 414 tests across 69 experiments. The binary is now
+truly self-contained.
+
+---
+
+## Phase 3h: Compatibility and Polish (Experiments 070–072)
+
+With the self-booting binary in place, the next experiments focused on
+compatibility with existing FreeForth code and filling in missing
+utility words.
+
+### TIMES...REPEAT auto-rdrop (Experiment 070)
+
+Every Forth programmer who's used FreeForth writes:
+
+```forth
+10 TIMES r . REPEAT
+```
+
+The i386 version handles this correctly — `REPEAT` detects the RTIMES
+signature in the compiled code and automatically emits `rdrop` to
+clean the return stack. Our ff64 had a separate `LOOP` word for
+counted loops, but this breaks compatibility with all existing
+FreeForth libraries.
+
+The i386 approach (reading machine code bytes to detect the signature)
+is fragile on x86-64 where the instructions are longer. Instead, we
+use a compile-time flag on the data stack:
+
+- `BEGIN` pushes `0` (not counted) then `here`
+- `RTIMES` pushes `-1` (counted) then addresses
+- `REPEAT` consumes the addresses, tests the flag, and conditionally
+  emits the 4-byte `add rsp, 8` sequence (equivalent to `rdrop`)
+- `AGAIN`/`UNTIL` consume the flag with an extra `drop`
+
+The flag travels naturally with loop nesting — each `TIMES` pushes
+its own `-1`, each `REPEAT` consumes exactly one.
+
+### hidepvt compaction (Experiment 071)
+
+The initial `hidepvt` took a shortcut: zeroing the first byte of
+private word names so `words` wouldn't display them. But the headers
+still occupied memory, and tools like `cat -v` could see them as
+`^@boot`-style ghosts. DG wanted true compaction — physically
+removing private headers, as Lavarenne's original does.
+
+**The algorithm:** Walk the dictionary chain from H@ (newest) toward
+older headers. For each private header (bit 3 set in ct byte):
+1. Compute its size from the size byte
+2. Slide all newer headers UP by that amount using `cmove>` (backward
+   copy for overlapping regions)
+3. Advance H@ by the removed header's size
+4. Continue scanning from the next position
+
+This required adding `cmove>` as an assembly primitive — the reverse
+of `cmove`, copying from high to low addresses so overlapping regions
+don't corrupt. The x86 `std ; rep movsb ; cld` sequence handles this
+in three instructions.
+
+**Three bugs discovered:**
+1. `r@` doesn't exist in ff64 — only `r` (as an inline macro). Using
+   `r@` produced a mysterious `error: 0xFF` as the parser hit the
+   dictionary sentinel.
+2. Unicode em-dash `—` in comments. FreeForth's parser doesn't know
+   about UTF-8 — the 3-byte sequence became garbage tokens.
+3. The scan pointer was consumed by `_remove_hdr` with no return value,
+   leaving the loop with nothing to iterate on. Fixed by returning the
+   next scan position.
+
+After compaction, ~485 bytes of header space were reclaimed — about 30
+private definitions physically removed from the dictionary.
+
+### Features buffer and utility words (Experiment 072)
+
+The final polish experiment added several missing pieces:
+
+**The features buffer** — a 100-byte counted string that tracks loaded
+capabilities. Libraries append names at boot time via `_feat`:
+
+```forth
+_feat boot
+_feat help
+_feat dynlink
+```
+
+The `-v` word displays them: `\ features: boot help dynlink`.
+
+**New words:** `count` (ANS name for `c@+`), `move` (smart overlapping
+copy that delegates to `cmove` or `cmove>` depending on direction),
+`pad` (scratch buffer 256 bytes above `here`), `zt` (zero-terminate
+a Forth string for C interop), `append`/`appendc` (counted-string
+buffer operations), `2swap` (inline 4-item stack rotation), `nop`
+(do-nothing placeholder).
+
+**Improved `dump`** now formats output in 16-byte lines with address
+headers, matching Lavarenne's i386 style:
+
+```
+0044e6cd: 68 65 6c 6c 6f 20 77 6f 72 6c 64 00 e8 51 f5 ff
+```
+
+### Running total
+
+~310 words/macros ported. 428 tests across 72 experiments, all passing.
