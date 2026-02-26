@@ -5383,3 +5383,86 @@ Full test suite: **417 passes, 0 failures**.
 
 **Space reclaimed:** H@ moved from ~0x413b1c to ~0x413d01, saving ~485
 bytes of private header space (about 30 private definitions removed).
+
+---
+
+## Experiment 072 — Features buffer and new words
+
+**Goal:** Add the `features` buffer mechanism from i386 ff.ff to ff64,
+plus several commonly-used words missing from ff64.boot.
+
+**Motivation:** The i386 FreeForth has a `features` variable — a 100-byte
+counted-string buffer that tracks what capabilities are loaded.  Libraries
+append their names (e.g., "help", "dynlink") and `-v` displays the list.
+This is useful for debugging and introspection: users can see at a glance
+what's available in the running system.
+
+### New words added to ff64.boot
+
+| Word | Stack effect | Description |
+|------|-------------|-------------|
+| `features` | `( -- addr )` | 100-byte counted-string buffer |
+| `append` | `( addr len buf -- )` | Append string to counted-string buffer |
+| `appendc` | `( char buf -- )` | Append single character to counted-string buffer |
+| `-v`` | `( -- )` | Display `\ features:` followed by loaded feature names |
+| `zt` | `( addr len -- addr )` | Zero-terminate a string (for C interop) |
+| `nop` | `( -- )` | Do-nothing word, used as placeholder |
+| `2swap`` | `( a b c d -- c d a b )` | Inline version of 2swap |
+
+### Implementation notes
+
+**Features registration:** A private helper `_feat`` reads the next word
+from input and appends it (with a leading space) to the features buffer.
+Base features are registered at boot compile time:
+```forth
+_feat boot
+_feat help
+_feat dynlink
+```
+
+**Grep filter challenge:** The boot source is filtered by
+`grep '^[: _A-Za-z0-9]'` before embedding.  Lines starting with `"` (like
+`"help" features append`) get filtered out.  The `_feat`` compile-time
+macro avoids this by starting each registration line with an allowed
+character.
+
+**`append` implementation:** Direct port from i386 ff.ff. Uses the
+counted-string format where the first byte is the length. `2>r`/`2r>` save
+and restore the buffer address and accumulated count during `place`.
+
+**`zt`** is simple (`over+ 0 swap c!`) but essential for C string interop
+— FreeForth strings are (addr, len) pairs, while C expects NUL-terminated.
+
+### Results
+
+| Test | Description | Result |
+|------|-------------|--------|
+| -v shows features | boot help dynlink displayed | PASS |
+| append adds to buffer | dynamic feature registration | PASS |
+| appendc adds char | single character append | PASS |
+| zt zero-terminates | string + len → NUL at end | PASS |
+| 2swap inline | compiled 2swap works | PASS |
+| features is public | survives hidepvt compaction | PASS |
+| -v is public | accessible after boot | PASS |
+
+Full test suite: **424 passes, 0 failures**.
+
+**Additional words added (same experiment):**
+
+| Word | Stack effect | Description |
+|------|-------------|-------------|
+| `count` | `( caddr -- caddr+1 byte )` | ANS standard name for `c@+` |
+| `move` | `( src dst n -- )` | Smart overlapping copy: uses `cmove>` if dst>src, else `cmove` |
+| `pad` | `( -- addr )` | Scratch buffer 256 bytes above `here` |
+
+**Improved `dump`:** Now formats output in 16-byte lines with address
+headers using `TIMES...REPEAT`, matching the i386 `2dump` style:
+```
+0044e6cd: 68 65 6c 6c 6f 20 77 6f 72 6c 64 00 e8 51 f5 ff
+0044e6dd: ...
+```
+
+**Additional tests (11 total):** count, move forward copy, pad offset,
+dump 16-byte line formatting.
+
+Final count: **428 passes, 0 failures**.

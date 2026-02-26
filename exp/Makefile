@@ -49,7 +49,8 @@ EXPERIMENTS = 001-hello64 002-stack64 003-codegen64 004-subrthread64 \
 067-help \
 068-dynlink \
               070-times-repeat \
-              071-hidepvt-compact
+              071-hidepvt-compact \
+              072-features-words
 
 test:
 	@for d in $(EXPERIMENTS); do \

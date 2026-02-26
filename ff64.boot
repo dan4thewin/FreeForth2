@@ -461,6 +461,33 @@ variable noauto pvt
 ( type — output a counted string: addr len -- )
 : type stdout write drop ;
 
+( features — buffer for tracking loaded features )
+( append — append counted string to a counted-string buffer )
+( appendc — append single char to a counted-string buffer )
+( -v` — display list of loaded features )
+( zt — zero-terminate a string: addr len -- addr )
+variable features 100 allot
+: append 2dup c@ + over 2>r c@+ + place drop 2r>
+  2dup c! + 1+ 0 swap c! ;
+: appendc tuck c@+ + tuck c! 0 over 1+ c! over- swap c! ;
+: -v` ."\ features:" features c@+ type cr ;
+: zt over+ 0 swap c! ;
+
+( nop — do-nothing word, used as placeholder )
+:. nop ;
+
+( 2swap` — inline version of 2swap )
+: 2swap` rot` >r` rot` r>` ;
+
+( count — ANS standard name for c@+: addr -- addr+1 byte )
+: count c@+ ;
+
+( move — smart overlapping copy: src dst n -- )
+: move >r 2dup u< IF r> cmove> ELSE r> cmove THEN ;
+
+( pad — scratch buffer, 256 bytes above here )
+: pad here 256+ ;
+
 ( Hide private words — zero the first name byte of pvt-marked headers )
 ( Compact header chain: remove private entries, reclaim space )
 ( hidepvt` is a compile-time macro; _hidepvt is the runtime callable version )
@@ -500,8 +527,9 @@ AGAIN
 :. _argv 8* ff_argv@ + @ ;
 : argv _argv zlen ;
 
-( Hex memory dump )
-: dump bounds dup .l .":" BEGIN space c@+ .b 2dup u<= UNTIL 2drop cr ;
+( Hex memory dump — 16 bytes per line with address header )
+:. _dumpln dup .l .":" 16 TIMES space dupc@ .b 1+ REPEAT ;
+: dump bounds BEGIN 2dup u> WHILE _dumpln cr REPEAT 2drop ;
 
 ( Peephole: >mov replaces variable fetch with inc/dec for ++`/--` )
 : >mov here 7- c@ $48- here 6- c@ $8B- | drop
@@ -549,6 +577,12 @@ dlsetup
 
 ( doargv — evaluate command line arguments as FreeForth words )
 :^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap eval. ;
+
+( Register base features — _feat` appends space-separated names )
+:. _feat` ;` $20 features appendc wsparse features append ;
+_feat boot
+_feat help
+_feat dynlink
 
 ( Call `hidepvt` at compile time, or `_boot ;` for full boot sequence )
 :^ ossetup ;
