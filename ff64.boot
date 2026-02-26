@@ -239,14 +239,6 @@
 \ Tail-call optimization: redefine ;;` now that IF/ELSE/THEN are available
 : ;;` >S0 callmark@ here - 0= drop IF $E9 callmark@ 5- c! ELSE $C3, ,1 THEN ;
 : ;THEN` ;;` THEN` ;
-: _pick_detect
-  here 5- c@ $BB = IF here 4- d@ -5 allot ;THEN
-  here 3- c@ $6A- here 1- c@ $FE& $5A- | 0<> IF !"not_preceded_by_constant" ;THEN
-  here 2- c@ -3 allot swap` $48 c, $DA89 w, s09 ;
-: pick` _pick_detect
-  dup 0- 0= IF drop ;THEN
-  1- 3 << $49 c, $8B c, $5F c, c, ;
-: 2over` 3 lit` pick` 3 lit` pick` ;
 
 ( Inline macros — miscellaneous )
 \ reverse` pops return address and calls it (turns call into jmp)
@@ -255,6 +247,11 @@
 ( Forward jump resolution helper )
 \ _then ( addr -- ) patches a forward jmp's rel32 at addr to target here
 : _then here over - 4 - swap d! ;
+
+( Private word infrastructure — moved early so :. is available throughout )
+: ct|! 8+ dupc@ rot | swap c! ;
+: pvt` 8 H@ ct|! ;
+: :.` :` pvt` ;
 
 ( Advanced loop infrastructure: START/ENTER/BREAK/END )
 \ Structured loop with optional first-entry skip.
@@ -289,7 +286,7 @@ variable mrk 0 mrk 8+ !
 : ENTER` >S0 mrk@ 4- _then ;
 : TILL` >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
 : BREAK` >S0 $E9 c, 0 d, here 4- >cs _then ;
-: _resolve_breaks cs> 0; _then _resolve_breaks ;
+:. _resolve_breaks cs> 0; _then _resolve_breaks ;
 : END` >S0 $E9 c, mrk@ here 4+ - d, _resolve_breaks cs> cs> mrk 2! ;
 
 ( Dotted conditionals: for stack-boolean values instead of FLAGS )
@@ -303,18 +300,23 @@ variable mrk 0 mrk 8+ !
 : zFALSE 0 0- drop ;
 : nzTRUE 1 0- drop ;
 
+( Indexed stack access — pick` peephole detects preceding literal )
+:. _pick_detect
+  here 5- c@ $BB = IF here 4- d@ -5 allot ;THEN
+  here 3- c@ $6A- here 1- c@ $FE& $5A- | 0<> IF !"not_preceded_by_constant" ;THEN
+  here 2- c@ -3 allot swap` $48 c, $DA89 w, s09 ;
+: pick` _pick_detect
+  dup 0- 0= IF drop ;THEN
+  1- 3 << $49 c, $8B c, $5F c, c, ;
+: 2over` 3 lit` pick` 3 lit` pick` ;
+
 ( Header layout constants )
 8 constant h.ct
 9 constant h.sz
 10 constant h.nm
 
-( Dictionary access )
-: ct|! 8+ dupc@ rot | swap c! ;
-: pvt` 8 H@ ct|! ;
-
 ( Dictionary operations )
 : execute >r ;
-: :.` :` pvt` ;
 : create` :` 1 H@ ct|! anon:` ;
 : variable` create` 0 , anon:` ;
 : pvtmargin $10 H@ ct|! ;
