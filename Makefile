@@ -22,14 +22,23 @@ ff64: ff64.o
 cmpl dict: ff
 	./ff -f mkimage.ff
 
+cmpl64 cmpl64.cfg: ff64
+	./ff64 -f lib/mkimage64.ff
+
 fftk.o: fftk.asm cmpl dict
 	fasm $< $@
 
 fftk: fftk.o
 	$(LD) -o $@ $<
 
+fftk64.o: fftk64.asm cmpl64 cmpl64.cfg
+	fasm $< $@
+
+fftk64: fftk64.o
+	$(LD64) -o $@ $<
+
 clean:
-	rm -f ff ff64 fftk *.o ff64.boot.min
+	rm -f ff ff64 fftk fftk64 *.o ff64.boot.min cmpl64 cmpl64.cfg
 
 test1:
 	@set -o pipefail; \

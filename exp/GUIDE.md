@@ -3255,3 +3255,210 @@ headers, matching Lavarenne's i386 style:
 ### Running total
 
 ~310 words/macros ported. 428 tests across 72 experiments, all passing.
+
+---
+
+## Phase 3i: The Turnkey Mechanism — From Compiler to Program
+
+The turnkey is FreeForth's way of freezing a compiled system into a
+standalone binary. The i386 version has had this since the beginning
+(`fftk.asm` + `lib/mkimage.ff`). Understanding how it works reveals
+a beautiful piece of engineering: vectors, image dumping, and one
+clever `-f` handler that rewires the boot sequence.
+
+### How the i386 turnkey works
+
+The flow has three stages:
+
+**Stage 1: Compile.** Run `./ff -f cat.ff -f mkimage.ff`. The compiler
+loads `cat.ff`, which defines words like `cat` and `main`. Then it
+loads `mkimage.ff`, which dumps two files:
+- `cmpl` — the raw code image (variables + assembly runtime + compiled
+  Forth definitions)
+- `dict` — the dictionary headers (separate because i386 headers live
+  in BSS, outside the code region)
+
+**Stage 2: Assemble.** `fasm fftk.asm` embeds both files. The startup
+code (`_start`) relocates the headers to their runtime location,
+initializes variables, and jumps to `_bootxt` (offset 16 in the
+image) — the execution token of `_boot`.
+
+**Stage 3: Run.** The turnkey binary executes `_boot`, which calls
+`ossetup → doargv → _top`. But here's the trick: by the time the
+image was dumped, `doargv` and `_top` were **already rewritten**.
+The binary runs `main` and exits, never entering the REPL.
+
+### The `-f` handler and the mainxt trick
+
+The magic lives in `fflin.boot` (the Linux boot overlay):
+
+```forth
+variable mainxt pvt
+:. _main mainxt @ execute 0 exit
+: -f` needs` "main" find 0- 0= drop
+  IF mainxt ! _main ' _top !^ doargv n^ ELSE drop THEN ;
+```
+
+When `-f somefile.ff` is processed:
+
+1. `needs` loads the file, compiling all its definitions.
+2. `"main" find` looks up `main` in the dictionary.
+3. **If `main` is found:** its xt goes into `mainxt`, then the boot
+   vectors are rewritten:
+   - `_main ' _top !^` — replaces `_top` (the REPL) with `_main`
+   - `_postboot n^` — nops the `_postboot` vector, skipping both
+     argument processing (`doargv`) and header compaction (`_hidepvt`)
+
+   After this, the boot sequence `_boot → ossetup → _postboot → _top`
+   becomes `_boot → ossetup → nop → _main`. And `_main` does:
+   `mainxt @ execute 0 exit` — run main, exit with code 0.
+4. **If `main` is not found:** the file was a library. Drop the
+   leftover string and continue processing arguments normally.
+
+### Why vectors make this work
+
+`_top` and `_postboot` are vector words (defined with `:^`). A vector
+is a word whose body is an indirect jump — it calls through a stored
+address that can be changed at runtime with `!^`. This is the same
+mechanism used for `ossetup` (platform init hook).
+
+`doargv` itself is a private word (`:. doargv`), not a vector — it
+doesn't need independent redirection. The `_postboot` vector wraps
+`doargv _hidepvt` together, since the turnkey needs to skip both.
+
+When the image is dumped, the vectors contain their **rewritten**
+values. The turnkey binary's `_boot` follows the same path as the
+interactive compiler, but the vectors point to different code:
+
+| Vector | Interactive | Turnkey |
+|--------|------------|---------|
+| `ossetup` | platform init | platform init (same) |
+| `_postboot` | doargv + hidepvt | nop (turnkey needs neither) |
+| `_top` | REPL loop | `_main` → run main, exit |
+
+### cat.ff — a sample turnkey program
+
+```forth
+needs mmap.ff
+: ok?  dup $FF | 1+ drop 0= IF strerror rdrop ;THEN drop ;
+: cat  m mmapr ok? m @ m mm.sz+ @ type m munmap 2drop ;
+: main 0 argc 1- TIMES 1+ dup argv cat REPEAT ;
+```
+
+When compiled with `./ff -f cat.ff -f mkimage.ff`:
+1. `needs mmap.ff` loads the memory-mapping library
+2. `ok?`, `cat`, `main` are compiled
+3. `-f cat.ff` detects `main` → rewrites vectors
+4. `-f mkimage.ff` dumps the image with rewritten vectors
+5. The resulting `fftk` binary runs `main`, which iterates over
+   command-line arguments and memory-maps each file to stdout.
+
+Note: `main` handles `argc`/`argv` itself. The turnkey's argument
+processing vector (`doargv`) is a nop — all arguments belong to the
+program now, not the Forth system.
+
+### Why _hidepvt doesn't matter for turnkey
+
+In interactive use, `_hidepvt` removes private word headers from the
+dictionary to speed up lookups. But a turnkey binary never searches
+the dictionary at runtime — it runs pre-compiled machine code.
+Private headers waste a few hundred bytes of space but cause no
+performance impact. The i386 `_boot` doesn't even call `_hidepvt`:
+
+```forth
+:. _boot ossetup doargv _top ;
+```
+
+The ff64 version groups `doargv` and `_hidepvt` into a single
+`_postboot` vector:
+
+```forth
+:^ _postboot doargv _hidepvt ;
+:. _boot ossetup _postboot _top ;
+```
+
+For turnkey builds, `_postboot` is nop'd — skipping both argument
+processing and header compaction in one operation.
+
+### The ff64 port
+
+For ff64, the same mechanism applies with minor differences:
+- Headers live in `.flat` (not BSS), so no separate `dict` file —
+  the `cmpl64` dump includes everything
+- 64-bit variables at known offsets (8 bytes each instead of 4)
+- `_bootxt` at offset 72 (was offset 16 on i386)
+- The `-f` handler detects `main` and rewrites vectors (`_top`, `_postboot`)
+- `DS0` (data stack top address) stored via a config file since
+  `dstack_top` is a label not exposed to Forth
+
+### Building a Turnkey (Experiment 073)
+
+The 64-bit turnkey builder is now implemented and tested.
+
+**Build a turnkey from a program file:**
+```bash
+./ff64 -f program.ff -f lib/mkimage64.ff    # produces cmpl64, cmpl64.cfg
+fasm fftk64.asm fftk64.o                     # assemble turnkey loader
+ld -m elf_x86_64 -lc -ldl \
+   --dynamic-linker=/lib64/ld-linux-x86-64.so.2 \
+   -o fftk64 fftk64.o                        # link turnkey binary
+./fftk64                                      # run standalone program
+```
+
+Or use `make fftk64` after generating cmpl64.
+
+**Build a pre-compiled REPL:**
+```bash
+./ff64 -f lib/mkimage64.ff && make fftk64
+./fftk64                     # instant REPL (no boot compilation)
+```
+
+**The three files:**
+
+| File | Purpose | Size |
+|------|---------|------|
+| `lib/mkimage64.ff` | Dump script — captures running system state | ~25 lines |
+| `cmpl64` | Raw code image (H to here) | ~310KB |
+| `cmpl64.cfg` | DS0 + segvsetup address (16 bytes) | 16B |
+| `fftk64.asm` | Turnkey loader — embeds cmpl64, boots | ~60 lines |
+
+**Variable offset table in cmpl64:**
+
+| Offset | Size | Name | fftk64 startup |
+|--------|------|------|----------------|
+| 0 | 8 | H | Already correct (header chain) |
+| 8 | 8 | anon | Set to saved_here by mkimage64 |
+| 16 | 8 | callmark | Cleared to 0 |
+| 48 | 8 | xfp | Cleared to 0 |
+| 56 | 8 | ff_argc | Set from rsp |
+| 64 | 8 | ff_argv | Set from rsp+8 |
+| 72 | 8 | bootxt | Set to _boot xt by mkimage64 |
+| 88 | 1 | SC | Cleared to 0 |
+| 89 | 1 | cond_jmp | Cleared to 0 |
+
+### Critical Bug: loadfile Overwrite
+
+The most significant bug found during turnkey development:
+`loadfile` reset `rbp = hereatexec` before each file's compilation.
+But `hereatexec` was never updated. With multiple `-f` files, the
+second file's compilation started at the **same address** as the
+first — overwriting the first file's compiled definitions.
+
+The fix: update `hereatexec` after `_compiler` returns in `loadfile`.
+This bug was invisible for single `-f` usage and for `needed`-based
+loading, only manifesting with multiple `-f` arguments.
+
+### The `n^` Correction
+
+The vector nop operation `n^` was corrected from `dup 6+ swap 1+ d!`
+to `dup 5+ swap 1+ d!`. The push/ret preamble is:
+```
+xt+0: 68 <target32>  ; push imm32
+xt+5: C3             ; ret
+xt+6: ...            ; body code
+```
+
+With `6+`, n^ set the target to xt+6 (body start), **restoring** the
+vector to its original behavior. With `5+`, n^ correctly sets the
+target to xt+5 (the ret), creating a true nop: `push xt+5; ret` →
+jumps to ret → returns to caller.

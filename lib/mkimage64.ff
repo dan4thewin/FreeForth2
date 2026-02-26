@@ -1,0 +1,26 @@
+\ mkimage64.ff — dump ff64 code image for turnkey builder
+\
+\ Loaded with: ./ff64 -f lib/mkimage64.ff
+\ Produces:
+\   cmpl64     — raw code image from H address to here
+\   cmpl64.cfg — 16-byte file: DS0 + segvsetup address
+\
+\ The cmpl64 file contains the entire .flat section content:
+\ variables, assembly runtime, headers, buffers, and compiled
+\ Forth definitions. fftk64.asm includes this at the same section
+\ offset, preserving all addresses.
+\
+\ Before dumping, we store key values in the image:
+\   anon (offset 8)    = here (where fftk64 sets rbp)
+\   bootxt (offset 72) = _boot xt (where fftk64 jumps)
+
+here
+: _save openw dup >r write drop r> close drop ;
+: _mkname ( -- addr 5 ) pad $5F over c! "boot" drop pad 1+ 4 cmove pad 5 ;
+: _writecfg ( -- ) DS0 pad ! segvsetup pad 8 + ! pad 16 "cmpl64.cfg" _save ;
+_mkname find drop _bootxt !
+0 libc !
+dup anon !
+H swap over - "cmpl64" _save
+_writecfg
+0 exit ;

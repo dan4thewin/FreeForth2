@@ -332,7 +332,7 @@ variable mrk 0 mrk 8+ !
 : -call callmark@ here = 2drop IF -c ELSE drop THEN ;
 : @^ ( xt -- target ) 1+ d@ ;
 : !^ ( new-target xt -- ) 1+ d! ;
-: n^ ( xt -- ) dup 6+ swap 1+ d! ;
+: n^ ( xt -- ) dup 5+ swap 1+ d! ;
 : x^ ( xt -- ) 6+ >r ;
 : '` -call lit` ;
 ( ?` converts preceding call to conditional jump )
@@ -564,7 +564,10 @@ AGAIN
 : needs` ;` wsparse needed ;
 
 ( -f` — compile-time handler for -f flag in command-line args )
-: -f` ;` wsparse needed ;
+( If loaded file defines "main", rewrite vectors for turnkey mode: )
+(   _top becomes _main, doargv becomes nop, argc/argv belong to main )
+variable mainxt pvt
+:. _main mainxt @ execute 0 exit ;
 
 ( see` — on first call, loads lib/see64.ff which redefines see` )
 : see` ;` "lib/see64.ff" needexec ;
@@ -580,7 +583,14 @@ dlsetup
 : libc_ libc@ #fun #call ;
 
 ( doargv — evaluate command line arguments as FreeForth words )
-:^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap eval. ;
+:. doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap eval. ;
+
+( _postboot — doargv + hidepvt; nop'd for turnkey )
+:^ _postboot doargv _hidepvt ;
+
+( -f` must come after _postboot — it references _postboot for vector nop )
+:. _f_main mainxt ! _main ' _top ' !^ _postboot ' n^ ;
+: -f` ;` wsparse needed "main" find 0- 0<> drop IF drop ;THEN _f_main ;
 
 ( Register base features — _feat` appends space-separated names )
 :. _feat` ;` $20 features appendc wsparse features append ;
@@ -590,5 +600,5 @@ _feat dynlink
 
 ( Call `hidepvt` at compile time, or `_boot ;` for full boot sequence )
 :^ ossetup ;
-:. _boot ossetup doargv _hidepvt _top ;
+:. _boot ossetup _postboot _top ;
 _boot ;

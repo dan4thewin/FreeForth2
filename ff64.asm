@@ -384,6 +384,12 @@ _depth: sub r15, 8              ; depth ( -- n )
         dec rbx                 ; don't count the item depth itself pushed
         ret
 
+_DS0:   sub r15, 8              ; DS0 ( -- addr ) data stack top address
+        mov [r15], rdx
+        mov rdx, rbx
+        lea rbx, [dstack_top]
+        ret
+
 ;; Memory compilation words
 _here:  sub r15, 8              ; here ( -- addr )
         mov [r15], rdx
@@ -2563,8 +2569,8 @@ _loadfile:
         pop rdx
         pop rbx
         ;; rbp is now past all loaded definitions — do NOT restore it.
-        ;; When we return to anonymous code (via its ret), _semi_exec
-        ;; will do `mov [anon], rbp` which preserves loaded code.
+        ;; Update hereatexec so next loadfile won't overwrite this code.
+        mov [hereatexec], rbp
         ;; Restore input state
         pop qword [filebuf_ptr]
         pop qword [tp]
@@ -2807,6 +2813,8 @@ WORD64 "ff_argc", ff_argc, 1, 7
 WORD64 "ff_argv", ff_argv, 1, 7
 WORD64 "_bootxt", bootxt, 1, 7
 WORD64 "depth", _depth, 0, 5
+WORD64 "DS0", _DS0, 0, 3
+WORD64 "segvsetup", _install_segv, 1, 9
 WORD64 "/", _div, 0, 1
 WORD64 "+!", _addstore, 0, 2
 WORD64 "d@", _dfetch, 0, 2

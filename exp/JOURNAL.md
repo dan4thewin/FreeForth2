@@ -5466,3 +5466,265 @@ headers using `TIMES...REPEAT`, matching the i386 `2dump` style:
 dump 16-byte line formatting.
 
 Final count: **428 passes, 0 failures**.
+
+## Experiment 073 — Turnkey Builder (fftk64)
+
+**Goal:** Create a turnkey binary builder for ff64 — a tool that
+freezes a pre-compiled Forth system into a standalone binary. This is
+the 64-bit equivalent of the i386 `fftk`.
+
+### How the i386 Turnkey Works
+
+The i386 turnkey (`fftk`) uses a two-file mechanism:
+
+1. **`mkimage.ff`** runs inside `ff`, dumps two files:
+   - `cmpl` — raw code image from H to here (compiled definitions)
+   - `dict` — dictionary headers (separate because they grow in BSS)
+2. **`fftk.asm`** embeds both files, adds startup code that:
+   - Relocates headers to the BSS area
+   - Initializes variables (argc, argv, etc.)
+   - Jumps to `_boot` via the saved `_bootxt`
+
+### Why ff64 is Simpler
+
+In ff64, dictionary headers live in `headbuf` which is part of the
+contiguous `.flat` section between the assembly runtime and `codebuf`.
+The code image dump (from H to here) **includes the headers**. No
+separate `dict` file needed. No header relocation at startup.
+
+### The Address Preservation Trick
+
+The turnkey's key insight: if cmpl64 is placed at offset 0 of
+fftk64.asm's `.flat` section, and H is at offset 0 of ff64.asm's
+`.flat` section, and both use identical linker flags — then the
+linker assigns the same virtual address to `.flat` in both binaries.
+All compiled addresses (RIP-relative calls, absolute data references)
+remain valid without relocation.
+
+Verified: both ff64 and fftk64 have `.flat` at VA `0x403018`.
+
+### The `-f` / `main` Detection Mechanism
+
+When `./ff64 -f program.ff` loads a file containing a word named
+`main`, the `-f` handler:
+
+1. Stores main's xt in the `mainxt` variable
+2. Rewrites `_top` vector (the REPL loop) to point to `_main`
+3. Nops the `doargv` vector (prevents re-processing of arguments)
+
+`_main` simply does: `mainxt @ execute 0 exit` — runs the user's
+main word and exits with code 0.
+
+The turnkey captures this rewritten state: when `_boot` runs inside
+fftk64, it calls ossetup → doargv (nop'd) → _hidepvt → _top (→ _main
+→ main → exit). The standalone binary runs the user's program directly.
+
+### Vectors and `n^`
+
+FreeForth vectors (`:^` words) use a 6-byte preamble:
+```
+68 <target32> C3    ; push target; ret → jumps to target
+```
+
+- `!^` rewrites the target (redirect the vector)
+- `n^` sets target to xt+5 (the `ret` byte itself), creating a nop:
+  `push xt+5; ret` → jumps to ret → returns immediately
+- `@^` reads the current target
+- `x^` pushes the body address (xt+6) on the return stack, jumping
+  to the original body regardless of current vector target
+
+The `n^` definition was corrected from `dup 6+ swap 1+ d!` to
+`dup 5+ swap 1+ d!`. With `6+`, n^ was restoring the vector to its
+original body (xt+6). With `5+`, it correctly nops the vector by
+pointing to the ret instruction (xt+5).
+
+### Implementation: Three Files
+
+**`lib/mkimage64.ff`** — The dump script:
+```forth
+here                          \ capture current here
+: _save openw dup >r write drop r> close drop ;
+: _mkname pad $5F over c! "boot" drop pad 1+ 4 cmove pad 5 ;
+: _writecfg DS0 pad ! segvsetup pad 8 + ! pad 16 "cmpl64.cfg" _save ;
+_mkname find drop _bootxt !   \ set bootxt = _boot's xt
+0 libc !                      \ zero stale dlopen handle
+dup anon !                    \ anon = saved_here (fftk64's rbp)
+H swap over - "cmpl64" _save  \ dump image
+_writecfg                     \ dump DS0 + segvsetup addresses
+0 exit ;
+```
+
+Key details:
+- `_mkname` constructs the string "_boot" manually (because
+  `"_boot"` undergoes underscore→space substitution)
+- `0 libc !` zeros the dlopen handle so `dlsetup` reinitializes
+  in the turnkey process
+- `_writecfg` saves DS0 (data stack top) and `_install_segv`
+  address for fftk64's startup
+
+**`fftk64.asm`** — The turnkey loader:
+- Embeds `cmpl64` at the start of `.flat` (address preservation)
+- Reads DS0 and segvsetup address from `cmpl64.cfg`
+- Calls `_install_segv` to register the SEGV handler
+- Initializes r15 (data stack), rbp (code pointer), argc/argv
+- Clears compiler state (callmark, xfp, SC, cond_jmp)
+- Sets rbp to `fftk64_codebuf` (65KB past its own code) to
+  prevent new Forth compilation from overwriting startup code
+- Jumps to bootxt (→ `_boot`)
+- Includes dummy calls to dlopen/dlsym/dlerror to force the
+  linker to include these symbols
+
+**`Makefile` targets:**
+```make
+cmpl64: ff64
+    ./ff64 -f lib/mkimage64.ff
+fftk64.o: fftk64.asm cmpl64
+    fasm $< $@
+fftk64: fftk64.o
+    $(LD64) -o $@ $<
+```
+
+### Bugs Found and Fixed
+
+**1. `n^` direction bug (xt+6 vs xt+5)**
+
+The original `n^` definition used `dup 6+ swap 1+ d!`, which set
+the vector target to xt+6 (the body start) instead of xt+5 (the
+ret instruction). This made `doargv ' n^` a no-op — doargv still
+ran its full body. Fixed to `dup 5+ swap 1+ d!`.
+
+**2. Loadfile overwrite bug — hereatexec not updated**
+
+The most significant bug. When multiple `-f` files are loaded,
+`loadfile` resets `rbp = hereatexec` before each file's
+compilation. But `hereatexec` was only set once (by `_semi_exec`
+during boot). After the first file compiled (advancing rbp past
+its definitions), the second `loadfile` call reset rbp to the
+**original** hereatexec value — **before the first file's code**.
+The second file's compilation overwrote the first file's compiled
+definitions.
+
+Fix: added `mov [hereatexec], rbp` after `_compiler` returns in
+`_loadfile`. Now each file's compilation advances hereatexec so
+the next file compiles past it.
+
+This bug was invisible for single `-f` arguments and for
+`needed`-based loading (where the loaded file returns to the
+caller which continues at the advanced rbp). It only manifested
+with multiple `-f` arguments on the command line.
+
+**3. Stale dlopen handle**
+
+The dumped image contains ff64's dlopen handle for `libc.so.6`
+in the `libc` variable. In fftk64 (a new process), this handle is
+invalid. `dlsetup` checks `libc@ 0<>;` and returns early if
+non-zero, skipping re-initialization. Fix: zero `libc` in
+mkimage64.ff before dumping.
+
+**4. Missing SEGV handler in fftk64**
+
+`_install_segv` (the sigaction syscall for SIGSEGV) is called in
+ff64.asm's `_start` but not in fftk64.asm's `_start`. The handler
+code exists in the image but the syscall to register it hasn't
+been made. Fix: exposed `_install_segv` as a Forth-accessible
+word (`segvsetup`, ct=1), stored its address in `cmpl64.cfg`, and
+added `call qword [segv_addr]` to fftk64's startup.
+
+**5. rbp overlap with fftk64 code**
+
+Initially set rbp to saved_here (end of cmpl64 in the image). But
+fftk64.asm's `_start` code lives right after the embedded cmpl64.
+New Forth compilation would overwrite the startup code. Fixed by
+adding `fftk64_codebuf rb 65536` after all fftk64 code and setting
+rbp there.
+
+**6. String literal `"_boot"` underscore substitution**
+
+Can't use `"_boot"` to look up the `_boot` word — underscore
+becomes space. Solution: `_mkname` constructs the string manually
+using `$5F` (ASCII underscore) and byte-copy operations.
+
+### Test Results
+
+| Test | Description |
+|------|-------------|
+| turnkey hello | `."Hello, turnkey!" cr` prints and exits |
+| turnkey 42 | `42 . cr` prints 42 and exits |
+| turnkey dup-on-empty | `dup . cr` on empty stack prints 0 |
+| repl arithmetic | `42 . cr` in REPL mode |
+| repl string | `"Hello" type cr` in REPL mode |
+| repl definition | `: sq dup * ; 7 sq . cr` in REPL mode |
+
+All 6 pass. Full test suite: **455 passes, 0 failures**.
+
+### Post-commit refinement: `_postboot` vector
+
+After the initial commit, the turnkey mechanism was refined:
+
+- **`doargv` demoted from vector to private word** (`:^` → `:.`).
+  It doesn't need independent redirection — only `_top` and the
+  new `_postboot` need to be vectors.
+- **New `:^ _postboot doargv _hidepvt ;`** — groups both into a
+  single vector that gets nop'd for turnkey. This means fftk64
+  skips both argument processing AND header compaction.
+- **`_boot` simplified** from `ossetup doargv _hidepvt _top` to
+  `ossetup _postboot _top`.
+
+### Known issue: fragile `here` capture across `_semi_exec`
+
+During the refinement, an attempt to simplify `_mkname` (which
+manually constructs the string "_boot" byte-by-byte) with the
+backslash escape `"\_boot"` revealed a fragile interaction between
+`here` and `_semi_exec`.
+
+**Simplest reproduction** (in a file loaded via `-f`):
+```forth
+\ File: test.ff — load with: ./ff64 -f test.ff
+here
+: dummy 99 . cr ;
+dup ."saved:_" .x cr
+0 exit ;
+```
+**Expected:** `saved: 44XXXX` (some valid code address)
+**Actual:** `saved: 0`
+
+But a literal constant survives:
+```forth
+\ File: test2.ff — load with: ./ff64 -f test2.ff
+42
+: dummy 99 . cr ;
+dup ."saved:_" .x cr
+0 exit ;
+```
+**Output:** `saved: 2a` (42 decimal — correct)
+
+**What's happening:** `here` compiles to an inline push of `rbp`
+(the code pointer). When the anonymous block containing `here` is
+executed by `_semi_exec`, `rbp` has been reset to `anon` (the start
+of the anonymous block). So `here` pushes the anon address, not the
+end-of-code address that a programmer might expect.
+
+When a `: definition ;` follows, `_semi_exec` runs again — it saves
+the current rbp to `hereatexec`, resets rbp to anon, and executes
+the anonymous code accumulated between the two semicolons. If there
+IS no anonymous code between them (just the `:` definition), the
+anonymous block is empty and the captured `here` value may be stale
+or zero depending on exact compilation state.
+
+The original `_mkname` definition works because its larger body
+causes enough code to be emitted that the rbp/anon positions align
+correctly for the subsequent anonymous code to capture a valid
+`here`. Changing the body (even to a functionally equivalent but
+shorter definition) shifts these positions and breaks the capture.
+
+**Workaround:** The `_mkname` pattern in `lib/mkimage64.ff` is left
+as-is. Any future refactoring of mkimage64.ff must test the full
+multi-file pipeline (`./ff64 -f program.ff -f lib/mkimage64.ff`)
+to verify that `here` captures a non-zero value.
+
+**Root cause:** The `_semi_exec` mechanism interleaves compilation
+and execution in ways that make rbp (and therefore `here`) context-
+dependent. This is a fundamental aspect of FreeForth's immediate
+compilation model, not a bug per se, but it creates surprising
+behavior for code that captures `here` across definition boundaries
+in loaded files.
