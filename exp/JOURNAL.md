@@ -5202,3 +5202,75 @@ must be doubled (`$$`) for Make escaping.
 - **The filter pattern gotcha:** `grep '^[: A-Za-z0-9]'` misses
   `_boot ;` because `_` isn't in the character class. Always include
   `_` in the filter.
+
+---
+
+## Experiment 070: TIMES...REPEAT Auto-rdrop
+
+**Goal:** Make `TIMES ... REPEAT` automatically emit `rdrop`, matching
+i386 ff behavior. In Lavarenne's original, `END``/`REPEAT`` detect the
+RTIMES machine-code signature and emit `rdrop`. Our ff64 had a separate
+`LOOP`` word for counted loops, but this breaks compatibility with
+existing FreeForth code that universally uses `TIMES ... REPEAT`.
+
+### Background
+
+In i386 ff.boot:
+- `RTIMES`` emits `dec [esp]; js rel8` and calls `BEGIN`` to record the
+  loop top in mrk
+- `END`` reads the dword at the loop top; if it matches `$007808FF` (the
+  RTIMES signature), it emits `rdrop`` to clean the return stack
+- `REPEAT`` calls `END``, inheriting the detection
+
+In ff64, we had:
+- `RTIMES`` emits `dec qword [rsp]; js rel32` (6 bytes + 4-byte offset)
+- `LOOP`` explicitly emits `rdrop``
+- `REPEAT`` does NOT emit `rdrop``
+
+Every existing ff.boot/ff.ff/lib/*.ff file uses `TIMES ... REPEAT`.
+
+### Design: Flag on the Compile-Time Data Stack
+
+The i386 approach (reading machine code) is fragile and requires
+inverting a condition inside a compile-time word, which is complex in
+FreeForth. Instead, we use a flag on the data stack:
+
+1. `BEGIN`` pushes `0` (not counted) then `here` (loop top address)
+2. `RTIMES`` pushes `-1` (counted) then addresses
+3. `REPEAT`` consumes the two addresses, then checks the flag:
+   - If 0 (not counted): no rdrop
+   - If -1 (counted): emit rdrop bytes
+4. `AGAIN``/`UNTIL`` consume the flag with an extra `drop`
+
+The flag travels with the loop level on the data stack, so nesting
+works naturally: each TIMES pushes its own -1, each REPEAT consumes it.
+
+### Implementation Details
+
+Extracted `_jmp_back` and `_cjmp_back` helpers from the old `AGAIN``
+and `UNTIL``. These include `>S0` for SWAPbit reconciliation — a
+critical detail discovered when the initial implementation omitted it,
+causing backward jumps with stale SWAPbit state.
+
+`REPEAT`` uses `IF _emit_rdrop THEN` (without backticks) for the
+conditional rdrop. Inside a `:` definition, `IF`/`THEN` are found via
+backtick dispatch and called at compile time, inlining conditional jump
+code into REPEAT`'s body. When REPEAT` runs at the user's compile time,
+the inlined branch tests the flag and conditionally calls `_emit_rdrop`.
+
+`_emit_rdrop` directly emits `$48 $83 $C4 $08` (REX.W add rsp,8) —
+the same bytes as `rdrop``.
+
+### Results
+
+| Test | Description | Status |
+|------|-------------|--------|
+| TIMES REPEAT basic | 3 TIMES 42 . REPEAT | PASS |
+| TIMES LOOP still works | 3 TIMES 42 . LOOP (explicit) | PASS |
+| TIMES REPEAT zero count | 0 TIMES ... REPEAT (skip) | PASS |
+| TIMES REPEAT with r | r reads loop counter | PASS |
+| TIMES REPEAT nested | 2×3 nested counted loops | PASS |
+| TIMES REPEAT stack clean | stack correct after loop | PASS |
+| BEGIN WHILE REPEAT | uncounted loop unaffected | PASS |
+| BEGIN UNTIL | unaffected | PASS |
+| BEGIN AGAIN | unaffected | PASS |
