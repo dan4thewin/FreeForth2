@@ -5274,3 +5274,112 @@ the same bytes as `rdrop``.
 | BEGIN WHILE REPEAT | uncounted loop unaffected | PASS |
 | BEGIN UNTIL | unaffected | PASS |
 | BEGIN AGAIN | unaffected | PASS |
+
+---
+
+## Experiment 071 — hidepvt compaction
+
+**Goal:** Replace the old hidepvt (which just zeroed the first name byte)
+with true compaction that removes private headers entirely, reclaiming
+the memory they occupied.
+
+**Motivation:** The original i386 FreeForth's `hidepvt` performs
+compaction — it physically removes private headers from the dictionary
+chain and slides the remaining headers to close the gaps.  Our ff64 port
+initially took a shortcut: zeroing the first name byte so `words` wouldn't
+display private words.  But the headers still occupied space, and
+`words bye | tr ' ' '\n' | grep -a boot | cat -v` revealed them as
+`^@boot`-style entries.  DG requested real compaction so that private
+words are truly gone, matching i386 behaviour.
+
+### Design
+
+Dictionary headers grow downward from tib.  H@ points to the lowest
+(newest) header.  Private headers have bit 3 set in the ct byte.
+Pvtmargin has bit 4 set, marking where to stop the walk.
+
+**Algorithm:** Walk the chain from H@ toward older headers.  For each
+private header:
+1. Compute its size: `h.sz+ c@ h.nm+ 1+` (= 8 + 1 + 1 + name_len + 1)
+2. Copy all newer headers (from H@ to addr) UP by that size, using
+   `cmove>` (backward byte copy for overlapping regions)
+3. Advance H@ by the removed header's size
+4. Return addr+sz as the next scan position (hdr_C slid into the old
+   hdr_B's position... actually hdr_C was already there and didn't move;
+   the scan pointer advances past the removed header to where the next
+   untouched header lives)
+
+For non-private headers, simply advance via `h.next`.
+
+### Implementation
+
+**New assembly primitive: `cmove>`** (`_cmove_up` in ff64.asm)
+```asm
+_cmove_up:                      ; cmove> ( src dst n -- )
+    push rsi / push rdi
+    mov rcx, rbx                ; n
+    mov rdi, rdx                ; dst
+    mov rsi, [r15]              ; src
+    lea rdi, [rdi+rcx-1]       ; last byte of dst
+    lea rsi, [rsi+rcx-1]       ; last byte of src
+    std ; rep movsb ; cld       ; copy backward
+    pop rdi / pop rsi
+    ... restore data stack ...
+```
+
+**Forth definitions** (in ff64.boot):
+```forth
+:. _hdr_size h.sz+ c@ h.nm+ 1+ ;
+:. _remove_hdr ( addr -- addr+sz )
+  dup _hdr_size >r
+  dup H@ - H@            ( addr n src -- R: sz )
+  swap H@ r + swap       ( addr src dst n )
+  cmove>                 ( addr )
+  r> dup H +! + ;        ( addr+sz )
+:. _hidepvt hide@ 0; drop
+  H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
+    dup h.ct+ c@ dup $10& 0<> drop IF 2drop ;THEN
+    8& 0<> drop IF _remove_hdr ELSE h.next THEN
+  REPEAT drop ;
+```
+
+### Debugging journey
+
+Three bugs were found and fixed during development:
+
+1. **`r@` doesn't exist in ff64.** The initial _remove_hdr used `r@` to
+   read the return stack, which exists in standard Forth but not in
+   FreeForth2's ff64 (which only has `r` as an inline backtick macro).
+   This produced a mysterious `error: 0xFF` during boot — the 0xFF is
+   the dictionary sentinel ct value, surfacing when the error handler
+   tried to print the unfound word.
+
+2. **Unicode em-dash in comments.** A stack comment used `—` (U+2014,
+   3 bytes: E2 80 94) instead of ASCII `--`.  FreeForth's compiler
+   tried to parse these UTF-8 bytes as word names, producing additional
+   errors.
+
+3. **Scan pointer consumed by _remove_hdr.** The initial design had
+   `_remove_hdr ( addr -- )` consuming the address with no return value.
+   The `_hidepvt` loop needed the scan pointer on the stack for the next
+   iteration, so after removing a header, the loop had nothing to scan
+   from — causing infinite loops or crashes.  Fixed by changing
+   `_remove_hdr` to `( addr -- addr+sz )`, returning the position of
+   the next header to examine.
+
+### Results
+
+| Test | Description | Result |
+|------|-------------|--------|
+| no NUL-prefixed names | words output clean | PASS |
+| private words removed | _boot, _pick_detect etc. gone | PASS |
+| public words work | 42 . cr after compaction | PASS |
+| TIMES REPEAT works | counted loops after compaction | PASS |
+| H@ valid | H@ points to valid header | PASS |
+| help works | help system loads lib/help64.ff | PASS |
+| cmove> in dictionary | new primitive accessible | PASS |
+
+Full test suite: **417 passes, 0 failures**.
+
+**Space reclaimed:** H@ moved from ~0x413b1c to ~0x413d01, saving ~485
+bytes of private header space (about 30 private definitions removed).

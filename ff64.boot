@@ -462,14 +462,22 @@ variable noauto pvt
 : type stdout write drop ;
 
 ( Hide private words — zero the first name byte of pvt-marked headers )
-( Stops at pvtmargin. Does not compact memory. )
+( Compact header chain: remove private entries, reclaim space )
 ( hidepvt` is a compile-time macro; _hidepvt is the runtime callable version )
+( Algorithm: walk chain. For each pvt header, shift H@..here up by its )
+( size, overwriting it. H@ advances by that amount. Pvtmargin stops walk. )
 variable hide hide on
+:. _hdr_size h.sz+ c@ h.nm+ 1+ ;
+:. _remove_hdr ( addr -- addr+sz )
+  dup _hdr_size             ( addr sz )
+  >r dup H@ - H@            ( addr n src -- R: sz )
+  swap H@ r + swap           ( addr src dst n )
+  cmove>                     ( addr ) 
+  r> dup H +! + ;            ( addr+sz )
 :. _hidepvt hide@ 0; drop
   H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
     dup h.ct+ c@ dup $10& 0<> drop IF 2drop ;THEN
-    8& 0<> drop IF 0 over h.nm+ c! THEN
-    h.next
+    8& 0<> drop IF _remove_hdr ELSE h.next THEN
   REPEAT drop ;
 : hidepvt` _hidepvt ;
 

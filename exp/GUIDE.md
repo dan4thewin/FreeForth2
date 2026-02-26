@@ -2636,10 +2636,31 @@ the broken hidepvt happened to also corrupt the test's expected behavior
 in a way that matched. The pvtmargin test expected `early` to be hidden,
 which only happened because the corrupted walk hid everything.
 
-**The fix:** Zero the first name CHARACTER (`h.nm+`) instead of the
+**The fix (v1):** Zero the first name CHARACTER (`h.nm+`) instead of the
 size (`h.sz+`). The size is preserved for navigation. `_find` won't
 match any search because the first character is null — no valid Forth
 word starts with a null byte.
+
+**The fix (v2, Exp 071):** True compaction. Instead of just hiding names,
+`_remove_hdr` physically removes private headers by shifting all newer
+headers UP (toward higher addresses) by the removed header's size, using
+the new `cmove>` (backward byte copy) assembly primitive. This reclaims
+~485 bytes of header space. The algorithm:
+
+1. Walk chain from H@ (newest). For each private header at `addr`:
+2. Compute n = addr - H@ (bytes of newer headers to move)
+3. `cmove> ( H@, H@+sz, n )` — slide newer headers up
+4. H@ += sz (advance past the removed gap)
+5. Return addr+sz as next scan position
+
+The key insight: data AFTER the removed header doesn't move. The scan
+pointer advances by sz to skip where the removed header was, landing on
+the next (untouched) header. All newer headers shift into the gap.
+
+Three debugging discoveries:
+- ff64 has `r` (inline backtick macro) but NOT `r@` — use `r` instead
+- UTF-8 characters in Forth comments cause parse errors
+- `_remove_hdr` must return a scan position or the loop loses its place
 
 ### zlen: a subtle stack-effect difference
 
@@ -2798,7 +2819,7 @@ With `doargv`, the full boot sequence is:
 
 1. `ossetup` — a vector (currently a no-op) for OS-level initialization.
 2. `doargv` — process command-line arguments as Forth source.
-3. `_hidepvt` — hide private words from the dictionary.
+3. `_hidepvt` — compact private words from the dictionary (Exp 071).
 4. `_top` — enter the interactive REPL (infinite loop).
 
 `_boot` is defined with `:.` (colon-dot), which registers it as the

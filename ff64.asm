@@ -234,6 +234,25 @@ _cmove: push rsi                ; cmove ( src dst n -- )
         add r15, 24
         ret
 
+;; cmove> ( src dst n -- ) copy n bytes backward (for overlapping dst>src)
+_cmove_up:
+        push rsi
+        push rdi
+        mov rcx, rbx            ; n
+        mov rdi, rdx            ; dst
+        mov rsi, [r15]          ; src
+        lea rdi, [rdi+rcx-1]    ; point to last byte of dst
+        lea rsi, [rsi+rcx-1]    ; point to last byte of src
+        std
+        rep movsb
+        cld
+        pop rdi
+        pop rsi
+        mov rbx, [r15+8]
+        mov rdx, [r15+16]
+        add r15, 24
+        ret
+
 _fill:  push rdi                ; fill ( addr n char -- )
         mov rax, rbx            ; char
         mov rcx, rdx            ; n
@@ -2772,6 +2791,7 @@ WORD64 "erase", _erase, 0, 5
 WORD64 "$-", _strcmp, 0, 2
 WORD64 "fill", _fill, 0, 4
 WORD64 "cmove", _cmove, 0, 5
+WORD64 "cmove>", _cmove_up, 0, 6
 WORD64 "zlen", _zlen, 0, 4
 WORD64 "r>", _rfrom, 0, 2
 WORD64 ">r", _tor, 0, 2
