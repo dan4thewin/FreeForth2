@@ -1,5 +1,4 @@
 BIN = ../../ff64
-BOOT = ../../ff64.boot
 
 all: $(BIN)
 
@@ -11,7 +10,7 @@ test: $(BIN)
 	@PASS=0; FAIL=0; \
 	run_test() { \
 		local desc="$$1"; local input="$$2"; local expected="$$3"; \
-		actual=$$(printf '%s\n' "$$input" | cat macros.ff - | ./$(BIN) -f $(BOOT) 2>/dev/null | sed '/^> ok$$/d;/^ok$$/d;/^> *$$/d;s/^> //' | tr -d '\n' | sed 's/ *$$//'); \
+		actual=$$(printf '%s\n' "$$input" | ./$(BIN) -f macros.ff 2>/dev/null | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//' | tr -d '\n' | sed 's/ *$$//'); \
 		if [ "$$actual" = "$$expected" ]; then \
 			PASS=$$((PASS+1)); \
 		else \

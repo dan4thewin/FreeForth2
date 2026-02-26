@@ -1,11 +1,10 @@
 FF = ../../ff64
-BOOT = ../../ff64.boot
 
 .PHONY: test
 test:
 	@PASS=0; FAIL=0; \
 	echo "=== 051: REPL auto-execute ==="; \
-	run() { printf '%s\n' "$$1" | timeout 2 $(FF) -f $(BOOT) 2>/dev/null | sed 's/^> //;/^ok$$/d;/^>$$/d' | tr '\n' ' ' | sed 's/ $$//'; }; \
+	run() { printf '%s\n' "$$1" | timeout 2 $(FF) 2>/dev/null | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//' | tr '\n' ' ' | sed 's/ $$//'; }; \
 	chk() { \
 	  R=$$(run "$$1"); \
 	  if [ "$$R" = "$$2" ]; then \

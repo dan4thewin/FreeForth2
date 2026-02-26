@@ -480,7 +480,7 @@ variable saved_here pvt
 ( accept buffer is 80 bytes — adequate for line-at-a-time terminal input )
 :^ _top pvt BEGIN
   ui 0 noauto!
-  tib 80 accept dup 0- 0= drop IF drop 0 exit THEN
+  tib 4096 accept dup 0- 0= drop IF drop 0 exit THEN
   here saved_here! tib swap eval. ' catch dup 0- 0<> drop IF _recover ELSE drop THEN
 AGAIN
 
@@ -537,8 +537,9 @@ dlsetup
 : libc_ libc@ #fun #call ;
 
 ( doargv — evaluate command line arguments as FreeForth words )
-:^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap _eval ;
+:^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap eval. ;
 
 ( Call `hidepvt` at compile time, or `_boot ;` for full boot sequence )
 :^ ossetup ;
 :. _boot ossetup doargv _hidepvt _top ;
+_boot ;

@@ -1,10 +1,9 @@
 FF = ../../ff64
-BOOT = ../../ff64.boot
 .PHONY: test
 test:
 	@PASS=0; FAIL=0; \
 	echo "=== 048-suffix64 ==="; \
-	run() { printf '%s\n' "$$1" | $(FF) -f $(BOOT) 2>/dev/null | sed 's/^> //;/^ok$$/d;/^>$$/d' | head -1; }; \
+	run() { printf '%s\n' "$$1" | $(FF) 2>/dev/null | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//' | head -1; }; \
 	chk() { \
 	  R=$$(run "$$1"); \
 	  if [ "$$R" = "$$2" ]; then \

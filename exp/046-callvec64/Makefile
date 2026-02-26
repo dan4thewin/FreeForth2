@@ -1,12 +1,11 @@
 FF=../../ff64
-BOOT=../../ff64.boot
 SHELL=/bin/bash
 
 test: $(FF)
 	@echo "=== Exp 046: -call, tick, vector manipulation ==="
 	@pass=0; fail=0; \
 	run() { \
-		result=$$(echo "$$2" | $(FF) -f $(BOOT) 2>/dev/null); \
+		result=$$(echo "$$2" | $(FF) 2>/dev/null); \
 		if echo "$$result" | grep -qF -- "$$3"; then \
 			echo "  PASS: $$1"; pass=$$((pass+1)); \
 		else \
@@ -21,13 +20,13 @@ test: $(FF)
 		'42'; \
 	run "tick lit value" \
 		': hi 42 . cr ; : t hi '"'"' ; t .x cr ;' \
-		'ok'; \
+		'0;'; \
 	run "vector redirect !^" \
 		':^ g ." hello" cr ; : nb ." nb" cr ; nb '"'"' g '"'"' !^ g ;' \
 		'nb'; \
 	run "vector @^" \
 		':^ g ." hello" cr ; g '"'"' @^ .x cr ;' \
-		'ok'; \
+		'0;'; \
 	run "vector n^" \
 		':^ g ." hello" cr ; g '"'"' n^ g ." done" cr ;' \
 		'done'; \

@@ -1,5 +1,5 @@
 SHELL=/bin/bash
-FF = ../../ff64 -f ../../ff64.boot
+FF = ../../ff64
 
 test: ../../ff64 ## Run all tests
 	@source ../test.sh && start "042: Tail-call optimization" && \

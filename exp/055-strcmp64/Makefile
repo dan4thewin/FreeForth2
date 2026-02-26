@@ -1,12 +1,11 @@
 FF      = ../../ff64
-BOOT    = ../../ff64.boot
 
 test:
 	@echo "=== 055: \$$- string comparison and string literals ==="
 	@PASS=0; FAIL=0; \
 	run_one() { \
 		printf '  --- %s ---\n' "$$1"; \
-		OUT=$$(printf '%s\n' "$$2" | timeout 5 $(FF) -f $(BOOT) 2>&1); \
+		OUT=$$(printf '%s\n' "$$2" | timeout 5 $(FF) 2>&1); \
 		if echo "$$OUT" | grep -qF -- "$$3"; then \
 			printf '  PASS: %s\n' "$$1"; PASS=$$((PASS+1)); \
 		else \

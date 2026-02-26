@@ -1,5 +1,4 @@
 FF = ../../ff64
-BOOT = ../../ff64.boot
 MACROS = macros.ff
 
 .PHONY: test clean
@@ -9,7 +8,7 @@ test:
 	@PASS=0; FAIL=0; \
 	run_test() { \
 		desc="$$1"; input="$$2"; expect="$$3"; \
-		actual=$$(printf '%s\n' "$$input" | cat $(MACROS) - | $(FF) -f $(BOOT) 2>/dev/null | sed '/^> ok$$/d;/^ok$$/d;/^> *$$/d;s/^> //' | tr -d '\n' | sed 's/ *$$//'); \
+		actual=$$(printf '%s\n' "$$input" | $(FF) -f $(MACROS) 2>/dev/null | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//' | tr -d '\n' | sed 's/ *$$//'); \
 		if [ "$$actual" = "$$expect" ]; then \
 			echo "PASS: $$desc"; PASS=$$((PASS+1)); \
 		else \

@@ -10,7 +10,10 @@ ff.o: fflin.asm ff.asm fflinio.asm ff.boot fflin.boot
 ff: ff.o
 	$(LD) -o $@ $<
 
-ff64.o: ff64.asm
+ff64.boot.min: ff64.boot
+	grep '^[: _A-Za-z0-9]' $< > $@
+
+ff64.o: ff64.asm ff64.boot.min
 	fasm $< $@
 
 ff64: ff64.o
@@ -26,7 +29,7 @@ fftk: fftk.o
 	$(LD) -o $@ $<
 
 clean:
-	rm -f ff ff64 fftk *.o
+	rm -f ff ff64 fftk *.o ff64.boot.min
 
 test1:
 	@set -o pipefail; \

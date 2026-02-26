@@ -2191,23 +2191,54 @@ _read_word:
         pop rax
         ret
 
-;; accept ( addr count -- nread ) read from stdin (fd=0)
+;; accept ( addr count -- nread ) read from stdin, one line at a time
+;; Reads byte-by-byte until newline, EOF, or count reached.
 _accept:
         push rax
         push rdi
         push rsi
+        push rcx
+        mov rsi, rdx            ; rsi = buffer addr (NOS)
+        mov rcx, rbx            ; rcx = max count (TOS)
+        xor r8d, r8d            ; r8 = bytes read so far
+.loop:  cmp r8, rcx
+        jge .done               ; reached max count
+        lea rdi, [rsi + r8]     ; read position
+        push rcx
+        push rsi
+        push r8
         xor eax, eax            ; sys_read
         xor edi, edi            ; fd=0 (stdin)
-        mov rsi, rdx            ; addr = NOS
-        mov rdx, rbx            ; count = TOS (also syscall count arg)
+        lea rsi, [rsp-1]        ; temp stack byte
+        mov edx, 1              ; read 1 byte
+        push rax                ; allocate stack byte
+        lea rsi, [rsp]
         syscall
-        mov rbx, rax            ; TOS = bytes read
+        cmp rax, 1
+        jne .eof_pop
+        movzx eax, byte [rsp]   ; get the byte
+        add rsp, 8              ; free stack byte
+        pop r8
+        pop rsi
+        pop rcx
+        mov byte [rsi + r8], al ; store byte
+        inc r8
+        cmp al, 10              ; newline?
+        jne .loop
+.done:  mov rbx, r8             ; TOS = bytes read
         mov rdx, [r15]          ; NOS = item below addr
         add r15, 8              ; pop addr
+        pop rcx
         pop rsi
         pop rdi
         pop rax
         ret
+.eof_pop:
+        add rsp, 8              ; free stack byte
+        pop r8
+        pop rsi
+        pop rcx
+        jmp .done
 
 ;; openr ( addr len -- fd ) open file read-only, fd<0 on error
 _openr:
@@ -2812,117 +2843,28 @@ _start:
         ;; Install SEGV handler early for crash diagnostics
         call _install_segv
 
-        ;; Process command-line arguments: -f <file> loads file
-        mov r13, [rsp]          ; argc
-        lea r14, [rsp+8]        ; argv[0]
-        mov [ff_argc], r13      ; save for Forth access
-        mov [ff_argv], r14      ; save for Forth access
-        mov r12, 1              ; current arg index (skip argv[0])
-.argloop:
-        cmp r12, r13
-        jge .repl
-        mov rdi, [r14 + r12*8]
-        cmp word [rdi], $662D   ; "-f" (little-endian)
-        jne .nextarg
-        cmp byte [rdi+2], 0
-        jne .nextarg
-        inc r12
-        cmp r12, r13
-        jge .repl
-        mov rdi, [r14 + r12*8]  ; filename
-        push r12
-        push r13
-        push r14
-        push qword [tin]
-        push qword [tp]
-        push qword [filebuf_ptr]
-        xor esi, esi
-        xor edx, edx
-        mov rax, 2              ; sys_open
-        syscall
-        test rax, rax
-        js .argfile_err
-        mov r12, rax
-        xor eax, eax            ; sys_read
-        mov rdi, r12
-        mov rsi, [filebuf_ptr]
-        mov rdx, 65536
-        syscall
-        push rax
-        mov rax, 3              ; sys_close
-        mov rdi, r12
-        syscall
-        pop rax
-        test rax, rax
-        jle .argfile_done
-        mov rcx, [filebuf_ptr]
-        mov [tin], rcx
-        lea rcx, [rcx + rax]
-        mov [tp], rcx
-        lea rcx, [rcx + 16]
-        mov [filebuf_ptr], rcx
-        ;; Reset anon so anonymous code in loaded files gets executed
+        ;; Save argc/argv for Forth access
+        mov rax, [rsp]          ; argc
+        mov [ff_argc], rax
+        lea rax, [rsp+8]        ; argv[0]
+        mov [ff_argv], rax
+
+        ;; Compile embedded boot source
+        lea rax, [boot64]
+        mov [tin], rax
+        lea rax, [boot64_end]
+        mov [tp], rax
         mov [anon], rbp
         mov qword [callmark], 0
         mov byte [SC], 0
         call _compiler
-.argfile_done:
-        pop qword [filebuf_ptr]
-        pop qword [tp]
-        pop qword [tin]
-        pop r14
-        pop r13
-        pop r12
-.nextarg:
-        inc r12
-        jmp .argloop
-.argfile_err:
-        push rax
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [err_open_msg]
-        mov rdx, err_open_len
-        syscall
-        pop rax
-        jmp .argfile_done
 
-.repl:
-        ;; Reset anon after boot file processing.
-        ;; Boot file may leave anon=0 from unterminated definitions.
-        mov [anon], rbp
-        mov qword [callmark], 0
-        mov byte [SC], 0
+        ;; Execute boot's final anonymous block: _boot ;
+        ;; _boot calls doargv (processes -f args), _hidepvt, _top (REPL).
+        ;; _top never returns — it loops or calls bye/exit.
+        call _semi_exec
 
-.repl_loop:
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [prompt]
-        mov rdx, 2
-        syscall
-
-        call _readline
-        jz .exit
-
-        call _compiler
-
-        ;; Auto-execute anonymous code (like eval.'s _auto).
-        ;; If anon != 0 and anon != rbp, there's pending code to run.
-        mov rax, [anon]
-        test rax, rax
-        jz .repl_ok             ; anon=0: named def just ended, skip
-        cmp rax, rbp
-        je .repl_ok             ; empty block, skip
-        call _semi_exec         ; execute the anonymous block
-.repl_ok:
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [ok_msg]
-        mov rdx, 3
-        syscall
-
-        jmp .repl_loop
-
-.exit:
+        ;; Fallback exit (should never reach here)
         mov rax, 60
         xor rdi, rdi
         syscall
@@ -2931,9 +2873,6 @@ _start:
 ;; Data
 ;; =====================================================================
 
-prompt:       db "> "
-ok_msg:       db "ok"
-              db 10
 errmsg:       db "error: "
 err_noname:   db "error: : without name"
               db 10
@@ -2966,6 +2905,11 @@ csp        dq cstack_top           ; compile-time stack pointer (grows down)
         align 8
 headbuf    rb 65536
 heads64:   GENWORDS64
+
+        align 8
+boot64:    file "ff64.boot.min"
+boot64_end:
+    boot64_size = boot64_end - boot64
 
 inbuf      rb 4096
 namebuf    rb 256                ; scratch buffer for NUL-terminated filenames

@@ -6,7 +6,6 @@
 #   finish
 
 FF=${FF:-../../ff64}
-BOOT=${BOOT:-../../ff64.boot}
 PASS=0
 FAIL=0
 
@@ -19,7 +18,7 @@ start() {
 run() {
     local name="$1" code="$2" expected="$3"
     local result
-    result=$(printf '%s\n' "$code" | $FF -f $BOOT 2>/dev/null)
+    result=$(printf '%s\n' "$code" | $FF 2>/dev/null)
     if echo "$result" | grep -qF -- "$expected"; then
         echo "  PASS: $name"
         PASS=$((PASS+1))
