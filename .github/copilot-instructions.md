@@ -107,10 +107,52 @@ to be red herrings. One GDB session showing `jmp 0x9` immediately
 revealed that the compile-time stack was corrupted by a constant value.
 **Always check the generated code first.**
 
+## OS/Architecture separation
+
+The port follows Lavarenne's cross-platform pattern:
+
+- **`ff64.asm` + `ff64.boot`** — architecture-specific (x86-64):
+  compiler, backtick macros, stack ops, flow control, SWAPbit, REPL
+- **`fflin64.boot`** — OS-specific (Linux): dlopen/dlsym, file
+  loading, command-line processing, SEGV handler, boot sequence
+
+The Makefile concatenates both into `ff64.boot.min` for embedding.
+Future ports: ARM64 would replace ff64.asm/ff64.boot but reuse
+fflin64.boot; macOS would replace fflin64.boot but reuse ff64.boot.
+
+## Resolved bugs
+
+### The `_parse` stack effect bug (was "ELSE corruption bug")
+
+The long-standing "ELSE corruption bug" — where IF/ELSE/THEN in `:`
+definitions could corrupt definitions 250+ lines later — was actually
+a bug in `_parse`. The x86-64 `_parse` entry did DROP1 (consuming
+TOS + popping memory stack) instead of the i386's DUP1. Every call
+to `parse` or `lnparse` consumed one extra stack item, causing
+cumulative compile-time stack corruption.
+
+**Fixed in commit `8d17367`.** ELSE works correctly. The IF...;THEN
+workarounds throughout ff64.boot are no longer necessary.
+
+## Completion checklist
+
+Every task must end with:
+
+1. Update `exp/JOURNAL.md` — experiment entry with goals, actions,
+   reasoning
+2. Update `exp/GUIDE.md` — if new concepts or architecture introduced
+3. Add novel user-facing words to `ff64.help`
+4. `git commit` with descriptive message
+5. `git push` (scan `/tmp/ssh-*/agent.*` for live SSH agent socket
+   if `$SSH_AUTH_SOCK` is stale)
+
+Do not mark the task complete until all steps are done.
+
 ## Build and test
 
 - `make all` builds both `ff` (32-bit) and `ff64` (64-bit)
-- `make -C exp test` runs all experiments (currently 38, all PASS)
-- `./ff64 -f ff64.boot` loads the standard library
+- `make -C exp test` runs all experiments (currently 74, all PASS)
+- `./ff64 -f ff64.boot` loads the standard library (via ff64.boot.min
+  which includes fflin64.boot)
 - Assembler is FASM (flat assembler, version 1.73.32)
 - Linker warning about RWX segment is expected
