@@ -5873,3 +5873,55 @@ multi-axis support would be:
 3. **Port FFPATH/openlib** from fflin.boot to fflin64.boot (currently
    ff64 uses direct file paths only)
 4. **Port SEGV handler** to Forth (currently in assembly as segvsetup)
+
+---
+
+## Experiment 075: Recoverable SEGV Handler
+
+**Goal:** Replace the fatal assembly-level SEGV handler with a
+Forth-level handler that throws to the REPL's catch frame, allowing
+the session to continue after a segmentation fault — matching the
+i386 fflin.boot behavior.
+
+**The i386 pattern (fflin.boot):**
+```forth
+create SEGVact pvt 140 allot SEGVact 140 0 fill
+:. SEGVhndlr !"SEGV caught" ;
+SEGVhndlr ' SEGVact!
+$40000000 SEGVact 132+ !  \ SA_NODEFER
+:. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
+SEGVthrow
+```
+
+The handler `SEGVhndlr` uses `!"` (inline error + throw). When the
+kernel delivers SIGSEGV, it calls `SEGVhndlr` as a signal handler.
+`_throw` does a longjmp-style restore (`mov rsp, [xfp]`), abandoning
+the signal frame entirely. The REPL's `catch` frame catches the throw.
+
+**x86-64 adaptations:**
+
+1. **Struct size:** 152 bytes (not 140) — handler and restorer are
+   8-byte pointers instead of 4.
+2. **sa_flags offset:** 136 (not 132) — handler is 8 bytes + 128-byte
+   sa_mask.
+3. **No fill needed:** During boot compilation, the buffer is in codebuf
+   (BSS, pre-zeroed). The `fill` word actually causes a SEGV itself for
+   buffers >80 bytes — a separate `fill` loop bug to investigate later.
+4. **Assembly fallback:** The assembly `_segv_handler` remains installed
+   during early boot (before Forth boots). Once `SEGVthrow` runs in
+   fflin64.boot, the Forth handler replaces it.
+
+**Result:** `0 @` at the REPL now prints `error: SEGV caught` and
+returns to the prompt instead of terminating with exit code 139.
+
+**Files modified:**
+- `fflin64.boot` — added SEGV handler (8 lines of Forth)
+- `ff64.help` — added SEGVhndlr and SEGVthrow entries
+- `exp/064-segv/Makefile` — updated tests for recoverable behavior
+
+**Known issue discovered:** `fill` crashes for large counts (>~80
+bytes) when the target is in the code area. The Forth `fill` word
+uses a `BEGIN...WHILE...REPEAT` loop with many stack operations per
+iteration. The exact cause is unclear — possibly related to FLAGS
+or SWAPbit state in the loop's generated code. Workaround: avoid
+`fill` during boot (BSS is pre-zeroed) or fill in small batches.

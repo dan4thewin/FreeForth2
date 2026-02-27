@@ -2544,6 +2544,50 @@ finds it non-zero, and calls `_error` which pops the inline error message
 to the catch frame, restoring the data stack. `catch` returns the error
 message pointer as TOS (non-zero = error occurred).
 
+### SEGV recovery
+
+FreeForth catches segmentation faults and recovers to the REPL. This is
+a two-layer system:
+
+**Layer 1 — assembly handler (early boot):**
+`_install_segv` installs `_segv_handler` via the raw `rt_sigaction`
+syscall during `_start`, before any Forth code runs. This handler simply
+prints "*** SEGV ***" to stderr and calls `exit(139)`. It's a safety net
+for crashes during boot compilation.
+
+**Layer 2 — Forth handler (after boot):**
+During fflin64.boot compilation, `SEGVthrow` replaces the assembly
+handler using libc's `sigaction()`:
+
+```forth
+create SEGVact pvt 152 allot      \ kernel_sigaction struct (BSS-zeroed)
+:. SEGVhndlr !"SEGV caught" ;    \ throw with inline error message
+SEGVhndlr ' SEGVact !            \ store handler xt at offset 0
+$40000000 SEGVact 136+ !          \ SA_NODEFER at offset 136
+:. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
+SEGVthrow                         \ install now
+```
+
+**How throw-from-signal-handler works:**
+When SIGSEGV fires, the kernel saves the process state in a signal frame
+on the stack and calls `SEGVhndlr`. The handler executes `!"SEGV caught"`
+which does `call _error` (pops the inline string address into rbx) then
+falls through to `_throw`. `_throw` does `mov rsp, [xfp]` — a longjmp-
+style restore that completely replaces the stack pointer with the catch
+frame's saved rsp. The signal frame is abandoned below the new rsp. The
+REPL's `catch` receives the error message and calls `_recover`.
+
+**SA_NODEFER** is required because throw doesn't return through
+`sigreturn`. Without it, SIGSEGV would stay blocked after the first
+throw, making subsequent segfaults fatal.
+
+**x86-64 struct sigaction layout** (via libc, not kernel):
+- handler: 8 bytes at offset 0
+- sa_mask: 128 bytes (sigset_t) at offset 8
+- sa_flags: 4 bytes at offset 136
+- sa_restorer: 8 bytes at offset 144
+- Total: 152 bytes (vs 140 on i386 where pointers are 4 bytes)
+
 **Recovery (`_recover`):**
 1. Shows input context: `tib >in@ over - type` prints everything from
    the input buffer start to where the compiler was parsing when the
