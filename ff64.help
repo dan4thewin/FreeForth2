@@ -247,3 +247,16 @@ syscall ( args... #args syscall# -- ior ) generic Linux syscall
   (e.g., read=0, write=1, open=2, close=3, exit=60)
   Up to 6 args supported (rdi, rsi, rdx, r10, r8, r9).
   see also: read write openr openw close exit
+
+SEGVhndlr ( -- ) signal handler for SIGSEGV
+  Throws "SEGV caught" via !" (inline error + throw).
+  Installed via libc sigaction(2) during boot (SEGVthrow).
+  Replaces the assembly-level fatal handler with a recoverable
+  one — the REPL's catch frame catches the throw and continues.
+  see also: SEGVthrow catch throw
+
+SEGVthrow ( -- ) install SEGV handler via libc sigaction
+  Calls sigaction(SIGSEGV, &SEGVact, NULL) to install SEGVhndlr.
+  Called automatically during boot. Can be called again to
+  re-install the handler (e.g., after a fork).
+  see also: SEGVhndlr

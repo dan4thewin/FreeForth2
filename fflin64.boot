@@ -5,7 +5,7 @@
 (   - File loading [needed, needexec, needs`] )
 (   - Command-line processing [doargv, -f`] )
 (   - Turnkey support [mainxt, _main, _postboot] )
-(   - Feature registration [_feat] )
+(   - SEGV handler [SEGVact, SEGVhndlr, SEGVthrow — recoverable via throw] )
 (   - Boot sequence [ossetup, _boot] )
 
 1 constant [os]`
@@ -16,6 +16,16 @@ variable libc
 dlsetup
 : libc.` wsparse libc@ #fun lit` #call ' call, ;
 : libc_ libc@ #fun #call ;
+
+( SEGV handler — recoverable via throw, replaces assembly early-boot handler )
+( x86-64 struct sigaction: handler[8] sa_mask[128] sa_flags[4] pad[4] restorer[8] = 152 bytes )
+( codebuf is BSS-zeroed, so allot gives us a zeroed struct — no fill needed )
+create SEGVact pvt 152 allot
+:. SEGVhndlr !"SEGV caught" ;
+SEGVhndlr ' SEGVact !
+$40000000 SEGVact 136+ !
+:. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
+SEGVthrow
 
 ( needed — load file if not already loaded )
 ( Checks if word with backtick suffix exists in dictionary. )
@@ -63,6 +73,7 @@ variable mainxt pvt
 _feat boot
 _feat help
 _feat dynlink
+_feat segv
 
 ( Boot sequence — ossetup is a vector for platform-specific init )
 :^ ossetup ;
