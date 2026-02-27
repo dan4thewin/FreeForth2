@@ -5925,3 +5925,154 @@ uses a `BEGIN...WHILE...REPEAT` loop with many stack operations per
 iteration. The exact cause is unclear — possibly related to FLAGS
 or SWAPbit state in the loop's generated code. Workaround: avoid
 `fill` during boot (BSS is pre-zeroed) or fill in small batches.
+
+---
+
+## Experiment 076: Generic `syscall` Word
+
+**Goal:** Provide a Forth-level `syscall` word for ff64 with the same
+interface as the i386 version: `( args... #args syscall# -- ior )`.
+This enables existing FreeForth code that uses `syscall` (e.g., for
+raw Linux system calls) to be ported to ff64 without rewriting the
+call mechanism.
+
+**Background:** On i386, system calls use `int $80` with arguments in
+`ebx ecx edx esi edi ebp` and the syscall number in `eax`. On x86-64,
+the `syscall` instruction uses `rdi rsi rdx r10 r8 r9` for arguments
+and `rax` for the syscall number. The syscall numbers themselves also
+differ between architectures (e.g., `write` is 4 on i386, 1 on x86-64;
+`exit` is 1 on i386, 60 on x86-64).
+
+**Implementation:** The `_syscall` primitive in ff64.asm:
+1. Pops the syscall number from TOS into rax
+2. Pops the argument count from NOS
+3. Uses a sequential `cmp`/`je` chain to dispatch 0–6 arguments into
+   the correct registers (rdi, rsi, rdx, r10, r8, r9)
+4. Executes the `syscall` instruction
+5. Pushes the return value (rax) as TOS
+
+The Forth interface is unchanged from i386 — only the syscall numbers
+need updating in user code. A test in exp/065-syscall verifies
+`write(1, msg, len)` and `exit(0)`.
+
+**Files modified:**
+- `ff64.asm` — added `_syscall` dispatcher and WORD64 entry
+- `ff64.help` — added `syscall` entry documenting the interface
+
+---
+
+## Experiment 077: `_parse` Stack Effect Fix and Backslash Comment
+
+**Goal:** Fix a subtle assembly bug in `_parse` that caused every call
+to `parse` or `lnparse` to silently consume one extra data stack item,
+and port the `\` (backslash) comment word from ff.boot to fflin64.boot.
+
+### The `_parse` bug
+
+This is the most significant bug found in the ff64 port so far — and
+it had been masquerading as the "ELSE corruption bug" for months.
+
+**Symptom:** When loading files containing `\` comments, the data stack
+depth drifted by -1 per comment. After loading `macros.ff` (16 comments),
+depth was -16. This corrupted the compile-time stack, causing cascading
+failures in definitions compiled afterward.
+
+**Discovery:** While porting `\`` (backslash comment word) to ff64,
+loading any file with `\` comments produced stack underflow and SEGVs.
+Progressive simplification narrowed it to `lnparse`:
+```forth
+: \` lnparse 2drop ;   \ depth drifts by -1 per call
+: \` lnparse ;          \ returns 1 item, not 2 — lnparse is ( x -- addr len ) !
+: \` ;                  \ no drift — nop is fine
+```
+
+The i386 `lnparse` has stack effect `( -- addr len )` (net +2).
+The x86-64 version had `( x -- addr len )` (net +1).
+
+**Root cause:** The x86-64 `_parse` entry sequence performed a full
+DROP1 — consuming the separator from TOS *and* popping the next item
+from the memory stack:
+
+```asm
+; x86-64 (BUGGY):
+_parse:
+  movzx eax, bl           ; separator byte from TOS
+  mov rbx, rdx            ; NOS → TOS (consume separator)
+  mov rdx, [r15]          ; pop memory stack → NOS  ← EXTRA POP
+  add r15, 8              ;                         ← EXTRA POP
+```
+
+The i386 original did a DUP1 — saving NOS to the memory stack, then
+moving TOS to NOS:
+
+```asm
+; i386 (CORRECT):
+_parse:
+  mov [esi], edx          ; save NOS to memory (DUP1)
+  sub esi, 4
+  xchg eax, ebx           ; separator → eax, TOS preserved
+```
+
+The `.start` label later in `_parse` saves NOS to memory, so the
+i386 DUP1 at entry creates a balanced stack frame. The x86-64 DROP1
+consumed one extra item.
+
+**Fix:** Remove the memory pop, keeping just the TOS→NOS shift:
+
+```asm
+_parse:
+  movzx eax, bl           ; separator byte
+  mov rbx, rdx            ; NOS → TOS (NOS preserved for .start)
+```
+
+This is a two-line deletion (removing `mov rdx,[r15]` and `add r15,8`).
+
+### Resolution of the "ELSE bug"
+
+With the `_parse` fix applied, the test that previously proved the
+"ELSE corruption bug" — adding a definition inside ff64.boot and
+running the full test suite — now **passes all 74 experiments**.
+
+The "ELSE bug" was the `_parse` bug all along. Every symptom matches:
+
+- **Position-dependent corruption:** Adding or removing a definition
+  changed the number of `parse` calls that executed during file loading,
+  shifting the accumulated stack corruption.
+- **Definitions corrupted 250+ lines later:** The compile-time stack
+  underflowed by one item per `parse` call. After enough calls, the
+  compiler was using garbage as stack values.
+- **Workaround of avoiding ELSE worked by coincidence:** Restructuring
+  definitions to avoid ELSE changed definition sizes and positions,
+  altering which `parse` calls ran during loading.
+
+The `IF/ELSE/THEN` workarounds throughout ff64.boot (pick`, dump,
+etc.) are no longer necessary. ELSE works correctly.
+
+### Backslash comment word
+
+With `_parse` fixed, the backslash comment word works as expected:
+
+```forth
+: \` 2 >in -! lnparse 2drop 1 noauto! ;
+```
+
+This is identical to the ff.boot definition. It:
+1. Adjusts `>in` back by 2 (to re-include the `\ ` characters)
+2. Calls `lnparse` to consume the rest of the line
+3. Drops the parsed string
+4. Sets `noauto` to 1, preventing the REPL from auto-executing the
+   current line — enabling multiline input (subsequent lines are
+   appended until a line without `\` triggers execution)
+
+The definition lives in fflin64.boot (OS-specific layer) rather than
+ff64.boot, following the separation established in experiment 074.
+
+**Files modified:**
+- `ff64.asm` — removed two lines from `_parse` entry (the memory pop)
+- `fflin64.boot` — added `\`` definition
+
+**Impact:** This fix affects ALL uses of `parse` and `lnparse`
+throughout the system. The `_[]` conditional compilation word
+(`'[' parse 2drop`) was also silently consuming an extra stack item
+during boot, though the effect was masked by the boot's controlled
+environment.

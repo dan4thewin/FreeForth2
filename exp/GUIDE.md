@@ -3575,3 +3575,102 @@ elements — the `^^` backtick macro emits x86 instructions, struct
 sigaction is 140 bytes (vs 152 on x86-64), and the `needed`
 implementation uses manual buffer+eval instead of ff64's `loadfile`.
 However, ~80% of fflin.boot is pure Forth that works unchanged.
+
+### Recoverable SEGV Handler (Experiment 075)
+
+The assembly-level SEGV handler (installed by `_start`) is always
+fatal — it prints a message and exits with code 139. Experiment 075
+replaces it at Forth boot time with a recoverable handler that throws
+to the REPL's catch frame.
+
+The pattern comes from the i386 `fflin.boot`:
+
+```forth
+create SEGVact pvt 152 allot    \ struct sigaction (152 bytes on x86-64)
+:. SEGVhndlr !"SEGV caught" ;  \ handler: inline error + throw
+SEGVhndlr ' SEGVact!           \ store handler address in struct
+$40000000 SEGVact 136 + !      \ SA_NODEFER flag at offset 136
+:. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
+SEGVthrow                       \ install handler via libc sigaction(2)
+```
+
+**How it works:** When the kernel delivers SIGSEGV, it calls
+`SEGVhndlr`. The `!"` word stores the error string and calls `_throw`.
+`_throw` does a longjmp-style restore (`mov rsp, [xfp]`), abandoning
+the signal frame entirely and landing in the REPL's `catch` frame.
+
+**SA_NODEFER is critical:** Without it, SIGSEGV stays blocked after
+the first throw (because `_throw` never returns through `sigreturn`).
+SA_NODEFER prevents the kernel from blocking the signal during handler
+execution, allowing subsequent SEGVs to also be caught.
+
+**x86-64 struct differences:** The struct sigaction is 152 bytes (not
+140) because handler and restorer are 8-byte pointers. The sa_flags
+field is at offset 136 (not 132).
+
+**The assembly handler remains** as an early-boot fallback — it's
+installed by `_start` before Forth boots. Once `SEGVthrow` runs in
+fflin64.boot, the Forth handler replaces it.
+
+### The `_parse` Bug and ELSE Resolution (Experiment 077)
+
+This was the most significant bug found in the ff64 port. It had been
+masquerading as the "ELSE corruption bug" for months, causing
+position-dependent failures when definitions were added to ff64.boot.
+
+**The bug:** The x86-64 `_parse` entry did a full DROP1 — consuming
+the separator from TOS and popping the next item from the memory
+stack. The i386 original did DUP1 — saving NOS to memory. This made
+every call to `parse` or `lnparse` consume one extra stack item.
+
+```asm
+; x86-64 (BUGGY — DROP1 at entry):
+_parse:
+  movzx eax, bl           ; separator
+  mov rbx, rdx            ; NOS → TOS
+  mov rdx, [r15]          ; EXTRA: pop memory → NOS
+  add r15, 8              ; EXTRA: adjust memory stack
+
+; i386 (CORRECT — DUP1 at entry):
+_parse:
+  mov [esi], edx          ; save NOS to memory
+  sub esi, 4
+  xchg eax, ebx           ; separator → eax
+```
+
+**The fix:** Remove the two memory-pop instructions. The `.start`
+label later in `_parse` handles the NOS-to-memory save, so the entry
+only needs to consume the separator from TOS.
+
+**Why it looked like an ELSE bug:** Adding definitions to ff64.boot
+changed which `parse` calls executed during file loading, shifting the
+accumulated stack corruption. The failures appeared position-dependent
+and correlated with ELSE usage — but only because ELSE definitions
+tend to be longer, changing the position of subsequent `parse` calls.
+
+With the fix applied, ELSE works correctly and all workarounds (pick`,
+dump, etc.) are no longer necessary.
+
+### Generic `syscall` Word (Experiment 076)
+
+The `syscall` word provides the same interface as i386:
+`( args... #args syscall# -- ior )`. On x86-64, it maps arguments to
+rdi/rsi/rdx/r10/r8/r9 (instead of i386's ebx/ecx/edx/esi/edi/ebp)
+and uses the `syscall` instruction (not `int $80`). Syscall numbers
+differ between architectures — user code must use x86-64 numbers.
+
+### Backslash Comment Word (Experiment 077)
+
+The `\` word serves dual purpose in the REPL: end-of-line comment and
+multiline input escape. It works through the backtick mechanism —
+when the compiler encounters `\`, it appends a backtick, finds `\``,
+and executes it at compile time:
+
+```forth
+: \` 2 >in -! lnparse 2drop 1 noauto! ;
+```
+
+Setting `noauto` prevents the REPL from auto-executing the current
+line. The next REPL iteration resets `noauto` to 0 via `_top`. This
+enables multiline definitions at the REPL — append `\` to continue
+on the next line.
