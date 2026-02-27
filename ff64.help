@@ -88,3 +88,153 @@ needexec ( addr len -- ) load a file and execute its last definition
   Calls needed (with double-load guard), then executes the most
   recently defined word via H@ @ execute. Used for lazy loading
   of library files (e.g., help`, see`).
+
+pad ( -- addr ) scratch buffer address, 256 bytes above here
+  Returns here + 256. This is a temporary workspace safe from
+  ongoing compilation at here. The address changes whenever here
+  changes — do not hold across definitions. ANS-compatible.
+  see also: here allot
+
+cmove ( src dst n -- ) copy n bytes from src to dst (low to high)
+  Forward byte copy. Use for non-overlapping copies or when
+  dst < src. For overlapping copies where dst > src, use cmove>.
+  see also: cmove> move place
+
+cmove> ( src dst n -- ) copy n bytes from src to dst (high to low)
+  Reverse byte copy. Safe for overlapping regions where dst > src.
+  Used by _hidepvt compaction to shift header chain entries.
+  see also: cmove move
+
+move ( src dst n -- ) smart copy: automatically selects direction
+  If dst < src, uses cmove (forward). Otherwise uses cmove> (reverse).
+  Safe for all overlapping copies. ANS-compatible.
+  see also: cmove cmove>
+
+place ( src count dst -- ) copy counted string to destination
+  Copies count bytes from src to dst. Equivalent to cmove but
+  with arguments reordered for string operations.
+  see also: cmove move
+
+fill ( addr n byte -- ) fill n bytes at addr with byte
+  see also: erase
+
+erase ( addr n -- ) fill n bytes at addr with zero
+  Equivalent to: 0 fill
+  see also: fill
+
+count ( addr -- addr+1 byte ) read counted string header
+  ANS name for c@+. Reads byte at addr, increments addr.
+  see also: c@+
+
+bounds ( addr n -- addr addr+n ) convert address+length to address pair
+  Commonly used with BEGIN...WHILE loops to iterate over a range.
+
+within ( n lo hi -- ; flags ) test if lo <= n < hi
+  Sets FLAGS (not stack boolean). Use with IF/WHILE/UNTIL.
+  Returns nzTRUE if in range, zFALSE otherwise.
+  see also: < > = u< u>
+
+zt ( addr len -- addr ) zero-terminate a string
+  Writes a NUL byte at addr+len. Returns addr.
+
+words ( -- ) list all words in the dictionary
+  Walks the header chain and prints each word's name.
+
+dump ( addr n -- ) hex dump of n bytes starting at addr
+  Prints 16 bytes per line with address headers.
+
+!^ ( new-target xt -- ) set vector target
+  Writes new-target into the vector's push operand at xt+1.
+  The vector will now jump to new-target when called.
+  see also: @^ n^ ^^ x^ :^
+
+@^ ( xt -- target ) read current vector target
+  Reads the 32-bit push operand at xt+1.
+  see also: !^ n^ ^^ x^
+
+n^ ( xt -- ) nop a vector (make it do nothing)
+  Sets the vector's target to xt+5 (the ret instruction).
+  The vector becomes: push xt+5; ret → jumps to ret → returns.
+  see also: !^ @^ ^^ x^
+
+x^ ( xt -- ) execute a vector's body directly
+  Pushes xt+6 onto the return stack, causing execution to
+  continue at the vector's default body (skipping the push/ret).
+  see also: !^ @^ n^ ^^
+
+^^ ( xt -- ) reset vector to its default body
+  Writes xt+6 (body start) into the push operand at xt+1.
+  Restores the vector to its original behavior.
+  see also: !^ @^ n^ x^
+
+:^ ( <name> -- ) define a vector (redirectable word)
+  Creates a word with a push/ret preamble: 68 <target32> C3.
+  The body follows at xt+6. The push operand can be rewritten
+  by !^ n^ ^^ to redirect or disable the vector.
+  see also: !^ @^ n^ ^^ x^
+
+quit ( -- ) reset _top to default and restart the REPL
+  Resets the _top vector to its original body, then calls it.
+
+2swap ( a b c d -- c d a b ) swap the top two pairs
+  Defined as: rot >r rot r>
+  Also available as compile-time macro 2swap`.
+
+max ( a b -- max ) return the larger of two values
+min ( a b -- min ) return the smaller of two values
+
+nop ( -- ) do nothing
+  Empty word, used as placeholder for vector targets.
+
+[os] ( -- 1 ) compile-time constant: operating system flag
+  Returns 1 for Linux. A future Windows port would return 0.
+  Used for conditional compilation: [os] [IF] ... [THEN]
+
+argv ( n -- addr len ) get nth command-line argument as string
+  Returns address and length of the NUL-terminated argument.
+  see also: argc ff_argc ff_argv
+
+needed ( addr len -- ) load file unless already loaded
+  Appends ` to filename, checks if that word exists. If found,
+  the file was already loaded — returns. Otherwise creates a
+  marker and loads the file via loadfile.
+  see also: needexec needs` loadfile
+
+needs` ( <filename> -- ) load file by name (compile-time)
+  Semicolons first, then parses filename and calls needed.
+  see also: needed needexec
+
+doargv ( -- ) process command-line arguments
+  Evaluates all arguments after the program name as Forth.
+  Called by _postboot during normal boot.
+
+-f` ( <filename> -- ) load a source file (compile-time)
+  Loads the named file via needed. If the file defines "main",
+  switches to turnkey mode: _top becomes _main, _postboot
+  is nop'd, and argc/argv belong to main.
+  see also: needed mainxt
+
+++` compile-time macro: increment variable (peephole optimization)
+  Rewrites a preceding variable fetch into an in-place increment.
+  Usage: variable x  ... x ++
+  see also: --`
+
+--` compile-time macro: decrement variable (peephole optimization)
+  Rewrites a preceding variable fetch into an in-place decrement.
+  see also: ++`
+
+features ( -- addr ) buffer holding loaded feature names
+  Space-separated list of features. Printed by -v.
+
+-v ( -- ) display loaded features
+  Prints "features:" followed by the feature list.
+
+eval ( addr len -- ) compile and run Forth source
+  Sets up the input buffer to the given string and calls the
+  compiler. Does not auto-execute trailing anonymous code.
+  see also: eval.
+
+eval. ( addr len -- ) compile and auto-execute Forth source
+  Like eval but calls _auto at the end, which executes any
+  trailing anonymous code (unless noauto is set).
+  see also: eval

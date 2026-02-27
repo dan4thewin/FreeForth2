@@ -37,8 +37,13 @@ variable _hklen pvt
   _hklen ! _hkey !
   "ff.help" openr _hfd !
   _hfd @ 0- 0< IF ."cannot_open_ff.help" cr ;THEN drop
-  helpbuf 120000 _hfd @ read _hfd @ close drop
+  helpbuf 130000 _hfd @ read _hfd @ close drop
   0- 0<= IF drop ."cannot_read_ff.help" cr ;THEN
+  "ff64.help" openr _hfd !
+  _hfd @ 0- 0>= drop IF
+    >r helpbuf r + 130000 r - _hfd @ read _hfd @ close drop
+    dup 0- 0> drop IF r> + ELSE r> drop THEN
+  THEN
   helpbuf swap
   BEGIN 0- 0> WHILE
     _checkmatch 0- drop 0<> IF _printentry ;THEN
