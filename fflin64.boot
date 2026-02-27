@@ -75,6 +75,9 @@ _feat help
 _feat dynlink
 _feat segv
 
+( \ — end-of-line comment; also sets noauto for multiline REPL input )
+: \` 2 >in -! lnparse 2drop 1 noauto! ;
+
 ( Boot sequence — ossetup is a vector for platform-specific init )
 :^ ossetup ;
 :. _boot ossetup _postboot _top ;

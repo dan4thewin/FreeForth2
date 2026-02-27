@@ -914,9 +914,7 @@ _backslash:
 ;; parse ( sep -- @ # ) — scan for delimiter, return start and length
 _parse:
         movzx eax, bl           ; al = separator character
-        mov rbx, rdx
-        mov rdx, [r15]
-        add r15, 8              ; drop separator from data stack
+        mov rbx, rdx            ; drop separator from TOS; NOS stays in rdx
         mov rdi, [tin]
         mov rsi, [tp]
         ;; skip leading separators
