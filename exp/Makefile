@@ -1,10 +1,4 @@
-EXPERIMENTS = 001-hello64 002-stack64 003-codegen64 004-subrthread64 \
-              005-regswap64 006-headers64 007-minicompiler64 \
-              008-interactive64 009-nameddef64 010-flowcontrol64 \
-              011-memory64 012-variables64 013-fileio64 \
-              014-retstack64 015-swapbit64 016-inline64 \
-              017-swapbit-deep 018-moreinline64 019-cmpinline64 020-flagscond64 \
-              021-litcomma64 022-backtick64 023-forthmacros64 \
+EXPERIMENTS = 023-forthmacros64 \
               024-moremacros64 025-loadvariants64 \
               026-lit64 027-compilemacros64 \
               028-stackdivmod64 \

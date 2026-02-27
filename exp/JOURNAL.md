@@ -6076,3 +6076,24 @@ throughout the system. The `_[]` conditional compilation word
 (`'[' parse 2drop`) was also silently consuming an extra stack item
 during boot, though the effect was masked by the boot's controlled
 environment.
+
+---
+
+## Experiment Archival
+
+Experiments 001–022 (standalone assembly stepping stones) and two
+empty abandoned directories (034-alias64, 052-repl64) have been moved
+to `archive/` to reduce test suite noise. These experiments built
+their own binaries from frozen .asm snapshots and tested assembly-level
+concepts that were stepping stones to ff64.asm — they don't validate
+any current ff64 functionality.
+
+**Moved to archive/:** 001-hello64 through 022-backtick64 (22 dirs),
+plus 034-alias64 and 052-repl64 (empty).
+
+**Remaining in exp/:** 023-forthmacros64 through 074-fflin64-boot
+(50 active experiments, 449 tests, all PASS). These test current
+ff64.boot and fflin64.boot functionality.
+
+The journal entries for the archived experiments remain in this
+document — only the test directories were moved.
