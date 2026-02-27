@@ -2332,6 +2332,65 @@ _close:
         pop rdi
         ret
 
+;; syscall ( args... #args syscall# -- ior )
+;; Generic Linux syscall dispatcher. Same Forth interface as i386 fflinio.asm.
+;; x86-64 syscall convention: rax=syscall#, args in rdi,rsi,rdx,r10,r8,r9.
+;; NOTE: syscall numbers differ between i386 and x86-64!
+;; (e.g., write=4 on i386, write=1 on x86-64)
+_syscall:
+        push rbp                ; save compilation pointer
+        mov rax, rbx            ; rax = syscall# (TOS)
+        mov rcx, rdx            ; rcx = #args (NOS)
+        cmp rcx, 6
+        jbe .ok
+        ;; Too many args — error
+        pop rbp
+        mov rbx, -1
+        ret
+.ok:    ;; r15 points to data stack: [0]=arg1, [8]=arg2, ...
+        ;; Load args from data stack based on count
+        test rcx, rcx
+        jz .call
+        mov rdi, [r15]          ; arg1
+        cmp rcx, 1
+        je .call
+        mov rsi, [r15+8]        ; arg2
+        cmp rcx, 2
+        je .call
+        push rdx
+        mov rdx, [r15+16]       ; arg3
+        cmp rcx, 3
+        je .call_rdx
+        mov r10, [r15+24]       ; arg4
+        cmp rcx, 4
+        je .call_rdx
+        mov r8, [r15+32]        ; arg5
+        cmp rcx, 5
+        je .call_rdx
+        mov r9, [r15+40]        ; arg6
+.call_rdx:
+        ;; rdx was saved, adjust stack pointer by #args * 8
+        lea r15, [r15 + rcx*8]  ; pop all args from data stack
+        syscall
+        mov rbx, rax            ; TOS = result
+        pop rdx                 ; restore original NOS (was #args)
+        mov rdx, [r15]          ; NOS = next item on data stack
+        add r15, 8              ; pop the old #args slot
+        pop rbp
+        ret
+.call:  ;; 0-2 args: rdx not used as syscall arg, still holds #args
+        lea r15, [r15 + rcx*8]  ; pop all args from data stack
+        push rcx                ; save #args
+        push rdx                ; save NOS (#args)
+        syscall
+        pop rdx                 ; discard saved NOS
+        pop rcx                 ; discard #args
+        mov rbx, rax            ; TOS = result
+        mov rdx, [r15]          ; NOS = next item on data stack
+        add r15, 8              ; pop the old #args slot
+        pop rbp
+        ret
+
 ;; =====================================================================
 ;; Signal handling — SEGV handler via rt_sigaction
 ;; =====================================================================
@@ -2845,6 +2904,7 @@ WORD64 "read", _read_word, 0, 4
 WORD64 "openr", _openr, 0, 5
 WORD64 "openw", _openw, 0, 5
 WORD64 "close", _close, 0, 5
+WORD64 "syscall", _syscall, 0, 7
 WORD64 "loadfile", _loadfile, 0, 8
 WORD64 "#lib", _dllib, 0, 4
 WORD64 "#fun", _dlfun, 0, 4

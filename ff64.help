@@ -238,3 +238,12 @@ eval. ( addr len -- ) compile and auto-execute Forth source
   Like eval but calls _auto at the end, which executes any
   trailing anonymous code (unless noauto is set).
   see also: eval
+
+syscall ( args... #args syscall# -- ior ) generic Linux syscall
+  Same Forth interface as i386 fflinio.asm. Push args so that
+  the last-pushed arg maps to the first kernel register (rdi).
+  For write(fd, buf, count): count buf fd 3 1 syscall
+  NOTE: x86-64 syscall numbers differ from i386!
+  (e.g., read=0, write=1, open=2, close=3, exit=60)
+  Up to 6 args supported (rdi, rsi, rdx, r10, r8, r9).
+  see also: read write openr openw close exit
