@@ -3674,3 +3674,70 @@ Setting `noauto` prevents the REPL from auto-executing the current
 line. The next REPL iteration resets `noauto` to 0 via `_top`. This
 enables multiline definitions at the REPL — append `\` to continue
 on the next line.
+
+### FFPATH and Library Search (Experiment 078)
+
+FreeForth keeps the boot image small by loading less-used words on
+demand. Lavarenne's i386 design used `openlib` to search a configurable
+path (`FFPATH`) for library files. Experiment 078 ports this to x86-64.
+
+#### How FFPATH Works
+
+The search path is stored as NUL-separated directory entries with a
+double-NUL terminator:
+
+```
+lib/64\0lib\0.\0\0
+```
+
+Default order: `lib/64` (64-bit specific), `lib` (shared), `.` (CWD).
+This means a file in `lib/64/` always takes precedence over the same
+filename in `lib/` — the mechanism for providing 64-bit-specific
+implementations of cross-platform library words.
+
+When `needed "somefile.ff"` is called:
+1. The backtick guard is checked (is `somefile.ff\`` defined?)
+2. If not found, `openlib` searches each FFPATH directory
+3. For each directory, it builds `dir/somefile.ff` and tries to open it
+4. The first successful open wins — close the fd and pass the full
+   path to `loadfile`
+
+Absolute paths (`/...`) and relative paths (`./...`) bypass the
+FFPATH search entirely.
+
+#### The Buffer Allocation Challenge
+
+Allocating buffers during FreeForth boot requires understanding how
+`_semi_exec` works. Every `;` resets `rbp` (the code pointer) to the
+start of the anonymous block before executing it. Any `allot` in an
+anonymous block allocates space starting from that reset point — which
+overlaps the anonymous block's own compiled instructions.
+
+The pattern `variable X pvt N allot` is safe because:
+- The variable's 8-byte cell (at `X`) is part of the definition body,
+  compiled BEFORE the anonymous block
+- The N allotted bytes start at the anonymous block address (past the
+  cell)
+- The first ~30 bytes of allotted space contain dead anonymous code
+- Writing to those bytes at runtime is safe — the code is never
+  executed again
+
+`_ffpath_alloc` exploits this: it points `ffpath` past the 8-byte
+cell (`ffpath 8+ ffpath !`) and writes the path data there, overwriting
+the dead anonymous code. This is called from `ossetup` during the
+boot sequence.
+
+#### i386 vs x86-64 Differences
+
+| Aspect | i386 (fflin.boot) | x86-64 (fflin64.boot) |
+|--------|--------------------|-----------------------|
+| Path storage | `eob` buffer | `variable ffpath pvt 248 allot` |
+| Default path | Single `lib` dir | `lib/64:lib:.` |
+| File open | Direct open | `openr` (addr len -- fd) |
+| Guard creation | `marker pvtmargin` | File creates own guard |
+| Error handling | `!"Can't_open_file."` | `!"_not_found"` |
+
+The x86-64 version is simpler: no `eob` (end-of-buffer) word, no
+`marker` at compile time. The guard mechanism relies on loaded files
+defining their own backtick-suffixed marker word, or on the `needexec`
+pattern where the stub is overwritten on first load.

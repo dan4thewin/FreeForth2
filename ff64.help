@@ -196,13 +196,21 @@ argv ( n -- addr len ) get nth command-line argument as string
 
 needed ( addr len -- ) load file unless already loaded
   Appends ` to filename, checks if that word exists. If found,
-  the file was already loaded — returns. Otherwise creates a
-  marker and loads the file via loadfile.
-  see also: needexec needs` loadfile
+  the file was already loaded — returns. Otherwise searches
+  FFPATH (lib/64:lib:.) for the file and loads it via loadfile.
+  Absolute paths (/...) and relative paths (./...) bypass FFPATH.
+  see also: needexec needs` loadfile openlib
 
 needs` ( <filename> -- ) load file by name (compile-time)
   Semicolons first, then parses filename and calls needed.
   see also: needed needexec
+
+openlib ( addr len -- addr' len' | -1 -1 ) search FFPATH for a file
+  Tries each directory in FFPATH (lib/64, lib, .) to find the file.
+  Returns the full path and length on success, or -1 -1 on failure.
+  Paths starting with / or . are returned unchanged (no search).
+  Called by needed; not normally used directly.
+  see also: needed
 
 doargv ( -- ) process command-line arguments
   Evaluates all arguments after the program name as Forth.

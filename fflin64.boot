@@ -27,12 +27,58 @@ $40000000 SEGVact 136+ !
 :. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
 SEGVthrow
 
+( FFPATH — search path for needed/openlib )
+( Default: lib/64:lib:. — overridable via FFPATH env var )
+( Path stored as NUL-separated directory entries; double-NUL terminates )
+( Buffers pre-allocated via variable+allot; cell points to data at offset 8 )
+( Anonymous allot code contaminates bytes 8-37 but is dead after boot; )
+( _ffpath_alloc overwrites it with actual data. )
+variable ffpath pvt 248 allot
+variable _openbuf pvt 248 allot
+variable _fnbuf pvt 120 allot
+variable _fnlen pvt
+variable _dlen pvt
+
+( _tryopen — try to open a file, return fd or -1 )
+:. _tryopen openr ;
+
+( openlib — search FFPATH for a file )
+( addr len -- addr' len' | -1 -1 )
+( Absolute/relative paths starting with / or . pass through unchanged )
+:. openlib over c@ $2F = 2drop IF ;THEN
+  over c@ $2E = 2drop IF ;THEN
+  dup _fnlen ! _fnbuf @ swap cmove
+  0 _fnbuf @ _fnlen @ + c!
+  ffpath @ BEGIN dupc@ 0- 0<> WHILE drop
+    dup >r zlen _dlen !
+    _openbuf @ _dlen @ cmove
+    $2F _openbuf @ _dlen @ + c!
+    _fnbuf @ _openbuf @ _dlen @ + 1+ _fnlen @ cmove
+    0 _openbuf @ _dlen @ + _fnlen @ + 1+ c!
+    _openbuf @ zlen _tryopen
+    0- 0>= IF close drop r> drop _openbuf @ zlen ;THEN
+    drop r> zlen + 1+
+  REPEAT drop drop -1 -1 ;
+
+( _ffpath_alloc — initialize FFPATH buffers with default path )
+( Pre-allocated buffers have dead anonymous code in first 30 bytes; )
+( we point past the 8-byte cell and overwrite the dead code with data. )
+:. _ffpath_alloc
+  ffpath 8+ ffpath !
+  _openbuf 8+ _openbuf !
+  _fnbuf 8+ _fnbuf !
+  ffpath @
+  "lib/64" drop over 6 cmove 6+ 0 over c! 1+
+  "lib" drop over 3 cmove 3+ 0 over c! 1+
+  "." drop over 1 cmove 1+ 0 over c! 1+ 0 swap c! ;
+
 ( needed — load file if not already loaded )
 ( Checks if word with backtick suffix exists in dictionary. )
-( If found, file already loaded — skip. If not, create marker and load. )
+( If found, file already loaded — skip. If not, search FFPATH and load. )
 : needed 2dup + dup c@ >r dup >r $60 swap c! 1+
   find 2r> c! 0= IF 2drop ;THEN 1-
-  2dup marker swap loadfile ;
+  2dup openlib 0- 0< IF 2drop type !"_not_found" ;THEN
+  >r >r 2drop r> r> loadfile ;
 
 ( needexec — load file via needed, then execute its last definition )
 :. needexec needed H@ @ execute ;
@@ -46,11 +92,11 @@ SEGVthrow
 variable mainxt pvt
 :. _main mainxt @ execute 0 exit ;
 
-( see` — on first call, loads lib/see64.ff which redefines see` )
-: see` ;` "lib/see64.ff" needexec ;
+( see` — on first call, loads see64.ff which redefines see` )
+: see` ;` "see64.ff" needexec ;
 
-( help` — on first call, loads lib/help64.ff which redefines help` )
-: help` ;` "lib/help64.ff" needexec ;
+( help` — on first call, loads help64.ff which redefines help` )
+: help` ;` "help64.ff" needexec ;
 
 ( doargv — evaluate command line arguments as FreeForth words )
 :. doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap eval. ;
@@ -79,6 +125,6 @@ _feat segv
 : \` 2 >in -! lnparse 2drop 1 noauto! ;
 
 ( Boot sequence — ossetup is a vector for platform-specific init )
-:^ ossetup ;
+:^ ossetup _ffpath_alloc ;
 :. _boot ossetup _postboot _top ;
 _boot ;

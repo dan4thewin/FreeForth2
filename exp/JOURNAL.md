@@ -6097,3 +6097,113 @@ ff64.boot and fflin64.boot functionality.
 
 The journal entries for the archived experiments remain in this
 document — only the test directories were moved.
+
+## Experiment 078: FFPATH and openlib
+
+**Goal:** Implement a search-path system for `needed` so that library
+files can be found in `lib/64/` (64-bit specific), `lib/` (shared),
+or `.` (current directory), matching Lavarenne's i386 `openlib` in
+`fflin.boot`.
+
+**Motivation:** With the library system planned for `lib/64/`, we need
+`needed` to automatically find files across multiple directories. The
+i386 FreeForth uses `openlib` to search `FFPATH` directories. On
+x86-64, we replicate this pattern: `lib/64` is searched first (so
+64-bit-specific files take precedence), then `lib`, then `.`.
+
+### The `variable ... allot` Buffer Contamination Discovery
+
+The biggest technical challenge was allocating buffers during boot.
+FreeForth compiles code at runtime using `rbp` as the code pointer
+(`here`). Every `;` triggers `_semi_exec`, which:
+
+1. Saves `rbp` to `hereatexec`
+2. Resets `rbp = [anon]` (start of the anonymous block)
+3. Executes the anonymous code
+
+When a `variable X N allot` is compiled:
+- `variable` creates the definition (push body_addr + ret + 8-byte cell)
+- `N allot` compiles into an anonymous block: `DUP1 + lit N + add rbp,rbx + DROP + ret`
+- `_semi_exec` resets rbp to [anon] and executes → allot advances rbp by N
+
+The **problem**: the allotted N bytes START at the anonymous block's
+address. The first ~30 bytes contain the compiled allot instructions
+(dead code after execution, but non-zero data).
+
+This means `ffpath 8+` (the allotted area past the 8-byte cell)
+contains code bytes in positions 0-29 and clean zeros from 30 onward.
+
+**Solution:** Accept the contamination. `_ffpath_alloc` (called from
+`ossetup` during boot) overwrites the dead code with actual path data:
+```
+ffpath 8+ ffpath !       ( point cell past the 8-byte variable cell )
+ffpath @                  ( get buffer address )
+"lib/64" drop over 6 cmove 6+ 0 over c! 1+   ( write "lib/64\0" )
+"lib" drop over 3 cmove 3+ 0 over c! 1+       ( write "lib\0" )
+"." drop over 1 cmove 1+ 0 over c! 1+ 0 swap c!  ( write ".\0\0" )
+```
+
+The path is stored as NUL-separated entries with a double-NUL
+terminator, matching the i386 convention.
+
+### The `=` Stack Effect in FreeForth
+
+A critical discovery during implementation: FreeForth's `=` (and all
+comparison words) does NOT consume or push stack values. It only sets
+CPU FLAGS and stores a condition code in `cond_jmp`. The pattern
+`over c@ $2F = 2drop IF ;THEN` requires `2drop` (not `drop`) to
+remove both the byte and the comparison literal, because `=` leaves
+both on the stack.
+
+### openlib Implementation
+
+`openlib ( addr len -- addr' len' | -1 -1 )` searches FFPATH:
+
+1. If filename starts with `/` or `.`, return it unchanged (pass-through)
+2. Copy filename to `_fnbuf`, save length to `_fnlen`
+3. Walk FFPATH entries (NUL-separated):
+   - Build `dir/filename` in `_openbuf`
+   - Try `openr` — if fd >= 0, close it and return the path
+   - If fd < 0, advance to next FFPATH entry
+4. If no entry works, return (-1 -1)
+
+The `needed` word was updated to call `openlib` before `loadfile`:
+```
+: needed 2dup + dup c@ >r dup >r $60 swap c! 1+
+  find 2r> c! 0= IF 2drop ;THEN 1-
+  2dup openlib 0- 0< IF 2drop type !"_not_found" ;THEN
+  >r >r 2drop r> r> loadfile ;
+```
+
+### `_ffpath_alloc` and the Anonymous Block Trap
+
+A first attempt used `here ... allot` inside `_ffpath_alloc` (called
+from `ossetup`). This failed because `ossetup` is called from `_boot`,
+which is called from the anonymous block `_boot ;`. During that
+execution, `rbp = [anon]`, so `here` returns the anonymous block's
+code address. `allot` advances past it, but the buffer overlaps the
+anonymous code. When the anonymous block's `ret` instruction gets
+overwritten with path data, execution crashes on return.
+
+The fix: pre-allocate buffers at compile time with `variable X pvt N allot`,
+then initialize them at runtime in `_ffpath_alloc`.
+
+### Tests (6 tests, all PASS)
+
+| Test | Description |
+|------|-------------|
+| help via ffpath | `help dup` finds `lib/help64.ff` via FFPATH |
+| lib/64 precedence | `testfp.ff` in `lib/64/` loaded before `lib/` |
+| lib fallback | `help64.ff` found in `lib/` when not in `lib/64/` |
+| relative path passthrough | `./lib/help64.ff` passes through openlib unchanged |
+| needed guard | Second `needed` call for same file is a no-op |
+| not found error | Missing file produces "not found" error |
+
+**Files modified:**
+- `fflin64.boot` — added FFPATH variables, openlib, _ffpath_alloc,
+  updated needed to use openlib, ossetup calls _ffpath_alloc
+- `lib/64/testfp.ff` — test file for FFPATH precedence
+- `exp/078-ffpath/Makefile` — 6 tests
+- `exp/Makefile` — added 078-ffpath
+
+---
