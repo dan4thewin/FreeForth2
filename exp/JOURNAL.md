@@ -7309,3 +7309,63 @@ lookup → normal lookup → suffix/literal compiler. No keyword shortcuts.
 **Running total:** 520 tests across 37 experiments, all passing.
 
 ---
+
+## Experiment 091: Remove ct=2 Inline Word Entries
+
+**Goal:** Remove the 13 ct=2 WORD64 entries for `dup`, `drop`, `swap`,
+`over`, `nip`, `rot`, `tuck`, `negate`, `+`, `-`, `*`, `@`, `c@`. Also
+remove the 12 now-dead assembly inline routines (keeping only
+`_swap_inline` which is still needed by the `swap`` backtick macro).
+
+**Context:** In Lavarenne's ff.asm, stack operations and arithmetic exist
+ONLY as backtick compile-time macros (e.g., `CODE "over`",_over`). There
+are no runtime dictionary entries for `dup`, `drop`, `+`, etc. The
+compiler always finds the backtick version first and executes the macro
+to emit inline code.
+
+The ff64 port had two entries for each of these words: a backtick macro
+(ct=0, defined in ff64.boot) AND a ct=2 assembly entry (e.g.,
+`WORD64 "dup", _dup_inline, 2, 3`). The ct=2 entries were redundant
+because the compiler always tries the backtick name first. The assembly
+routines backing them were also redundant because ff64.boot already has
+equivalent Forth macros.
+
+**What was removed (137 lines from ff64.asm):**
+1. 13 ct=2 WORD64 entries: `over`, `swap`, `drop`, `dup`, `negate`,
+   `nip`, `*`, `-`, `+`, `@`, `c@`, `rot`, `tuck`
+2. 12 assembly inline code generators: `_dup_inline`, `_drop_inline`,
+   `_over_inline`, `_nip_inline`, `_add_inline`, `_sub_inline`,
+   `_mul_inline`, `_negate_inline`, `_fetch_inline`, `_cfetch_inline`,
+   `_rot_inline`, `_tuck_inline`
+3. Kept `_swap_inline` — still needed by `WORD64 "swap`"` entry
+
+**Why `_swap_inline` stays:** `swap`` is special. Unlike `dup`` or `over``,
+which are Forth macros that call SWAPbit helpers to emit code, `swap``
+itself IS the SWAPbit toggle. It's a single `xor byte [SC], 2; ret` — a
+compiler-state mutation, not a code emitter. In Lavarenne's ff.asm, this
+is `CODE "swap`",_swap` (the one assembly primitive among all the inline
+macros). The ff64 WORD64 entry for `swap`` correctly points to this same
+assembly routine.
+
+**Test updates:** Two existing tests referenced words that are now
+backtick-only:
+- `exp/065-needed`: changed `"dup" find` to `"cr" find` (cr is always
+  in the dictionary as a runtime word)
+- `exp/086-shrink`: changed `see nip` to `see cr` (cr has a runtime body
+  to disassemble; nip is now inline-only)
+
+**Result:** 533 tests across 38 experiments, all passing. WORD64 count
+reduced from 125 to 112.
+
+**Files modified:**
+- `ff64.asm` — removed 13 WORD64 entries and 12 assembly routines (−137 lines)
+- `exp/065-needed/Makefile` — updated find test to use "cr" instead of "dup"
+- `exp/086-shrink/Makefile` — updated see test to use "cr" instead of "nip"
+- `exp/Makefile` — added exp 091
+
+**Files created:**
+- `exp/091-remove-inline-words/Makefile` — 13 tests
+
+**Running total:** 533 tests across 38 experiments, all passing.
+
+---

@@ -25,10 +25,10 @@ test-needed-guard:
 	echo "$$result" | grep -q '99' && echo "  PASS: $@" || { echo "  FAIL: $@ (got: $$result)"; exit 1; }
 	@rm -f /tmp/ntest2.ff
 
-# Test that find word works correctly
+# Test that find word works correctly (use "cr" — always in dictionary)
 test-needed-find:
 	@echo "--- $@ ---"
-	@result=$$(echo '"dup" find . . cr ;' | timeout $(TIMEOUT) $(FF) 2>/dev/null); \
+	@result=$$(echo '"cr" find . . cr ;' | timeout $(TIMEOUT) $(FF) 2>/dev/null); \
 	echo "$$result" | grep -q '0 ' && echo "  PASS: $@" || { echo "  FAIL: $@ (got: $$result)"; exit 1; }
 
 .PHONY: all test test-needed test-needed-guard test-needed-find

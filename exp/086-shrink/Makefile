@@ -18,8 +18,9 @@ test-pno-load:
 	@cd $(ROOT) && printf '"pno.ff" needed ;\n42 0 <# #s #> type cr\nbye\n' | ./ff64 | grep -q '42' && echo "PASS $@" || (echo "FAIL $@"; exit 1)
 
 # see64.ff loads pno.ff automatically (run from repo root for FFPATH)
+# Use "cr" (always in dictionary) rather than "nip" (now backtick-only)
 test-pno-see:
-	@cd $(ROOT) && printf '"see64.ff" needed ;\nsee nip\nbye\n' | ./ff64 2>&1 | grep -q 'jmp' && echo "PASS $@" || (echo "FAIL $@"; exit 1)
+	@cd $(ROOT) && printf '"see64.ff" needed ;\nsee cr\nbye\n' | ./ff64 2>&1 | grep -q 'push' && echo "PASS $@" || (echo "FAIL $@"; exit 1)
 
 # Binary is smaller than 377224 (original with PNO in boot)
 test-size:

@@ -674,134 +674,16 @@ _emit_dup_nos_s:
         add rbp, 3
         jmp _s08                    ; swap reg field: rdx↔rbx
 
-;; dup ( x -- x x ): push NOS, copy TOS to NOS (10 bytes)
-;; Default: sub r15,8; mov [r15],rdx; mov rdx,rbx
-;; Swapped: sub r15,8; mov [r15],rbx; mov rbx,rdx
-_dup_inline:
-        call _emit_dup_nos_s
-        mov byte [rbp], $48
-        mov word [rbp+1], $DA89     ; mov rdx, rbx (default)
-        add rbp, 3
-        jmp _s09                    ; swap both: rdx↔rbx in both fields
-
-;; drop ( x -- ): move NOS to TOS, pop new NOS (10 bytes)
-;; Default: mov rbx,rdx; mov rdx,[r15]; add r15,8
-;; Swapped: mov rdx,rbx; mov rbx,[r15]; add r15,8
-_drop_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $D389     ; mov rbx, rdx (default)
-        add rbp, 3
-        call _s09                   ; swap both fields
-        jmp _emit_drop_nos_s
-
 ;; swap ( a b -- b a ): toggle SWAPbit — ZERO bytes emitted!
 ;; This is the core of FreeForth's optimization: swap is free.
 _swap_inline:
         xor byte [SC], 2           ; toggle SWAPbit
         ret
 
-;; over ( a b -- a b a ): push NOS, swap regs (10 bytes)
-;; Default: sub r15,8; mov [r15],rdx; xchg rbx,rdx
-;; Swapped: sub r15,8; mov [r15],rbx; xchg rbx,rdx
-;; Note: xchg is always the same — it swaps both registers regardless.
-_over_inline:
-        call _emit_dup_nos_s
-        mov byte [rbp], $48         ; xchg rbx, rdx (always same)
-        mov word [rbp+1], $DA87
-        add rbp, 3
-        ret
-
-;; nip ( a b -- b ): pop NOS, keep TOS (7 bytes)
-;; Default: mov rdx,[r15]; add r15,8
-;; Swapped: mov rbx,[r15]; add r15,8
-_nip_inline:
-        jmp _emit_drop_nos_s
-
-;; + ( a b -- a+b ): add NOS to TOS, pop (10 bytes)
-;; Default: add rbx,rdx; mov rdx,[r15]; add r15,8
-;; Swapped: add rdx,rbx; mov rbx,[r15]; add r15,8
-_add_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $D301     ; add rbx, rdx (default)
-        add rbp, 3
-        call _s09                   ; swap both fields
-        jmp _emit_drop_nos_s
-
-;; - ( a b -- a-b ): subtract TOS from NOS (13 bytes)
-;; Default: sub rdx,rbx; mov rbx,rdx; DROP_NOS
-;; Swapped: sub rbx,rdx; mov rdx,rbx; DROP_NOS_S
-_sub_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DA29     ; sub rdx, rbx (default)
-        add rbp, 3
-        call _s09
-        mov byte [rbp], $48
-        mov word [rbp+1], $D389     ; mov rbx, rdx (default)
-        add rbp, 3
-        call _s09
-        jmp _emit_drop_nos_s
-
-;; * ( a b -- a*b ): multiply TOS by NOS (11 bytes)
-;; Default: imul rbx,rdx; mov rdx,[r15]; add r15,8
-;; Swapped: imul rdx,rbx; mov rbx,[r15]; add r15,8
-_mul_inline:
-        mov dword [rbp], $DAAF0F48  ; imul rbx, rdx (default)
-        add rbp, 4
-        call _s09                   ; swap both fields
-        jmp _emit_drop_nos_s
-
-;; negate ( n -- -n ): two's complement negation (3 bytes)
-;; Default: neg rbx (48 F7 DB)
-;; Swapped: neg rdx (48 F7 DA) — XOR $01 on ModR/M
-_negate_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DBF7     ; neg rbx (default)
-        add rbp, 3
-        jmp _s01                    ; swap r/m field only
-
-;; @ ( addr -- val ): fetch 64-bit value from memory (3 bytes)
-;; Default: mov rbx,[rbx] (48 8B 1B)
-;; Swapped: mov rdx,[rdx] (48 8B 12) — XOR $09 on ModR/M
-_fetch_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $1B8B     ; mov rbx, [rbx]
-        add rbp, 3
-        jmp _s09
-
-;; c@ ( addr -- char ): fetch byte, zero-extend (3 bytes)
-;; Default: movzx ebx,byte [rbx] (0F B6 1B)
-;; Swapped: movzx edx,byte [rdx] (0F B6 12) — XOR $09
-;; Note: no REX prefix needed — 32-bit result zero-extends to 64-bit
-_cfetch_inline:
-        mov byte [rbp], $0F
-        mov word [rbp+1], $1BB6     ; movzx ebx, byte [rbx]
-        add rbp, 3
-        jmp _s09
-
-;; rot ( a b c -- b c a ): rotate third to top (6 bytes)
-;; Default: xchg rdx,[r15] (49 87 17); xchg rbx,rdx (48 87 DA)
-;; Swapped: xchg rbx,[r15] (49 87 1F); xchg rbx,rdx (48 87 DA)
-;; Note: second xchg is always the same (symmetric operation).
-_rot_inline:
-        mov byte [rbp], $49
-        mov word [rbp+1], $1787     ; xchg rdx, [r15]
-        add rbp, 3
-        call _s08                   ; swap reg field: rdx↔rbx
-        mov byte [rbp], $48
-        mov word [rbp+1], $DA87     ; xchg rbx, rdx (always same)
-        add rbp, 3
-        ret
-
-;; tuck ( a b -- b a b ): push TOS under NOS (7 bytes)
-;; Default: sub r15,8 (49 83 EF 08); mov [r15],rbx (49 89 1F)
-;; Swapped: sub r15,8; mov [r15],rdx (49 89 17) — XOR $08
-_tuck_inline:
-        mov dword [rbp], $F87F8D4D  ; lea r15, [r15-8] (flags-preserving)
-        add rbp, 4
-        mov byte [rbp], $49
-        mov word [rbp+1], $1F89     ; mov [r15], rbx (default)
-        add rbp, 3
-        jmp _s08                    ; swap reg field: rbx↔rdx
+;; Inline code generators for dup, drop, over, nip, +, -, *, negate,
+;; @, c@, rot, tuck are now defined as Forth backtick macros in ff64.boot,
+;; matching Lavarenne's approach. Only swap` remains in assembly because
+;; it modifies the compiler's SWAPbit state rather than emitting code.
 
 ;; =====================================================================
 ;; FLAGS-BASED CONDITIONALS (FreeForth approach)
@@ -2689,24 +2571,11 @@ macro GENWORDS64 {
         db 0
 }
 
-;; Inline code generators (ct=2) — emit machine code directly
-WORD64 "over", _over_inline, 2, 4
-WORD64 "swap", _swap_inline, 2, 4
-WORD64 "drop", _drop_inline, 2, 4
-WORD64 "dup", _dup_inline, 2, 3
-WORD64 "negate", _negate_inline, 2, 6
-WORD64 "nip", _nip_inline, 2, 3
-WORD64 "*", _mul_inline, 2, 1
-WORD64 "-", _sub_inline, 2, 1
-WORD64 "+", _add_inline, 2, 1
-WORD64 "@", _fetch_inline, 2, 1
-WORD64 "c@", _cfetch_inline, 2, 2
-WORD64 "rot", _rot_inline, 2, 3
-WORD64 "tuck", _tuck_inline, 2, 4
-
 ;; Backtick-named versions (ct=0) for macro composition
 ;; These let macros compile calls to compile-time primitives.
 ;; E.g.: `: 0;` 0-` 0=` IF` drop` ;THEN` ;`
+;; Inline code generators (dup, drop, over, etc.) are now defined purely
+;; as Forth backtick macros in ff64.boot, matching Lavarenne's approach.
 ; Flow control (IF/THEN/ELSE/BEGIN/AGAIN/UNTIL/WHILE/REPEAT)
 ; moved to ff64.boot — Forth-defined using cond/d!
 WORD64 "0>=`", _zge_flags, 0, 4
