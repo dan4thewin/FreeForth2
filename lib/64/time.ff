@@ -1,15 +1,8 @@
 ( time.ff — calendar date, time display, ms@ and ms )
 (
-  The date/time display words are pure arithmetic ported from ff.ff.
-  i386's date and time literals [1970-1-1, 24:0:0] are not available
-  in ff64, so constants are precomputed.
-  86400 = seconds per day [24*60*60]
-  -951865200 = epoch offset [seconds from 1970-1-1 to 2000-3-1 + 1h]
-  730485 = days from epoch 0-0-0 to 2000-3-1
+  Date/time display words are pure arithmetic ported from ff.ff.
+  Now using Lavarenne's original date and time literal notation.
 )
-
-86400 constant _secsperday pvt
-730485 constant _epoch2000 pvt
 
 :. _leap .dec\ ."-2-29" drop ;
 : .d ( n -- ; display days since 0-0-0 as gregorian date )
@@ -21,9 +14,9 @@
   12 > drop IF 12- swap 1+ swap THEN swap
   .dec\ ."-" .dec\ ."-" .dec\ ;
 : .wd ( n -- ) 7% 3* "wedthufrisatsunmontue" drop + 3 type ;
-: now 0 1 201 syscall -951865200 + ; ( -- n ; seconds since 2000-3-1 )
-: .now` now dup _secsperday / .wd space ( -- ; display current date&time )
-: .dt _secsperday /% _epoch2000 + .d ."\_" ( n -- ; display seconds as date&time )
+: now 0 1 201 syscall [ 1970-1-1 2000-3-1- 24:0:0* 1:0:0+ ] lit + ; ( -- n ; seconds since 2000-3-1 )
+: .now` now dup 24:0:0 / .wd space ( -- ; display current date&time )
+: .dt 24:0:0 /% 2000-3-1 + .d ."\_" ( n -- ; display seconds as date&time )
 : .t 60 /% 60 /% .dec\ .":" .dec\ .":" .dec ; ( n -- ; display seconds as time )
 
 ( --- millisecond timer and delay --- )

@@ -26,7 +26,7 @@ variable _tiosbuf pvt 60 allot
 :. _TCGETS  $5401 SKIP
 :. _TCSETSW $5403 THEN _tiosbuf swap stdin ioctl ?ior ;
 : ekey
-  _TCGETS _tiosbuf 12+ dup@ swap 64 over!
+  _TCGETS _tiosbuf 12+ dup@ swap &100 over!
   _TCSETSW key -rot ! _TCSETSW
 ; ( -- c ; raw keyboard input )
 

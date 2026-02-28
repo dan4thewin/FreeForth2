@@ -6864,3 +6864,52 @@ Full test suite: 479 PASS (13 new + 466 existing), 1 pre-existing FAIL
 - `exp/081-numlit/Makefile` — 13 tests
 
 ---
+
+## Experiment 082: Restore Original Literal Notation
+
+**Goal:** Now that the full number parser is ported (exp 081), replace
+the decimal workarounds in lib/64 files with Lavarenne's original
+literal notation.
+
+### Changes
+
+**console.ff:** Restored `&100` (octal, = 64 decimal) in ekey's
+termios c_lflag manipulation. Was using `64` as a workaround.
+
+**time.ff:** Restored all original notation:
+- `24:0:0` replaces `86400` (seconds per day)
+- `2000-3-1` replaces `730485` (day number)
+- `[ 1970-1-1 2000-3-1- 24:0:0* 1:0:0+ ] lit` replaces `-951865200`
+  (epoch offset)
+- Removed `_secsperday` and `_epoch2000` private constants — no longer
+  needed
+
+**Key discovery:** The bracket expression `[ ... ]` requires `lit` to
+compile the stack value as a literal. Lavarenne's original code has
+`] lit +` but the initial port omitted `lit`, which worked at the REPL
+(where `;` auto-compiles stack values) but not in loaded files (where
+the value was silently discarded).
+
+### Tests (6 tests, all PASS)
+
+| Test | What it checks |
+|------|---------------|
+| console-load | console.ff loads without errors (with &100) |
+| now-value | `now` returns a reasonable epoch-relative value |
+| now-display | `.now` displays a 20xx date |
+| time-literal | `24:0:0` parses to 86400 |
+| date-literal | `2000-3-1` parses to 730485 |
+| octal-literal | `&100` parses to 64 |
+
+Full test suite: 485 total (484 PASS, 1 pre-existing FAIL).
+
+**Files modified:**
+- `lib/64/console.ff` — `64` → `&100`
+- `lib/64/time.ff` — removed precomputed constants, restored date/time
+  literal notation
+- `exp/Makefile` — added 082-restore-lits
+
+**Files created:**
+- `exp/082-restore-lits/Makefile` — 6 tests
+
+---
