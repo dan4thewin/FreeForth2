@@ -54,7 +54,8 @@ EXPERIMENTS = 023-forthmacros64 \
               082-restore-lits \
               086-shrink \
               087-features \
-              088-segv-fix
+              088-segv-fix \
+              089-anon-flush
 
 test:
 	@fail=0; for d in $(EXPERIMENTS); do \

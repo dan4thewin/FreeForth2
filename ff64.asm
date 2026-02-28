@@ -1427,6 +1427,11 @@ _semi_exec:
 ;; variable: parse name, allocate 8-byte cell, create literal header
 ;; Usage: variable x    → x pushes address of its cell
 _variable:
+        mov rax, [anon]
+        test rax, rax
+        jz .var_no_anon
+        call _semi_exec
+.var_no_anon:
         call _wsparse
         test ecx, ecx
         jz _colon.missing_name
@@ -1443,6 +1448,11 @@ _variable:
 ;; constant: parse name, TOS is the value, create literal header
 ;; Usage: 42 constant answer    → answer pushes 42
 _constant:
+        mov rax, [anon]
+        test rax, rax
+        jz .const_no_anon
+        call _semi_exec
+.const_no_anon:
         call _wsparse
         test ecx, ecx
         jz _colon.missing_name

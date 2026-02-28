@@ -7172,3 +7172,71 @@ practice: always end top-level statements with `;`.
 **Running total:** 501 tests across 34 experiments, all passing.
 
 ---
+
+## Experiment 089: Anonymous Block Flush for variable/constant
+
+**Goal:** Fix `variable` and `constant` not flushing pending anonymous
+blocks, causing bare top-level calls to be silently discarded.
+
+**Status:** PASS — 512 tests, 0 failures.
+
+### Discovery
+
+DG wrote a test (`t1`) that demonstrated the bug directly:
+
+```forth
+: foo ."foo" ;
+foo
+variable ffpath pvt 248 allot
+:. bar ."bar" ;
+bar
+```
+
+`./ff -f t1 bye` (i386) prints `foobar`. `./ff64 -f t1 bye` printed
+only `bar` — the `foo` call was silently lost.
+
+### Root Cause
+
+The ff64 compiler has assembly fast-paths for `variable` and
+`constant` (checked by name in the compiler loop). These fast-paths
+call `_variable` / `_constant` directly, bypassing the Forth
+definitions (`variable`` → `create`` → `:``). The Forth path goes
+through `_colon`, which flushes any pending anonymous block via
+`_semi_exec`. The assembly fast-paths skipped this flush.
+
+The i386 compiler has no such fast-paths — `variable` and `constant`
+go through their Forth definitions, which call `:`` → `_colon` →
+`_semi` (flush).
+
+### The Fix
+
+Added the same anonymous-block check to `_variable` and `_constant`
+that `_colon` already has:
+
+```asm
+_variable:
+        mov rax, [anon]
+        test rax, rax
+        jz .var_no_anon
+        call _semi_exec
+.var_no_anon:
+        ...
+```
+
+### Connection to Experiment 088
+
+The SEGVthrow fix (adding `;` after `SEGVthrow`) was a correct
+workaround for this deeper bug. The `;` remains as good practice,
+but the root cause — `variable` not flushing — is now fixed at the
+assembly level.
+
+**Files modified:**
+- `ff64.asm` — `_variable` and `_constant` now flush pending
+  anonymous blocks before creating headers
+
+**Files created:**
+- `exp/089-anon-flush/Makefile` — 6 tests
+
+**Running total:** 512 tests across 36 experiments, all passing.
+
+---
