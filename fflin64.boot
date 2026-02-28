@@ -30,9 +30,8 @@ SEGVthrow
 ( FFPATH — search path for needed/openlib )
 ( Default: lib/64:lib:. — overridable via FFPATH env var )
 ( Path stored as NUL-separated directory entries; double-NUL terminates )
-( Buffers pre-allocated via variable+allot; cell points to data at offset 8 )
-( Anonymous allot code contaminates bytes 8-37 but is dead after boot; )
-( _ffpath_alloc overwrites it with actual data. )
+( Buffers allocated via variable+allot; _ffpath_alloc initializes them )
+( from a separate anonymous block [ossetup], per Primer §create+allot. )
 variable ffpath pvt 248 allot
 variable _openbuf pvt 248 allot
 variable _fnbuf pvt 120 allot
@@ -61,8 +60,9 @@ variable _dlen pvt
   REPEAT drop drop -1 -1 ;
 
 ( _ffpath_alloc — initialize FFPATH buffers with default path )
-( Pre-allocated buffers have dead anonymous code in first 30 bytes; )
-( we point past the 8-byte cell and overwrite the dead code with data. )
+( Called from ossetup [separate anonymous block], so writes to the )
+( allotted area don't overwrite executing code — per Primer pattern: )
+(   create X N allot ; X N init ;   -- semicolon separates blocks )
 :. _ffpath_alloc
   ffpath 8+ ffpath !
   _openbuf 8+ _openbuf !

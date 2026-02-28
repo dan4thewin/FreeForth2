@@ -3705,27 +3705,32 @@ When `needed "somefile.ff"` is called:
 Absolute paths (`/...`) and relative paths (`./...`) bypass the
 FFPATH search entirely.
 
-#### The Buffer Allocation Challenge
+#### Buffer Allocation: The Anonymous Block Self-Overwrite
 
-Allocating buffers during FreeForth boot requires understanding how
-`_semi_exec` works. Every `;` resets `rbp` (the code pointer) to the
-start of the anonymous block before executing it. Any `allot` in an
-anonymous block allocates space starting from that reset point — which
-overlaps the anonymous block's own compiled instructions.
+Allocating buffers in FreeForth requires understanding the Primer's
+WARNING about anonymous definitions that overwrite themselves.
+`allot` is a compile-time macro (`add rbp, TOS`). When at the top
+level, this code is compiled into an anonymous block. `_semi_exec`
+rewinds `rbp` to `[anon]` (the start of the anonymous block) before
+executing — so the allotted N bytes start exactly where the anonymous
+block code resides. After execution, the first ~25 bytes of the
+allotted area happen to contain the dead anonymous block code.
 
-The pattern `variable X pvt N allot` is safe because:
-- The variable's 8-byte cell (at `X`) is part of the definition body,
-  compiled BEFORE the anonymous block
-- The N allotted bytes start at the anonymous block address (past the
-  cell)
-- The first ~30 bytes of allotted space contain dead anonymous code
-- Writing to those bytes at runtime is safe — the code is never
-  executed again
+Lavarenne's prescribed pattern separates allocation from initialization
+with a semicolon:
 
-`_ffpath_alloc` exploits this: it points `ffpath` past the 8-byte
-cell (`ffpath 8+ ffpath !`) and writes the path data there, overwriting
-the dead anonymous code. This is called from `ossetup` during the
-boot sequence.
+```
+create safe 40 allot ; safe 40 $FF fill ;
+```
+
+The `;` forces the allot block to execute first. The second block's
+code is compiled PAST the allotted area, so `fill` can safely write
+to the buffer without overwriting executing code.
+
+`_ffpath_alloc` follows this pattern: the `variable ffpath pvt 248 allot`
+at compile time allocates the buffer (via one anonymous block), and
+`_ffpath_alloc` (called from `ossetup` — a completely separate execution
+context) writes path data to it.
 
 #### i386 vs x86-64 Differences
 

@@ -6111,40 +6111,32 @@ i386 FreeForth uses `openlib` to search `FFPATH` directories. On
 x86-64, we replicate this pattern: `lib/64` is searched first (so
 64-bit-specific files take precedence), then `lib`, then `.`.
 
-### The `variable ... allot` Buffer Contamination Discovery
+### The `variable ... allot` Pattern and Anonymous Block Self-Overwrite
 
-The biggest technical challenge was allocating buffers during boot.
-FreeForth compiles code at runtime using `rbp` as the code pointer
-(`here`). Every `;` triggers `_semi_exec`, which:
+The biggest technical challenge was understanding FreeForth's
+compilation model for buffer allocation. As Lavarenne documents in
+the Primer (WARNING section), `allot` is a compile-time macro that
+generates `add rbp, TOS` inline. When at the top level, this code
+is compiled into an anonymous block. `_semi_exec` rewinds `rbp` to
+`[anon]` (the start of the anonymous block) before executing — so
+the allot code advances `rbp` from the address where the code itself
+resides. The allotted N bytes start at `[anon]`, and the first ~25
+bytes happen to be the anonymous block code that just executed.
 
-1. Saves `rbp` to `hereatexec`
-2. Resets `rbp = [anon]` (start of the anonymous block)
-3. Executes the anonymous code
+This is by design, not a bug. Lavarenne's prescribed pattern is:
 
-When a `variable X N allot` is compiled:
-- `variable` creates the definition (push body_addr + ret + 8-byte cell)
-- `N allot` compiles into an anonymous block: `DUP1 + lit N + add rbp,rbx + DROP + ret`
-- `_semi_exec` resets rbp to [anon] and executes → allot advances rbp by N
-
-The **problem**: the allotted N bytes START at the anonymous block's
-address. The first ~30 bytes contain the compiled allot instructions
-(dead code after execution, but non-zero data).
-
-This means `ffpath 8+` (the allotted area past the 8-byte cell)
-contains code bytes in positions 0-29 and clean zeros from 30 onward.
-
-**Solution:** Accept the contamination. `_ffpath_alloc` (called from
-`ossetup` during boot) overwrites the dead code with actual path data:
 ```
-ffpath 8+ ffpath !       ( point cell past the 8-byte variable cell )
-ffpath @                  ( get buffer address )
-"lib/64" drop over 6 cmove 6+ 0 over c! 1+   ( write "lib/64\0" )
-"lib" drop over 3 cmove 3+ 0 over c! 1+       ( write "lib\0" )
-"." drop over 1 cmove 1+ 0 over c! 1+ 0 swap c!  ( write ".\0\0" )
+create safe 40 allot ; safe 40 $FF fill ;
 ```
 
-The path is stored as NUL-separated entries with a double-NUL
-terminator, matching the i386 convention.
+The `;` after `allot` forces the allocation anonymous block to
+execute first. Then a SECOND anonymous block initializes the memory.
+Since the second block's code lives past the allotted area, writes
+to the buffer don't overwrite executing code.
+
+Our `_ffpath_alloc` follows this pattern naturally: it runs from
+`ossetup` (a separate anonymous block from the one that did the
+`allot`), so writing path data to the buffer is safe.
 
 ### The `=` Stack Effect in FreeForth
 
@@ -6181,12 +6173,13 @@ A first attempt used `here ... allot` inside `_ffpath_alloc` (called
 from `ossetup`). This failed because `ossetup` is called from `_boot`,
 which is called from the anonymous block `_boot ;`. During that
 execution, `rbp = [anon]`, so `here` returns the anonymous block's
-code address. `allot` advances past it, but the buffer overlaps the
-anonymous code. When the anonymous block's `ret` instruction gets
-overwritten with path data, execution crashes on return.
+code address. `allot` advances past it, but the string copy then
+overwrites the anonymous block's own code — the exact self-overwrite
+crash Lavarenne warns about in the Primer.
 
 The fix: pre-allocate buffers at compile time with `variable X pvt N allot`,
-then initialize them at runtime in `_ffpath_alloc`.
+then initialize them at runtime in `_ffpath_alloc` (a separate
+anonymous block via `ossetup`).
 
 ### Tests (6 tests, all PASS)
 
