@@ -209,6 +209,34 @@ For large numbers (needs full 64 bits):
 48 BB xx xx xx xx xx xx xx xx  mov rbx, <64-bit value>  ; 10 bytes
 ```
 
+### Quick reference: compiled code byte patterns
+
+This table consolidates all the byte patterns that FreeForth's compiler
+emits. It serves as a reference for anyone reading generated code in GDB
+or writing tools that process compiled FreeForth output.
+
+| Pattern | Bytes | Meaning |
+|---------|-------|---------|
+| `49 83 EF 08` `49 89 17` `48 89 DA` | 10 | DUP1 preamble: push NOS to memory stack, move TOS→NOS |
+| `BB imm32` | 5 | Small literal: `mov ebx, imm32` (follows DUP1) |
+| `48 BB imm64` | 10 | Large literal: `mov rbx, imm64` (follows DUP1) |
+| `E8 rel32` | 5 | `call` — word invocation (subroutine threading) |
+| `E9 rel32` | 5 | `jmp` — tail-call optimization (`;` rewrites last `E8` to `E9`) |
+| `C3` | 1 | `ret` — end of definition |
+| `0F 8x rel32` | 6 | Conditional jump (`IF`/`UNTIL`/`WHILE`): 8x encodes the condition |
+| `E9 rel32` (backward) | 5 | Unconditional backward jump (`AGAIN`/`REPEAT`) |
+| `call _litstr_rt` + `db len, "str...", 0` | 5+N | Inline string literal (`"..."`) |
+| `call _dotstr_rt` + `db len, "str...", 0` | 5+N | Inline print-string (`."`/`."`) |
+| `4D 8D 7F 08` | 4 | Flag-preserving DROP1: `lea r15, [r15+8]` |
+| `49 83 C7 08` | 4 | Standard DROP1: `add r15, 8` (clobbers flags) |
+| `48 85 DB` | 3 | `test rbx, rbx` — test TOS for zero (fallback IF path) |
+
+**Reading a definition in GDB:** Use `x/Ni addr` to disassemble from a
+word's execution token. Look for `E8`/`E9` to identify which words it
+calls, `BB`/`48 BB` for its literals, and `C3` for its end. Inline
+strings follow their `call` instruction as raw bytes — GDB will show
+them as nonsense instructions; use `x/Ns addr` to read the string.
+
 ---
 
 ## Part 4: Flow Control — Branches and Loops

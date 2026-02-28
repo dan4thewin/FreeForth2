@@ -6542,3 +6542,187 @@ Full test suite: 465 PASS, 0 new failures.
 - `exp/Makefile` — added 080-lib64
 
 ---
+
+## Design Discussion: Turnkey Tree-Shaking Approach
+
+**Date:** 2026-02-28
+
+### Context
+
+The plan.md contained a detailed Phase 2 tree-shaking design based on a
+post-hoc machine-code walker: compile everything, then walk E8/E9 call
+opcodes from `main`, mark reachable code, zero or compact dead code.
+DG proposed a fundamentally different approach based on his experience
+with `lib/debug.ff`, which replaces the compiler in ~50 lines of Forth.
+
+### DG's Two-Pass Source-Level Approach
+
+**Pass 1 — Dependency graph extraction:**
+Replace the `compiler` vector with a Forth word (similar to debug.ff's
+`dbgc`, which is a complete compiler replacement in ~50 lines) that:
+- Records dependency edges: for each `: name ... ;` definition, notes
+  which other word names appear inside it
+- Emits source lines alongside the graph
+
+This produces a dependency graph file: "word A calls words B, C, D."
+
+**Pass 2 — Source filtering and recompilation:**
+A separate Forth program reads the dependency graph, computes the
+transitive closure from `main`, and rewrites the source to remove
+`: ... ;` definitions that aren't in the reachable set. The filtered
+source is then fed to the stock compiler, producing a minimal image.
+
+### Why This Is Better Than the Machine-Code Walker
+
+| Aspect | Machine-code walker | Source-level two-pass |
+|--------|--------------------|-----------------------|
+| Complexity | Must parse x86-64 opcodes (E8, E9, 0F 8x, inline strings, literals) | Records word names during compilation |
+| Assembly changes | None, but the tracer itself is complex Forth | None — compiler replacement is ~50 lines of Forth |
+| Fragility | Opcode patterns can vary; inline data detection is tricky | Operates on names, not bytes |
+| Relocations | Must rewrite rel32 offsets when compacting code | Stock compiler handles all addressing |
+| Artifacts | None beyond the binary | Produces a useful dependency graph |
+| Compile-time side effects | Handled correctly (code already compiled) | Handled correctly (Pass 1 actually compiles) |
+
+### The 95% Rule
+
+DG's key insight: the tool doesn't need to be perfect. The 95% case is
+straightforward `: name ... ;` definitions that reference other named
+words via `find`. The dependency graph is simply "which names appear
+inside which definitions." The source filter is "delete definitions
+whose names aren't in the reachable set."
+
+The 5% that may break:
+- **`[ ... ]` compile-time evaluation blocks** — execute arbitrary code
+  at compile time; the graph may miss dependencies
+- **Conditional compilation macros** — code that conditionally defines
+  words based on runtime state
+- **Dynamic dispatch** — `execute`, vectors (`:^`), `catch`/`throw`
+  with computed xts
+
+These edge cases are the user's problem. If a program uses unusual
+patterns and the tree-shaker produces a broken binary, the user can add
+a `keep` annotation or restructure their code. This is the same
+trade-off that C linkers make with `--gc-sections`.
+
+### Assessment
+
+*[Note: this section is the AI's analysis, written at DG's direction.]*
+
+The source-level approach is dramatically simpler than the machine-code
+walker. The compiler replacement is compact (~50 lines), though DG
+notes that `debug.ff` took significant effort despite its brevity —
+a reminder that line count is a poor proxy for difficulty in Forth.
+The source filter is a straightforward Forth program, and the stock
+compiler does the heavy lifting for Pass 2. The machine-code walker
+was over-engineered for the problem.
+
+The plan's Phase 2 tree-shaking section should be replaced with this
+approach. The experiment sequence changes from "build an x86-64 opcode
+tracer" to "write two small Forth programs."
+
+---
+
+## Planning: Full Number Literal Parser (Exp 081)
+
+**Date:** 2026-02-28
+
+### The Problem
+
+ff64's `_number` (ff64.asm:1161–1221) is minimal: it handles decimal
+digits, `$` hex prefix, and `-` negative sign. That's 60 lines of
+straightforward code. Lavarenne's i386 `_number` (ff.asm:536–657) is a
+table-driven parser supporting twelve distinct token types across 120
+lines. Every literal format that ff64 can't parse forces workarounds —
+precomputed decimal constants instead of `24:0:0`, decimal `64` instead
+of `&100`, and so on. These workarounds obscure the programmer's intent
+and break compatibility with existing FreeForth source.
+
+### What the i386 Parser Does
+
+The parser uses two tables:
+
+**Character classification table (`.ct`, 128 bytes):** Maps each ASCII
+value (0–127) to a method index (0–12). For example, `'0'`–`'9'` map
+to 1 (digit), `'$'` maps to 5 (hex prefix), `'-'` maps to 10 (date
+separator), `':'` maps to 12 (time separator).
+
+**Jump table (`.jt`, 13 entries):** Dispatches to handler code based on
+the method index:
+
+| Index | Trigger | Handler |
+|-------|---------|---------|
+| 0 | Unknown chars, errors | `.0` — fail, pop state, return |
+| 1 | `0`–`9` | `.1` — subtract `'0'`, accumulate digit |
+| 2 | `A`–`Z` | `.2` — subtract to get 10–35, accumulate |
+| 3 | `a`–`z` | `.3` — fold to uppercase, then `.2` |
+| 4 | `'` `,` `/` | `.4` — skip character, read next |
+| 5 | `$` | `.5` — set base to 16 (hex) |
+| 6 | `%` | `.6` — set base to 2 (binary) |
+| 7 | `&` | `.7` — set base to 8 (octal) |
+| 8 | `#` | `.8` — set base to accumulated value (or 10 if zero) |
+| 9 | Whitespace, NUL–TAB | `.9` — same as error (for `wsparse` compatibility) |
+| 10 | `-` (after initial) | `.10` — Gregorian date: `y-m-d` → day number |
+| 11 | `_` | `.11` — day-hour separator: `d_h` ×24 |
+| 12 | `:` | `.12` — time separator: `h:m:s` ×60 |
+
+### The Date Algorithm
+
+The Gregorian date handler at `.10` (ff.asm:603–629) converts
+`year-month-day` to a linear day number using the algorithm:
+
+1. If month < 3, add 12 and decrement year (shift origin to March 1)
+2. Day-of-year = `(153 × (month+1)) / 5 − 123`
+3. Year contribution = `365×y + y/4 − y/100 + y/400`
+4. Sum all parts
+
+The secondary accumulator (`accu`) holds intermediate results across
+field separators. For dates: `accu` accumulates the year contribution
+while `ecx` handles month/day. For times: each `:` multiplies the
+accumulated value by 60 and adds the next field.
+
+The `_` separator at `.11` bridges dates and times: `2000-3-1_12:0:0`.
+It checks if the day number exceeds 730484 (indicating an absolute
+date rather than a year-2000-relative one), subtracts 730485 to
+translate to a 2000-03-01 origin (a Wednesday), then multiplies by 24
+to shift into hours, ready for the `:` time separator to continue.
+
+### The Port Plan
+
+**Register mapping:** The i386 parser uses `ebp` for current base.
+ff64 can't — `rbp` is the compilation pointer (`here`). Use `r10`
+instead. The rest maps naturally: `rsi`/`rdi` for string scan,
+`rcx` for accumulator, `rax` for digit processing.
+
+**New data:** Add `accu dq 0` (was `dd 0`), the 128-byte `.ct` table,
+and the 13-entry `.jt` jump table (8 bytes per entry on x86-64, was 4).
+
+**What replaces what:** The new `_number` replaces ff64.asm lines
+1161–1221 entirely. The `number.` entry point (parse with explicit
+base) should also be ported — it's just `push r10; mov r10, rbx;
+DROP1; jmp` into the shared body.
+
+**What stays the same:** The `_number` API contract — accepts string
+address in `rax` and length in `rcx`, returns converted number in
+`rax` with ZF set on success, or original address with ZF clear on
+failure. NOS (`rdx`) is saved/restored around the conversion.
+
+### Test Plan
+
+Each format needs a test:
+- Decimal: `42`, `-7`
+- Hex: `$FF`, `$deadbeef`
+- Octal: `&100` (= 64)
+- Binary: `%1010` (= 10)
+- Base: `8#77` (= 63), `16#FF` (= 255)
+- Quoted ASCII: `'A` (= 65)
+- Date: `2000-3-1` (= 730485)
+- Time: `1:0:0` (= 3600), `24:0:0` (= 86400)
+- Day-hour: `2000-3-1_0:0:0`
+- Skip chars: `1'000'000` (= 1000000), `1,000` (= 1000)
+- Combined: `[ 1970-1-1 2000-3-1- 24:0:0* 1:0:0+ ]`
+
+After the parser works, exp 082 restores original literal notation
+in lib/64 files: `&100` in console.ff, `24:0:0` and date expressions
+in time.ff.
+
+---
