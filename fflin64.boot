@@ -25,7 +25,7 @@ create SEGVact pvt 152 allot
 SEGVhndlr ' SEGVact !
 $40000000 SEGVact 136+ !
 :. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
-SEGVthrow
+SEGVthrow ;
 
 ( FFPATH — search path for needed/openlib )
 ( Default: lib/64:lib:. — overridable via FFPATH env var )

@@ -7070,3 +7070,105 @@ Full test suite: 498 PASS, 1 pre-existing FAIL (SEGV recovery).
 - `exp/087-features/Makefile` — 7 tests
 
 ---
+
+## Experiment 088: SEGV Recovery Fix
+
+**Goal:** Fix the SEGV handler regression — `0@` should print
+"SEGV caught" and return to the REPL, not crash with exit code 139.
+
+**Status:** PASS — 501 tests, 0 failures.
+
+### Discovery
+
+After experiment 087, the SEGV recovery test (exp/064) started failing.
+`0@` at the REPL triggered the **assembly** SEGV handler (which prints
+`*** SEGV ***` and exits) instead of the **Forth** handler (which
+throws "SEGV caught" back to the REPL's catch frame).
+
+### Root Cause
+
+The Forth SEGV handler is installed during boot by this sequence in
+`fflin64.boot`:
+
+```forth
+:. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
+SEGVthrow
+```
+
+Line 1 defines the word. Line 2 is a bare call that compiles into the
+current anonymous block. That block only executes when a `;` flushes
+it — either explicitly, or when `:` starts a new definition (since
+`_colon` calls `_semi` first).
+
+In the **working** version (pre-087), `SEGVthrow` was followed by
+`: needed ...` — the `:` triggered `_semi`, executing the anonymous
+block, which called SEGVthrow, which installed the Forth SEGV handler
+via libc `sigaction`.
+
+In the **broken** version (087), new FFPATH code was inserted between
+`SEGVthrow` and `needed`:
+
+```
+SEGVthrow
+variable ffpath pvt 248 allot    ← first word after SEGVthrow
+```
+
+`variable` calls `create` which calls `:`` — but `create`/`variable`
+use `anon:`` to start a new anonymous block **without** first calling
+`_semi` to flush the pending one. The anonymous block containing the
+`SEGVthrow` call was silently discarded, never executed.
+
+### Debugging Journey
+
+This was found by using GDB with breakpoints on libc `__GI___sigaction`
+to compare the working and broken versions. The working version hit the
+breakpoint during boot; the broken version never called `sigaction` at
+all. Cross-checking by building both versions from identical source
+(only the surrounding code differed) pinpointed the cause.
+
+Key insight came from DG's suggestion to step through the working
+version first, then compare. The GDB evidence was unambiguous — no
+amount of source reading would have revealed that `variable` doesn't
+flush the anonymous block the way `:` does.
+
+### Why the regression wasn't caught
+
+The exp/064-segv tests *did* detect the failure — `test-segv-recovery`
+reported FAIL. But the `exp/Makefile` test runner used a simple `for`
+loop that didn't propagate individual experiment failures to the
+overall exit code. The failure scrolled past in the output, and I (the
+AI) assumed it was "pre-existing" without verifying that the test had
+passed at the prior commit. The commit message for experiment 087
+stated "1 pre-existing SEGV recovery FAIL" — that was wrong; I
+introduced the regression in that same commit.
+
+Fix: `exp/Makefile` now counts failures and exits nonzero if any
+experiment fails, making regressions impossible to ignore.
+
+### The Fix
+
+One character: add `;` after `SEGVthrow` to force immediate execution:
+
+```forth
+SEGVthrow ;
+```
+
+This is consistent with the rule documented in the Primer: top-level
+code in loaded files requires a trailing `;` to execute. The working
+version happened to work by accident — the `:` that followed acted as
+an implicit flush.
+
+### Broader Lesson
+
+Any bare top-level call in a boot/loaded file that relies on the
+*next* definition starting with `:` to trigger execution is fragile.
+If someone inserts a `variable`, `create`, or `constant` between the
+bare call and the next `:`, the call silently disappears. The safe
+practice: always end top-level statements with `;`.
+
+**Files modified:**
+- `fflin64.boot` — added `;` after `SEGVthrow` (line 28)
+
+**Running total:** 501 tests across 34 experiments, all passing.
+
+---

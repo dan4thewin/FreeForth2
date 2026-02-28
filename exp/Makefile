@@ -53,12 +53,16 @@ EXPERIMENTS = 023-forthmacros64 \
               081-numlit \
               082-restore-lits \
               086-shrink \
-              087-features
+              087-features \
+              088-segv-fix
 
 test:
-	@for d in $(EXPERIMENTS); do \
-		$(MAKE) -s -C $$d test 2>&1; \
-	done
+	@fail=0; for d in $(EXPERIMENTS); do \
+		$(MAKE) -s -C $$d test 2>&1 || fail=$$((fail+1)); \
+	done; \
+	if [ $$fail -ne 0 ]; then \
+		echo "*** $$fail experiment(s) FAILED ***"; exit 1; \
+	fi
 
 clean:
 	@for d in $(EXPERIMENTS); do \

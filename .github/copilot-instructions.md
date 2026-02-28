@@ -138,12 +138,15 @@ workarounds throughout ff64.boot are no longer necessary.
 
 Every task must end with:
 
-1. Update `exp/JOURNAL.md` — experiment entry with goals, actions,
+1. Run `make -C exp test` — **all tests must pass**. Do not dismiss
+   failures as "pre-existing" without verifying they existed before
+   your changes. If you broke it, fix it.
+2. Update `exp/JOURNAL.md` — experiment entry with goals, actions,
    reasoning
-2. Update `exp/GUIDE.md` — if new concepts or architecture introduced
-3. Add novel user-facing words to `ff64.help`
-4. `git commit` with descriptive message
-5. `git push` (scan `/tmp/ssh-*/agent.*` for live SSH agent socket
+3. Update `exp/GUIDE.md` — if new concepts or architecture introduced
+4. Add novel user-facing words to `ff64.help`
+5. `git commit` with descriptive message
+6. `git push` (scan `/tmp/ssh-*/agent.*` for live SSH agent socket
    if `$SSH_AUTH_SOCK` is stale)
 
 Do not mark the task complete until all steps are done.
@@ -151,7 +154,9 @@ Do not mark the task complete until all steps are done.
 ## Build and test
 
 - `make all` builds both `ff` (32-bit) and `ff64` (64-bit)
-- `make -C exp test` runs all experiments (currently 74, all PASS)
+- `make -C exp test` runs all experiments (currently 35, all PASS).
+   The test runner exits nonzero if any experiment fails — never
+   commit with failing tests.
 - `./ff64 -f ff64.boot` loads the standard library (via ff64.boot.min
   which includes fflin64.boot)
 - Assembler is FASM (flat assembler, version 1.73.32)
