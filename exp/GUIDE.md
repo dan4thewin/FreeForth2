@@ -6,6 +6,13 @@ This document explains how FreeForth2 works, how the x86-64 port works,
 and why they differ. It is written for someone with only a rudimentary
 grasp of assembly language.
 
+**A note on authorship:** This guide was written by an AI (Claude,
+Anthropic) working under the direction of DG, the human maintainer of
+FreeForth2. The AI wrote the prose and the code; DG directed the effort,
+corrected errors, and provided the understanding of Lavarenne's design
+that the AI could not have arrived at alone. See the Prologue of
+`JOURNAL.md` for a fuller account of how this collaboration works.
+
 ---
 
 ## Part 1: The Machine Underneath

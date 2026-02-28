@@ -13,6 +13,43 @@ series of small, self-contained experiments. Each experiment produces a
 working binary that demonstrates one architectural concept needed for
 the 64-bit port.
 
+### How this work is being done
+
+This port is a collaboration between DG (the human maintainer of
+FreeForth2) and an AI — specifically, Claude (Anthropic) running as
+GitHub Copilot in the terminal. The AI writes the code, the assembly,
+the Forth, and these documents. DG directs the effort: setting goals,
+reviewing output, correcting mistakes, explaining Lavarenne's design
+intent, and making judgment calls the AI cannot.
+
+The workflow is conversational. DG describes what should happen next.
+The AI proposes an approach, writes the code, compiles it, debugs it
+under GDB when it crashes (which is often — this is x86-64 assembly),
+and produces a working experiment. DG reviews the result, points out
+what's wrong or what was misunderstood, and the AI corrects course.
+Each session runs inside a persistent terminal environment where the AI
+has direct access to the source, the assembler (FASM), GDB, and the
+running binaries.
+
+The AI does not understand FreeForth the way Lavarenne did — or the
+way DG does. It makes mistakes that reveal gaps in understanding:
+misattributing DG's work to Lavarenne, confusing octal and hex
+prefixes, misjudging the complexity of a "trivial" 50-line Forth
+program. These mistakes are corrected in real time by DG, and the
+corrections themselves become part of the record. Where the journal
+says "key discovery" or "insight," that often means the AI finally
+understood something DG already knew — or something they figured out
+together by staring at GDB output.
+
+The prose in this journal and the companion guide is AI-generated.
+Sections marked *[AI analysis]* or similar are the AI's own
+assessment. Unattributed technical descriptions are the AI's rendering
+of what DG explained or what the code revealed under examination.
+Direct quotes from DG are attributed. The goal is transparency: a
+future reader should know that an AI wrote these words, that a human
+directed the work, and that neither could have done it alone in quite
+this way.
+
 ### Design decisions (established in planning)
 
 - **Separate files** from the 32-bit version (no conditional assembly)
