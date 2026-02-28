@@ -48,7 +48,8 @@ EXPERIMENTS = 023-forthmacros64 \
               073-turnkey \
               074-fflin64-boot \
               078-ffpath \
-              079-fixup
+              079-fixup \
+              080-lib64
 
 test:
 	@for d in $(EXPERIMENTS); do \

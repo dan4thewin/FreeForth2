@@ -1,0 +1,34 @@
+( console.ff — terminal and console display control )
+"fileops.ff" needed ;
+
+( --- cursor and display control --- )
+: cls` ."^[[2J" ( -- )
+: home 0 dup ( -- )
+: atxy ."^[[" 1+ .dec\ .";" 1+ .dec\ ."H" ; ( col row -- )
+: atx  ."^[[" 1+ .dec\ ."G" ; ( col -- )
+
+( --- color and attributes --- )
+:^ color ."^[[" .dec\ ."m" ; ( n -- )
+:. _nocolor drop ;
+: nocolor _nocolor ' color !^ ;
+: normal 0 color ;     : bold 1 color ;          : dim 2 color ;
+: underline 4 color ;  : blink 5 color ;         : inverse 7 color ;
+: concealed 8 color ;  : foreground 30+ color ;  : background 40+ color ;
+0 constant black  1 constant red      2 constant green  3 constant yellow
+4 constant blue   5 constant magenta  6 constant cyan   7 constant white
+
+( --- terminal input --- )
+variable _fdset pvt 0 , 0 ,
+: key? stdin ( -- ; zFALSE if stdin would block )
+: fdin? 1 swap << _fdset! _fdset 8+ 0 0 _fdset $20 select dup ?ior 0- drop ; ( fd -- )
+
+variable _tiosbuf pvt 60 allot
+:. _TCGETS  $5401 SKIP
+:. _TCSETSW $5403 THEN _tiosbuf swap stdin ioctl ?ior ;
+: ekey
+  _TCGETS _tiosbuf 12+ dup@ swap $100 over!
+  _TCSETSW key -rot ! _TCSETSW
+; ( -- c ; raw keyboard input )
+
+: stopdump? key 10- drop ;
+: ;dump` ;` BEGIN 16 bounds under dump stopdump? 0<> UNTIL drop ; ( addr -- )

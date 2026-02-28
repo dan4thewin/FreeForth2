@@ -1,0 +1,33 @@
+( time.ff — calendar date, time display, ms@ and ms )
+(
+  The date/time display words are pure arithmetic ported from ff.ff.
+  i386's date and time literals [1970-1-1, 24:0:0] are not available
+  in ff64, so constants are precomputed.
+  86400 = seconds per day [24*60*60]
+  -951865200 = epoch offset [seconds from 1970-1-1 to 2000-3-1 + 1h]
+  730485 = days from epoch 0-0-0 to 2000-3-1
+)
+
+86400 constant _secsperday pvt
+730485 constant _epoch2000 pvt
+
+:. _leap .dec\ ."-2-29" drop ;
+: .d ( n -- ; display days since 0-0-0 as gregorian date )
+  146097 /% 400* swap 146096 = drop IF swap 400+ _leap ;THEN
+  36524 /% 100* rot + swap
+  1461 /% 4* rot + swap 1460 = drop IF swap 4+ _leap ;THEN
+  365 /% rot + swap
+  dup 31+ 5* 153/ 2+ tuck 1+ 153* 5/ 123- - -rot
+  12 > drop IF 12- swap 1+ swap THEN swap
+  .dec\ ."-" .dec\ ."-" .dec\ ;
+: .wd ( n -- ) 7% 3* "wedthufrisatsunmontue" drop + 3 type ;
+: now 0 1 201 syscall -951865200 + ; ( -- n ; seconds since 2000-3-1 )
+: .now` now dup _secsperday / .wd space ( -- ; display current date&time )
+: .dt _secsperday /% _epoch2000 + .d ."\_" ( n -- ; display seconds as date&time )
+: .t 60 /% 60 /% .dec\ .":" .dec\ .":" .dec ; ( n -- ; display seconds as time )
+
+( --- millisecond timer and delay --- )
+( x86-64: clock_gettime=228, nanosleep=35 )
+variable _tsbuf pvt 0 ,
+: ms@ _tsbuf 0 2 228 syscall drop _tsbuf 2@ 1000* swap 1000000/ + ; ( -- ms )
+: ms 1000 /% swap 1000000* swap _tsbuf 2! 0 _tsbuf 2 35 syscall drop ; ( ms -- )

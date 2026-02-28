@@ -6379,3 +6379,154 @@ spectacularly during the `ct=1` bug investigation (exp 038).
 - `exp/Makefile` — added 079-fixup
 
 ---
+
+## Experiment 080: lib/64 Library System
+
+**Goal:** Port ff.ff library words to x86-64 as loadable library files
+in `lib/64/`, following Lavarenne's design of keeping the boot image
+small by loading less-used words on demand.
+
+### The fixup Buffer Allocation Bug (CRITICAL FIX)
+
+Before creating new library files, a showstopper emerged: `fixup`-based
+words (strerror, malloc, getenv) crashed on their SECOND invocation
+when ASLR was enabled.
+
+**Root cause:** The original fixup wrote its 11-byte trampoline at
+`here` (rbp) using `c,` and `,`. During anonymous block execution,
+`_semi_exec` resets rbp to the START of the anonymous block. The
+trampoline bytes overwrite the executing code. The first call succeeds
+(its `call` instruction already dispatched), but the second call's
+instruction has been overwritten by trampoline bytes.
+
+GDB diagnosis was instant — once we saw the overwritten instructions
+at the anonymous block address, the cause was obvious. ASLR masked the
+issue under GDB (which disables ASLR by default); we caught it by
+running 20 consecutive `setarch x86_64 -R` tests.
+
+**Fix:** Pre-allocate `_fixbuf` (1024 bytes) and `_fixptr` in the
+`.flat` section at compile time. fixup writes trampolines using manual
+`c!` and `!` operations to `_fixbuf`, advancing `_fixptr`. The buffer
+is in executable memory (writable+executable `.flat` section).
+
+### Library Files Created
+
+#### lib/64/fixup.ff (updated)
+
+The fixup mechanism with the `_fixbuf` buffer fix. Also added
+`_fixptr` for tracking the next free trampoline slot.
+
+#### lib/64/malloc.ff
+
+Simple fixup-based wrappers for C `malloc` and `free`:
+```forth
+"fixup.ff" needed ;
+:. _xmalloc "malloc" fixup ;
+:  malloc 1 dup _xmalloc #call ;
+:. _xfree "free" fixup ;
+:  free 1 dup _xfree #call drop ;
+```
+
+#### lib/64/shell.ff
+
+OS interface words: `getenv`, `getpid`, `getppid`, `system`, `shell`,
+`cd`, `!!`.
+
+**Key discovery: the `1_` litnip mechanism.** The `getenv` pattern uses
+`1_` to replace TOS with 1 (arg count) without burying the string
+address under a DUP1. `1_` is parsed as literal `1` followed by final
+character `_`, which triggers `litnip` — compiling the literal WITHOUT
+DUP1 preamble. This effectively replaces TOS while preserving NOS.
+
+#### lib/64/fileops.ff
+
+File operations: `lseek`, `ioctl`, `select`, `stat`, `mkst`, `st.size`.
+
+**The stat syscall debugging saga.** The stat word required careful
+understanding of how DUP1 preambles interact with `nip` and the memory
+stack. Key insights:
+
+1. `nip` does NOT toggle SWAPbit — it emits `mov rdx,[r15]; lea r15,[r15+8]`
+   and calls `_s08` which only applies an XOR if SWAPbit is already 1.
+2. Two consecutive nips both load into the SAME register (rdx), popping
+   two items from the memory stack.
+3. The DUP1 from the preceding variable push creates an extra copy that
+   must be accounted for.
+
+The correct stat implementation is just `nip swap 2 4 syscall`:
+- `nip` drops the string length from NOS, loading the string address
+  from the memory stack
+- `swap` puts the string address in the right position for the syscall
+- The syscall arg mapping is: [r15]=arg1(rdi), [r15+8]=arg2(rsi)
+
+x86-64 struct stat: 144 bytes, st_size at offset 48.
+
+#### lib/64/console.ff
+
+Terminal control: `cls`, `home`, `atxy`, `atx` (cursor),
+`color`/`nocolor`/`normal`/`bold` etc. (ANSI attributes),
+`key?`/`fdin?` (input polling), `ekey` (raw keyboard via termios),
+`stopdump?`/`;dump` (interactive dump).
+
+Fixed from i386: `&100` hex prefix → `$100` (ff64 hex syntax),
+`2dump` → `dump` (ff64 equivalent).
+
+#### lib/64/time.ff
+
+Date display and millisecond timer: `.d`, `.wd`, `.now`, `.dt`, `.t`,
+`ms@`, `ms`.
+
+**Precomputed constants:** i386 FreeForth supports colon/dash number
+literals (`24:0:0` → 86400, `1970-1-1` → 719468). ff64 does not have
+these parsers, so the constants are precomputed:
+- `86400` = seconds per day (was `24:0:0`)
+- `-951865200` = epoch offset (was `[ 1970-1-1 2000-3-1- 24:0:0* 1:0:0+ ]`)
+- `730485` = days from epoch 0-0-0 to 2000-3-1
+
+`ms@` uses `clock_gettime` (syscall 228) instead of i386's
+`gettimeofday` (78). `ms` uses `nanosleep` (syscall 35) instead of
+i386's 162. The +3600 in the epoch offset is Lavarenne's CET timezone
+assumption.
+
+### Syscall Argument Mapping
+
+A critical insight for all syscall-based words: the FreeForth `syscall`
+word maps arguments from the data stack as:
+- TOS = syscall number
+- NOS = arg count
+- [r15] = arg1 (→ rdi)
+- [r15+8] = arg2 (→ rsi)
+- [r15+16] = arg3 (→ rdx)
+
+The DUP1 preambles from preceding literals push values deeper on the
+memory stack. The LAST value before the arg-count and syscall-number
+becomes arg1. This is the reverse of what one might expect.
+
+### Tests (8 tests, all PASS)
+
+| Test | Description |
+|------|-------------|
+| malloc | Allocate, write, read, free cycle |
+| getenv | Read HOME env var |
+| getpid | Returns a valid PID number |
+| system | Execute shell command |
+| stat | stat /etc/hostname, verify st_size |
+| console-load | console.ff loads without errors |
+| time-ms | 100ms delay measured accurately |
+| time-now | .now outputs current year |
+
+Full test suite: 465 PASS, 0 new failures.
+
+**Files created:**
+- `lib/64/malloc.ff` — malloc/free via fixup
+- `lib/64/shell.ff` — getenv, getpid, system, shell, cd, !!
+- `lib/64/fileops.ff` — lseek, ioctl, select, stat
+- `lib/64/console.ff` — terminal control and colors
+- `lib/64/time.ff` — date/time display and timer
+- `exp/080-lib64/Makefile` — 8 tests
+
+**Files modified:**
+- `lib/64/fixup.ff` — CRITICAL: _fixbuf buffer allocation fix
+- `exp/Makefile` — added 080-lib64
+
+---

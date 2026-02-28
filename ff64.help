@@ -301,3 +301,105 @@ ior ( -- addr ) variable holding last I/O result
   drops it silently. Otherwise calls strerror and throws.
   Loaded from: "ior.ff" needed
   see also: ior ?ior strerror
+
+malloc ( size -- addr ) allocate memory
+  Calls C malloc() via fixup. Returns address of allocated block.
+  Loaded from: "malloc.ff" needed
+  see also: free
+
+free ( addr -- ) release allocated memory
+  Calls C free() via fixup.
+  Loaded from: "malloc.ff" needed
+  see also: malloc
+
+getenv ( addr len -- addr len ) read environment variable
+  Returns the value string of the named env var.
+  Example: "HOME" getenv type
+  Loaded from: "shell.ff" needed
+  see also: getpid system shell cd !!
+
+getpid ( -- pid ) current process ID
+  Loaded from: "shell.ff" needed
+
+getppid ( -- pid ) parent process ID
+  Loaded from: "shell.ff" needed
+
+system ( addr len -- result ) execute shell command
+  Passes null-terminated string to C system().
+  FreeForth strings use _ for space: "ls_-la" system
+  Loaded from: "shell.ff" needed
+  see also: shell !!
+
+shell ( -- ) start interactive shell
+  Starts $SHELL (or /bin/sh). Return to FreeForth with 'exit'.
+  Loaded from: "shell.ff" needed
+
+cd ( addr len -- ) change directory
+  Uses chdir syscall (80).
+  Loaded from: "shell.ff" needed
+
+!! ( -- ) re-execute last shell command
+  Loaded from: "shell.ff" needed
+
+lseek ( whence offset fd -- offset ) reposition file offset
+  x86-64 syscall 8.
+  Loaded from: "fileops.ff" needed
+
+ioctl ( arg request fd -- result ) device control
+  x86-64 syscall 16.
+  Loaded from: "fileops.ff" needed
+
+select ( timeout exceptfds writefds readfds nfds -- result )
+  Monitor file descriptors. x86-64 syscall 23.
+  Loaded from: "fileops.ff" needed
+
+stat ( addr len statbuf -- result ) get file status
+  Calls stat syscall. statbuf must be ≥144 bytes.
+  st_size is at offset 48 in the struct.
+  Loaded from: "fileops.ff" needed
+  see also: mkst st.size
+
+mkst ( name -- ) compile-time: create a 144-byte stat buffer
+  Loaded from: "fileops.ff" needed
+
+st.size ( -- 48 ) offset of st_size in struct stat
+  Loaded from: "fileops.ff" needed
+
+cls ( -- ) clear screen (ANSI escape)
+  Loaded from: "console.ff" needed
+
+home ( -- ) move cursor to 0,0
+  Loaded from: "console.ff" needed
+
+atxy ( col row -- ) position cursor
+  Loaded from: "console.ff" needed
+
+atx ( col -- ) position cursor on current row
+  Loaded from: "console.ff" needed
+
+color ( n -- ) set ANSI color/attribute
+  Loaded from: "console.ff" needed
+  see also: normal bold nocolor foreground background
+
+key? ( -- ; zFALSE ) test if key is available on stdin
+  Uses select to check stdin readability.
+  Loaded from: "console.ff" needed
+
+ekey ( -- c ) read one key in raw mode
+  Puts terminal in raw mode, reads one byte, restores.
+  Loaded from: "console.ff" needed
+
+.now ( -- ) display current date and time
+  Example output: sat 2026-2-28_4:01:19
+  Loaded from: "time.ff" needed
+  see also: .d .wd .dt .t ms@ ms
+
+ms@ ( -- ms ) current time in milliseconds
+  Uses clock_gettime (syscall 228).
+  Loaded from: "time.ff" needed
+  see also: ms
+
+ms ( n -- ) delay n milliseconds
+  Uses nanosleep (syscall 35).
+  Loaded from: "time.ff" needed
+  see also: ms@

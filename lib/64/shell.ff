@@ -1,0 +1,20 @@
+( shell.ff — OS interface: getenv, getpid, system, shell, cd, !! )
+"fixup.ff" needed ;
+"ior.ff" needed ;
+
+: zt over+ 0 swap c! ; ( addr len -- addr ; zero-terminate string )
+
+:. _getenv "getenv" fixup ;
+:  getenv 1_ dup _getenv #call 0- 0= IF 0 ELSE zlen THEN ; ( addr -- addr len | 0 0 )
+:. _getpid "getpid" fixup ;
+:  getpid 0 0 _getpid #call ; ( -- pid )
+:. _getppid "getppid" fixup ;
+:  getppid 0 0 _getppid #call ; ( -- ppid )
+:. _system "system" fixup ;
+:  system zt 1 dup _system #call ; ( addr len -- status )
+
+: man` >in@ 4- lnparse + over- ( <mantopic> -- ; fallthru )
+: shell system 0; ior! !"shell_call_failed" ( addr len -- )
+: cd` wsparse zt 1 80 syscall ?ior ( <newdir> -- ; x86-64 chdir=80 )
+;
+: !!` lnparse shell ; ( <line> -- )

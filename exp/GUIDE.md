@@ -3857,3 +3857,73 @@ the end — execution falls through into the next definition's body.
 These match Lavarenne's i386 `ff.ff` definitions exactly, including
 the `?ior.` quirk where the `<>` comparison doesn't consume its
 operands (by FreeForth's FLAGS-based conditional design).
+
+### The Library System (lib/64/)
+
+Lavarenne separated `ff.ff` from `ff.boot` to keep the boot image
+small. `ff.ff` contains less-used words loaded on demand via `needed`.
+For the x86-64 port, this functionality lives in `lib/64/` rather
+than a monolithic `ff64.ff`.
+
+#### Directory Structure
+
+```
+lib/
+├── 64/                     # x86-64-specific library files
+│   ├── fixup.ff            # Self-patching libc resolution
+│   ├── ior.ff              # I/O error checking (strerror, ?ior)
+│   ├── malloc.ff           # Dynamic memory (malloc, free)
+│   ├── shell.ff            # OS interface (getenv, system, cd)
+│   ├── fileops.ff          # File operations (lseek, stat, ioctl)
+│   ├── console.ff          # Terminal control (color, cursor, ekey)
+│   └── time.ff             # Date/time (.now, ms@, ms)
+├── help64.ff               # Help system
+├── see64.ff                # Disassembler
+└── mkimage64.ff            # Turnkey image dumper
+```
+
+#### FFPATH Resolution
+
+`needed` searches directories in FFPATH order: `lib/64:lib:.`
+(configurable via `FFPATH` environment variable). Since `lib/64`
+precedes `lib`, x86-64-specific versions of a word automatically
+take precedence.
+
+#### Dependency Chain
+
+```
+fixup.ff          ← foundation (self-patching libc calls)
+├── ior.ff        ← I/O error checking
+│   ├── fileops.ff ← file operations
+│   │   └── console.ff ← terminal control
+│   ├── shell.ff  ← OS interface
+│   └── malloc.ff ← dynamic memory
+└── time.ff       ← date/time (uses syscalls directly)
+```
+
+Most library files begin with `"dependency.ff" needed ;` to ensure
+their prerequisites are loaded.
+
+#### The _fixbuf Trampoline Allocation
+
+A critical bug was discovered in the fixup mechanism: writing
+trampolines at `here` (rbp) during anonymous block execution overwrites
+the executing code, because `_semi_exec` resets rbp to the block start.
+
+The fix uses a pre-allocated buffer (`_fixbuf`, 1024 bytes) in the
+`.flat` section. Trampolines are written there via `c!` and `!`
+instead of `c,` and `,`, with `_fixptr` tracking the next free slot.
+
+#### Syscall Number Reference
+
+| Operation | x86-64 | i386 | Notes |
+|-----------|--------|------|-------|
+| write | 1 | 4 | |
+| stat | 4 | 106 | struct is 144 bytes (was 98) |
+| lseek | 8 | 19 | |
+| ioctl | 16 | 54 | |
+| select | 23 | 142 | fd_set offset 8 (was 4) |
+| nanosleep | 35 | 162 | |
+| chdir | 80 | 12 | |
+| time | 201 | 13 | |
+| clock_gettime | 228 | — | replaces gettimeofday (78) |
