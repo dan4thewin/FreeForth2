@@ -4,3 +4,4 @@
 :  malloc 1 dup _malloc #call ; ( size -- addr )
 :. _free "free" fixup ;
 :  free 1 dup _free #call drop ; ( addr -- )
+" malloc" features append ;

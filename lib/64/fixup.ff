@@ -41,3 +41,4 @@ _fixbuf _fixptr! ;
   r> 5- dup>r
   - 5- r 1+ d!
 ;
+" fixup" features append ;

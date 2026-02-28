@@ -9,3 +9,4 @@
 variable ior
 : ?ior dup ior!
 : ?ior. dup $FF | -1 <> 2drop IF drop ;THEN strerror !"system_call_failed" ;
+" ior" features append ;

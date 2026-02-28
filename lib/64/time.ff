@@ -24,3 +24,4 @@
 variable _tsbuf pvt 0 ,
 : ms@ _tsbuf 0 2 228 syscall drop _tsbuf 2@ 1000* swap 1000000/ + ; ( -- ms )
 : ms 1000 /% swap 1000000* swap _tsbuf 2! 0 _tsbuf 2 35 syscall drop ; ( ms -- )
+" time" features append ;

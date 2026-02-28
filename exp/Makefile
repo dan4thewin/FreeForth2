@@ -50,8 +50,10 @@ EXPERIMENTS = 023-forthmacros64 \
               078-ffpath \
               079-fixup \
               080-lib64 \
-               081-numlit \
-               082-restore-lits
+              081-numlit \
+              082-restore-lits \
+              086-shrink \
+              087-features
 
 test:
 	@for d in $(EXPERIMENTS); do \

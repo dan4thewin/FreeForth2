@@ -32,3 +32,4 @@ variable _tiosbuf pvt 60 allot
 
 : stopdump? key 10- drop ;
 : ;dump` ;` BEGIN 16 bounds under dump stopdump? 0<> UNTIL drop ; ( addr -- )
+" console" features append ;

@@ -3998,3 +3998,61 @@ instead of `c,` and `,`, with `_fixptr` tracking the next free slot.
 | chdir | 80 | 12 | |
 | time | 201 | 13 | |
 | clock_gettime | 228 | — | replaces gettimeofday (78) |
+
+### Feature Registration and the `needed` Guard (Experiments 086–087)
+
+#### Moving PNO to a Library
+
+Pictured Numeric Output (PNO: `<#`, `#`, `#s`, `hold`, `sign`, `#>`)
+was originally in ff64.boot but is only used by the disassembler.
+Experiment 086 moved it to `lib/64/pno.ff`, loaded on demand by
+`see64.ff` via `"pno.ff" needed ;`.
+
+This established the pattern for shrinking ff64.boot: identify words
+used only by specific library files, extract them, and let `needed`
+handle loading.
+
+#### Feature Registration
+
+Each lib/64 file appends its name to the `features` buffer when
+loaded, making the `-v` command show all active capabilities:
+
+```forth
+" fixup" features append ;    \ at end of fixup.ff
+" console" features append ;  \ at end of console.ff
+```
+
+The trailing `;` is essential. FreeForth's `loadfile` feeds source
+to the compiler, which only executes accumulated code at `;` or `:`.
+Without `;`, the `features append` compiles but never runs.
+
+#### FFHIDE Environment Variable
+
+Setting `FFHIDE=0` disables `_hidepvt`, leaving all private (`:. pvt`)
+words visible in the dictionary. This is useful for debugging library
+internals. The check uses libc's `getenv` directly via `#fun/#call`:
+
+```forth
+:. _ffhide "getenv" libc@ #fun 1 swap #call
+  0- 0; c@ $30- drop 0= IF hide off THEN ;
+```
+
+#### The `needed` Guard Fix
+
+The most significant discovery in this batch: ff64's `needed` never
+created the marker word its own guard depends on.
+
+The guard mechanism works as follows:
+1. `needed` temporarily appends `` ` `` to the filename
+2. `find` searches for `filename``
+3. If found, the file was already loaded — return immediately
+4. If not found, create the marker word, then load the file
+
+Step 4 was missing in ff64. The i386 version calls `marker pvtmargin`
+before loading, which creates a dictionary entry named `filename``.
+The ff64 version went straight to `loadfile` without creating the
+marker, causing every `needed` call to reload the file.
+
+The fix adds `2dup marker pvtmargin` before discarding the filename
+and calling `loadfile`. Now `needed` creates the guard on first load,
+and subsequent calls find the marker and skip.

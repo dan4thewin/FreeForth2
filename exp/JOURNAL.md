@@ -6913,3 +6913,160 @@ Full test suite: 485 total (484 PASS, 1 pre-existing FAIL).
 - `exp/082-restore-lits/Makefile` — 6 tests
 
 ---
+
+## Experiment 086 — Move PNO to Library
+
+**Goal:** Reduce ff64.boot size by extracting Pictured Numeric Output
+(PNO) words to `lib/64/pno.ff`, loaded on demand via `needed`.
+
+**Background:** PNO provides `<#`, `#`, `#s`, `hold`, `sign`, `#>`
+and hex variants (`x#`, `X#`, `x#s`, `X#s`). These are only used by
+`see64.ff` for disassembler address formatting. Keeping them in boot
+wastes space for programs that never disassemble.
+
+**Actions:**
+
+1. Extracted the 18-line PNO section from ff64.boot into
+   `lib/64/pno.ff`. The file is self-contained — it defines `pnbuf`,
+   `pnmaxlen`, all PNO words, and the internal helpers `_len1-`,
+   `_dh`, `_#`, `_ps`.
+
+2. Updated `lib/see64.ff` to load PNO before use:
+   `"pno.ff" needed ;` at the top.
+
+3. Investigated an apparent `um/mod` crash that turned out to be a
+   testing error. `um/mod` expects a double-cell dividend
+   `(d-lo d-hi divisor)` — calling it with only two items crashes
+   because `mov rax, [r15]` reads garbage from the empty memory stack.
+   The PNO words use `um/mod` correctly (the number is always split
+   into a double via the `0` in `0 <# #s #>`).
+
+**Result:** ff64 binary is 400–528 bytes smaller (depending on what
+else changed between builds). Boot still works. `see` still works
+(loads PNO automatically on first use).
+
+### Tests (5 tests, all PASS)
+
+| Test | What it checks |
+|------|---------------|
+| boot | Basic arithmetic still works after PNO removal |
+| pno-absent | `<#` is no longer defined in boot |
+| pno-load | `"pno.ff" needed` loads PNO and `<# #s #>` works |
+| pno-see | `see64.ff` loads pno.ff and disassembles correctly |
+| size | Binary is smaller than 377224 (original) |
+
+**Files modified:**
+- `ff64.boot` — removed 18-line PNO section
+- `lib/see64.ff` — added `"pno.ff" needed ;`
+- `exp/058-picnum/Makefile` — updated PNO tests to load pno.ff
+- `exp/Makefile` — added 086-shrink
+
+**Files created:**
+- `lib/64/pno.ff` — extracted PNO words
+- `exp/086-shrink/Makefile` — 5 tests
+
+---
+
+## Experiment 087 — Features, FFHIDE, and Needed Guard
+
+**Goal:** Three related improvements: (1) each lib/64 file registers
+itself in the features buffer, (2) the `FFHIDE` environment variable
+controls private word hiding, (3) fix the `needed` guard that was
+never creating marker words.
+
+### Feature registration
+
+Each lib/64 file now appends its name to the `features` buffer when
+loaded. The pattern is `" name" features append ;` at the end of the
+file. The leading space ensures proper separation. The trailing `;`
+is essential — without it, the code compiles but never executes in
+loaded files (FreeForth requires `;` to trigger top-level execution
+in `loadfile`).
+
+After loading `see64.ff`, for example, `-v` shows:
+```
+features: boot help dynlink segv pno see hidepvt
+```
+
+### FFHIDE environment variable
+
+Ported the i386 `FFHIDE` check from `ff.ff` to `fflin64.boot`. The
+check uses inline `#fun/#call` to call libc's `getenv` directly
+(avoiding the need to load `shell.ff` during boot):
+
+```forth
+:. _ffhide "getenv" libc@ #fun 1 swap #call
+  0- 0; c@ $30- drop 0= IF hide off THEN ;
+:^ _postboot doargv "FFHIDE" zt _ffhide _hidepvt ;
+```
+
+**Key detail:** The `0;` returns immediately if getenv returns NULL
+(FFHIDE not set). An early version used `0<>;` which crashes — it
+returns on *nonzero* and falls through on NULL, attempting `c@` on a
+null pointer.
+
+**Another detail:** After `c@ $30-`, the subtraction result (0 or
+nonzero) is left on the stack. The `drop` removes it, but the CPU
+flags from `-` are preserved. `0=` then reads those flags, and `IF`
+branches accordingly. This is FreeForth's FLAGS-based conditional
+pattern — the `drop` doesn't disturb the flags.
+
+### Needed guard fix (the real discovery)
+
+While testing the features mechanism, discovered that the ff64
+`needed` function never created the marker word that its own guard
+check depends on. The i386 version calls `marker pvtmargin` before
+loading the file:
+
+```forth
+\ i386 needed (abbreviated):
+: needed ... >r marker pvtmargin ... r read r> close eval ;
+
+\ ff64 needed (before fix):
+: needed ... >r >r 2drop r> r> loadfile ;
+```
+
+The ff64 version skipped straight from `openlib` to `loadfile` without
+creating a marker. This meant every call to `needed` reloaded the
+file, regardless of whether it was already loaded. The fix:
+
+```forth
+>r >r 2dup marker pvtmargin 2drop r> r> loadfile ;
+```
+
+The `2dup` preserves the original filename for `marker`, which creates
+a dictionary entry named `filename\``. On subsequent calls, `find`
+locates this entry and `needed` returns immediately.
+
+### Tests (7 tests, all PASS)
+
+| Test | What it checks |
+|------|---------------|
+| base-features | `-v` shows "boot help dynlink segv" |
+| lib-features | Loading shell.ff adds "fixup ior shell" |
+| see-features | Loading see64.ff adds "pno see" |
+| needed-guard | Double `needed` doesn't duplicate features |
+| ffhide-off | `FFHIDE=0` sets hide to 0 |
+| ffhide-default | Without FFHIDE, hide is -1 (on) |
+| v-shows | `-v` reflects features from loaded libraries |
+
+Full test suite: 498 PASS, 1 pre-existing FAIL (SEGV recovery).
+
+**Files modified:**
+- `fflin64.boot` — added `_ffhide`, updated `_postboot`, added
+  `marker pvtmargin` to `needed`
+- `lib/64/fixup.ff` — `" fixup" features append ;`
+- `lib/64/ior.ff` — `" ior" features append ;`
+- `lib/64/malloc.ff` — `" malloc" features append ;`
+- `lib/64/shell.ff` — `" shell" features append ;`
+- `lib/64/fileops.ff` — `" fileops" features append ;`
+- `lib/64/console.ff` — `" console" features append ;`
+- `lib/64/time.ff` — `" time" features append ;`
+- `lib/64/pno.ff` — `" pno" features append ;`
+- `lib/see64.ff` — `" see" features append ;`
+- `exp/Makefile` — added 087-features
+
+**Files created:**
+- `exp/087-features/Makefile` — 7 tests
+
+---

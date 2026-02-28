@@ -1,0 +1,333 @@
+\ see64.ff — native disassembler for ff64 (x86-64)
+\ see` ( <name> -- )       native disassembly of compiled word
+\ see. ( @ -- )            native disassembly starting at address
+\ findxt ( @ # -- xt len ) looks for string in headers
+\ findh ( @ -- hdr@ off )  finds header with xt closest to @
+\ findnm ( @ -- )          types name of closest header + offset
+"pno.ff" needed ;
+" see" features append ;
+
+variable xt pvt
+variable _fh pvt
+:. sz-		2dup h.sz+ c@ - drop ;
+:. nm-		3dup h.nm+ swap $- drop ;
+:. hdr-		sz- 0= IF nm- ;THEN ;
+:. skip?	dup h.ct+ c@ $20& drop ;
+:. stop?	dup h.sz+ c@ 0<>; !"not_found" ;
+:. nexth	BEGIN h.sz+ c@+ + 1+ dup h.sz+ c@ 0- 0= drop IF ;THEN skip? 0<> UNTIL ;
+: findxt	here xt! H@
+		BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
+		  hdr- 0= IF nip nip @ xt@ over- ;THEN dup@ xt! h.next
+		REPEAT !"not_found" ;
+: findh		H@
+		BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
+		  2dup @ >= 2drop IF dup _fh! swap over @ - ;THEN h.next
+		REPEAT !"not_found" ;
+: findnm	findh swap h.sz+ c@+ type 0; ."+" .x ;
+
+create buf pvt 160 allot
+:. ba		buf append ;
+:. ua		0 <# #s #> ba ;
+:. xa		s>d swap over dabs <# x#s $24 hold rot sign #> ba ;
+
+\ REX prefix state (set by rex handler, consumed by next opcode)
+variable _rex pvt
+:. rex!		_rex! ;
+:. rex@		_rex@ ;
+:. rexW?	rex@ 8& drop ;
+:. rexR?	rex@ 4& drop ;
+:. rexX?	rex@ 2& drop ;
+:. rexB?	rex@ 1& drop ;
+
+\ Register name tables — 64-bit, 32-bit, 8-bit
+create regs64 pvt 32 allot "raxrcxrdxrbxrsprbprsirdi" regs64 swap move
+create regs32 pvt 24 allot "eaxecxedxebxespebpesiedi" regs32 swap move
+create regs8  pvt 16 allot "alcldlblahchdhbh"         regs8  swap move
+create regsx  pvt 24 allot "r8 r9 r10r11r12r13r14r15" regsx  swap move
+:. reg		>r swap 7& over* r> + swap ba ;
+:. r64x		dup 8 u< 2drop IF 3 regs64 reg ;THEN 8- 3 regsx reg ;
+:. r64		rexB? 0<> IF 8+ THEN r64x ;
+:. r64r		rexR? 0<> IF 8+ THEN r64x ;
+:. r32		3 regs32 reg ;
+:. r8		2 regs8  reg ;
+
+\ Instruction format helpers (must be before ModRM which uses .le)
+:. .A		dup ."   $" .l .":  " ;		\ @ -- @    ; show address
+:. .B		dup 1+ swap c@ dup .b space ;	\ @ -- @+1 c  ; show 1 byte
+:. .le		dup 4 TIMES c@+ .b REPEAT drop ; \ @ -- @    ; show 4 LE bytes
+:. .le8		dup 8 TIMES c@+ .b REPEAT drop ; \ @ -- @    ; show 8 LE bytes
+:. .N		dup 4+ swap .le space d@ ;	\ @ -- @+4 n  ; show 4-byte val
+:. .Q		dup 8+ swap .le8 space @ ;	\ @ -- @+8 n  ; show 8-byte val
+
+variable unknown pvt
+:. ???		"???" ba unknown@ ++ ;
+:. .A?		.B drop ??? 0 ;
+
+\ ModRM/SIB decoding for 64-bit
+:. sib		dup c@ dup .b space
+  dup 7& START 5 CASE dup $20& 0<> drop IF r64 ;THEN "rip" ba BREAK r64 END
+  1+ ;
+:. rip+32	.N over+ xa "___rip" ba ;
+:. r@.		START 4 CASE sib BREAK 5 CASE rip+32 BREAK r64 END ;
+:. disp		0- 0>= IF "+" ba THEN xa ;
+:. r@+8.	START 4 CASE sib BREAK r64 END dup cs@ dup .b disp 1+ ;
+:. r@+32.	r64 dup 4+ swap .le d@ disp ;
+:. brkt		"[" ba ;
+:. brk]		"]" ba ;
+:. r@		brkt r@.    brk] ;
+:. r@+8		brkt r@+8.  brk] ;
+:. r@+32	brkt r@+32. brk] ;
+
+variable regxt pvt
+:. ext		dup 3 >> 7& ;
+:. split	dup 7& swap ext swap 6 >> ;
+:. mod.		3& START 0 CASE r@ BREAK 1 CASE r@+8 BREAK 2 CASE r@+32 BREAK drop regxt@ execute END ;
+:. rm.		split swap regxt@ execute "," ba mod. ;
+:. mr.		swap >r split >rswapr> r> -rot mod. "," ba swap regxt@ execute ;
+:. rm		r64r ' regxt! rm. ;
+:. mr		r64r ' regxt! mr. ;
+:. rm8		r8  ' regxt! rm. ;
+:. mr8		r8  ' regxt! mr. ;
+:. mod		r64r ' regxt! mod. ;
+:. mod8		r8  ' regxt! mod. ;
+
+:. 0f<>		$f- drop 0= IF ??? rdrop THEN ;
+:. 0f=		$f- drop 0<> IF ??? rdrop THEN ;
+
+\ Opcode dispatch table — 256 entries
+create op pvt 256 8* allot ;
+.A? ' 256 TIMES dup op r 8* + ! REPEAT drop ;
+:. callop	dup c@ 8* op+ @ execute ;
+:. rexskip	BEGIN dup c@ $F0& $40 - drop 0= WHILE dup c@ $F& rex! 1+ REPEAT ;
+:. oneop	0 _rex! rexskip .A 0 buf! callop
+		buf c@+ 40 - 0- 0< IF 40 THEN + type cr ;
+: see.		BEGIN dup oneop ( old new stop )
+		  >r nip r> ( new stop )
+		  0- 0<> IF drop ;THEN drop
+		AGAIN ;
+
+\ Helpers for opcode definitions
+:. jba		dup xa " " ba
+		findh swap h.sz+ c@+ ba 0; "+" ba xa ;
+:. se		dup $80& 0; drop -128 | ;
+:. farther?	>r swap r max swap r> ;
+:. ,a		"," ba ;
+
+create 80exts pvt 24 allot "addor adcsbbandsubxorcmp" 80exts swap move
+:. 80exta	7& 3* 80exts+ 3 ba "    " ba ;
+
+\ Byte-count instruction readers (address already printed by oneop)
+:. 1b		.B drop ;
+:. 2b		.B drop .B ;
+:. 3b		.B drop .B swap .B swap 2xchg ;
+:. 5b		.B drop .N ;
+
+\ ;op` — register an opcode handler
+: ;op` ;` 8* op + H@ @ swap ! ;
+
+\ 2-byte opcodes starting with 0F — uses separate dispatch table
+create op0f pvt 256 8* allot ;
+:. unk0f	.B drop ??? 0 ;
+unk0f ' 256 TIMES dup op0f r 8* + ! REPEAT drop ;
+$0f :. 0f	.B drop dup c@ 8* op0f+ @ execute ;op
+
+\ --- Arithmetic ---
+$01 :. add	2b "add____" ba mr 0 ;op
+$03 :. add.	2b "add____" ba rm 0 ;op
+$09 :. or	2b "or_____" ba mr 0 ;op
+$0b :. or.	2b "or_____" ba rm 0 ;op
+$11 :. adc	2b "adc____" ba mr 0 ;op
+$21 :. and	2b "and____" ba mr 0 ;op
+$23 :. and.	2b "and____" ba rm 0 ;op
+$29 :. sub	2b "sub____" ba mr 0 ;op
+$2b :. sub.	2b "sub____" ba rm 0 ;op
+$31 :. xor	2b "xor____" ba mr 0 ;op
+$33 :. xor.	2b "xor____" ba rm 0 ;op
+$39 :. cmp	2b "cmp____" ba mr 0 ;op
+$3b :. cmp.	2b "cmp____" ba rm 0 ;op
+
+\ REX prefixes handled by rexskip in oneop, no opcode table entries needed
+
+\ --- Push/Pop ---
+$50 :. pushA	1b "push___rax" ba 0 ;op
+$51 :. pushC	1b "push___rcx" ba 0 ;op
+$52 :. pushD	1b "push___rdx" ba 0 ;op
+$53 :. pushB	1b "push___rbx" ba 0 ;op
+$55 :. pushBP	1b "push___rbp" ba 0 ;op
+$56 :. pushSI	1b "push___rsi" ba 0 ;op
+$57 :. pushDI	1b "push___rdi" ba 0 ;op
+$58 :. popA	1b "pop____rax" ba 0 ;op
+$59 :. popC	1b "pop____rcx" ba 0 ;op
+$5a :. popD	1b "pop____rdx" ba 0 ;op
+$5b :. popB	1b "pop____rbx" ba 0 ;op
+$5d :. popBP	1b "pop____rbp" ba 0 ;op
+$5e :. popSI	1b "pop____rsi" ba 0 ;op
+$5f :. popDI	1b "pop____rdi" ba 0 ;op
+
+\ --- Immediate push ---
+$68 :. pushi32	5b "push___" ba xa 0 ;op
+$6a :. pushi8	2b "push___" ba se xa 0 ;op
+
+\ --- Short conditional jumps ---
+:. j_	ba se over+ dup jba drop 0 ;
+$72 :. jb	2b "jb_____" j_ ;op
+$73 :. jae	2b "jae____" j_ ;op
+$74 :. jz	2b "jz_____" j_ ;op
+$75 :. jnz	2b "jnz____" j_ ;op
+$76 :. jbe	2b "jbe____" j_ ;op
+$77 :. ja	2b "ja_____" j_ ;op
+$78 :. js	2b "js_____" j_ ;op
+$79 :. jns	2b "jns____" j_ ;op
+$7c :. jl	2b "jl_____" j_ ;op
+$7d :. jge	2b "jge____" j_ ;op
+$7e :. jle	2b "jle____" j_ ;op
+$7f :. jg	2b "jg_____" j_ ;op
+
+\ --- Group 1: immediate arithmetic ---
+$80 :. 80	3b ext 80exta r8 ,a xa 0 ;op
+$81 :. 81	2b ext 80exta r64 ,a .le dup d@ xa 4+ 0 ;op
+:. j_i32	ba .le dup 4+ swap d@ over+ dup jba drop 0 ;
+$83 :. 83	2b ext 80exta r64 ,a dup cs@ dup .b xa 1+ 0 ;op
+
+\ --- 0F 8x: long conditional jumps (sub-handlers for op0f table) ---
+\ Sub-handler receives (addr+1) where 0F byte already printed by 0f handler.
+\ 5b reads: sub-opcode + 4-byte disp → (addr+6 disp32). j_i32 computes target.
+:. j_i32	ba over+ dup jba drop 0 ;
+:. jbi32	5b "jb_____" j_i32 ;
+:. jaei32	5b "jae____" j_i32 ;
+:. jzi32	5b "jz_____" j_i32 ;
+:. jnzi32	5b "jnz____" j_i32 ;
+:. jbei32	5b "jbe____" j_i32 ;
+:. jai32	5b "ja_____" j_i32 ;
+:. jsi32	5b "js_____" j_i32 ;
+:. jli32	5b "jl_____" j_i32 ;
+:. jgei32	5b "jge____" j_i32 ;
+:. jlei32	5b "jle____" j_i32 ;
+:. jgi32	5b "jg_____" j_i32 ;
+
+\ Register 0F long jump handlers in op0f table
+jbi32  ' op0f $82 8* + !
+jaei32 ' op0f $83 8* + !
+jzi32  ' op0f $84 8* + !
+jnzi32 ' op0f $85 8* + !
+jbei32 ' op0f $86 8* + !
+jai32  ' op0f $87 8* + !
+jsi32  ' op0f $88 8* + !
+jli32  ' op0f $8c 8* + !
+jgei32 ' op0f $8d 8* + !
+jlei32 ' op0f $8e 8* + !
+jgi32  ' op0f $8f 8* + !
+
+\ --- Test/Exchange ---
+$84 :. test8	2b "test___" ba mr8 0 ;op
+$85 :. test	2b "test___" ba mr 0 ;op
+$86 :. xchg8	2b "xchg___" ba rm8 0 ;op
+$87 :. xchg	2b "xchg___" ba rm 0 ;op
+
+\ --- Mov ---
+$88 :. mov8	2b "mov____" ba mr8 0 ;op
+$89 :. mov	2b "mov____" ba mr 0 ;op
+$8b :. mov.	2b "mov____" ba rm 0 ;op
+$8d :. lea	2b "lea____" ba rm 0 ;op
+
+\ --- Nop / xchg eax ---
+$90 :. nop	1b "nop" ba 0 ;op
+
+\ --- setcc (0F 9x) — sub-handlers for op0f table ---
+:. set__	ba split nip mod8 0 ;
+:. setb		2b "setb___" set__ ;
+:. setae	2b "setae__" set__ ;
+:. setz		2b "setz___" set__ ;
+:. setnz	2b "setnz__" set__ ;
+:. setbe	2b "setbe__" set__ ;
+:. seta		2b "seta___" set__ ;
+:. setl		2b "setl___" set__ ;
+:. setge	2b "setge__" set__ ;
+:. setle	2b "setle__" set__ ;
+:. setg		2b "setg___" set__ ;
+
+setb   ' op0f $92 8* + !
+setae  ' op0f $93 8* + !
+setz   ' op0f $94 8* + !
+setnz  ' op0f $95 8* + !
+setbe  ' op0f $96 8* + !
+seta   ' op0f $97 8* + !
+setl   ' op0f $9c 8* + !
+setge  ' op0f $9d 8* + !
+setle  ' op0f $9e 8* + !
+setg   ' op0f $9f 8* + !
+
+\ --- CDQ/CQO ---
+:. _cqo	1b "cqo" ba 0 ;
+:. _cdq	1b "cdq" ba 0 ;
+$99 :. cdq	rexW? 0<> IF _cqo ;THEN _cdq ;op
+
+\ --- movzx/movsx (0F B6/B7/BE/BF) — sub-handlers for op0f ---
+:. mov_x	ba split START 0 CASE r64r ",byte" ba r@ BREAK 3 CASE r64r ,a r8 BREAK 2drop drop ??? END 0 ;
+:. movzx	2b "movzx__" mov_x ;
+:. movsxi8	2b "movsx__" mov_x ;
+movzx    ' op0f $b6 8* + !
+:. movzxi16	2b "movzx__" ba split 0- drop 0<> IF 2drop ??? 0 ;THEN r64r ",word" ba r@ 0 ;
+movzxi16 ' op0f $b7 8* + !
+movsxi8  ' op0f $be 8* + !
+:. movsxi16	2b "movsx__" ba split 0- drop 0<> IF 2drop ??? 0 ;THEN r64r ",word" ba r@ 0 ;
+movsxi16 ' op0f $bf 8* + !
+
+\ --- Mov immediate (avoid IF/ELSE/THEN: split into 64-bit and 32-bit helpers) ---
+:. _movi64	"mov____" ba ba .Q xa 0 ;
+:. _movi32	"mov____" ba ba .N xa 0 ;
+$b8 :. movAi	1b rexW? 0<> IF "rax," _movi64 ;THEN "eax," _movi32 ;op
+$b9 :. movCi	1b rexW? 0<> IF "rcx," _movi64 ;THEN "ecx," _movi32 ;op
+$ba :. movDi	1b rexW? 0<> IF "rdx," _movi64 ;THEN "edx," _movi32 ;op
+$bb :. movBi	1b rexW? 0<> IF "rbx," _movi64 ;THEN "ebx," _movi32 ;op
+$bd :. movBPi	1b rexW? 0<> IF "rbp," _movi64 ;THEN "ebp," _movi32 ;op
+
+\ --- Shift/Rotate ---
+$c1 :. shl	3b ext
+	START 4 CASE "shl" BREAK 5 CASE "shr" BREAK 7 CASE "sar" BREAK 2drop ??? 0 ;; END
+	ba "____" ba r64 ,a xa 0 ;op
+$d1 :. shl1	2b ext
+	START 4 CASE "shl" BREAK 7 CASE "sar" BREAK 2drop ??? 0 ;; END
+	ba "____" ba r64 ",1" ba 0 ;op
+$d3 :. sh_cl	2b ext
+	START 4 CASE "shl" BREAK 5 CASE "shr" BREAK 2drop ??? 0 ;; END
+	ba "____" ba r64 ",cl" ba 0 ;op
+
+\ --- Ret ---
+$c3 :. ret	1b "ret" ba -1 ;op
+
+\ --- Mov immediate to r/m ---
+$c6 :. movi8	2b "mov____byte" ba split nip mod ,a dup cs@ dup space .b xa 1+ 0 ;op
+$c7 :. movi32	2b "mov____" ba split nip mod ,a space .le dup d@ xa 4+ 0 ;op
+
+\ --- Word prefix ---
+$66 :. 66	dup 1+ c@ START $89 CASE 2b "mov____word" ba drop mr ;; BREAK drop .A? END 0 ;op
+
+\ --- Call/Jmp ---
+$e8 :. call	5b "call___" ba over+ dup jba drop 0 ;op
+$e9 :. jmpE9	5b "jmp____" ba over+ dup jba drop -1 ;op
+$eb :. jmp	2b "jmp____" ba se over+ dup jba drop -1 ;op
+
+\ --- Rep prefix ---
+$f3 :. rep	2b START
+	$a4 CASE "rep____movsb" BREAK
+	$a6 CASE "repz___cmpsb" BREAK
+	$aa CASE "rep____stosb" BREAK
+	drop ??? 0 ;; END ba 0 ;op
+
+\ --- Group 3: test/not/neg/mul/div ---
+create f7exts pvt 32 allot "testtestnot neg mul imuldiv idiv" f7exts swap move
+$f7 :. f7	2b split swap 4* f7exts+ 4 ba "___" ba mod 0 ;op
+
+\ --- Misc ---
+$fc :. cld	1b "cld" ba 0 ;op
+$fd :. std	1b "std" ba 0 ;op
+$ff :. ff	2b split swap
+	START 0 CASE "inc_" BREAK 1 CASE "dec_" BREAK 2 CASE "call" BREAK 4 CASE "jmp_" BREAK 6 CASE "push" BREAK 2drop drop ??? 0 ;; END
+	ba "___" ba mod 0 ;op
+
+\ --- Entry point ---
+: see`	;` wsparse 0- 0= IF 2drop ;THEN 2dup findxt drop -rot type cr see. ;
+: see64` ;` wsparse 0- 0= IF 2drop ;THEN 2dup findxt drop -rot type cr see. ;
+
+hidepvt " hidepvt" features append ;

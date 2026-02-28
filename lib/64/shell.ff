@@ -18,3 +18,4 @@
 : cd` wsparse zt 1 80 syscall ?ior ( <newdir> -- ; x86-64 chdir=80 )
 ;
 : !!` lnparse shell ; ( <line> -- )
+" shell" features append ;

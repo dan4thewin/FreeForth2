@@ -12,3 +12,4 @@
   nip swap 2 4 syscall
 ;
 48 constant st.size
+" fileops" features append ;

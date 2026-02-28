@@ -78,7 +78,7 @@ variable _dlen pvt
 : needed 2dup + dup c@ >r dup >r $60 swap c! 1+
   find 2r> c! 0= IF 2drop ;THEN 1-
   2dup openlib 0- 0< IF 2drop type !"_not_found" ;THEN
-  >r >r 2drop r> r> loadfile ;
+  >r >r 2dup marker pvtmargin 2drop r> r> loadfile ;
 
 ( needexec — load file via needed, then execute its last definition )
 :. needexec needed H@ @ execute ;
@@ -101,8 +101,10 @@ variable mainxt pvt
 ( doargv — evaluate command line arguments as FreeForth words )
 :. doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap eval. ;
 
-( _postboot — doargv + hidepvt; nop'd for turnkey )
-:^ _postboot doargv _hidepvt ;
+( _postboot — doargv + FFHIDE check + hidepvt; nop'd for turnkey )
+:. _ffhide "getenv" libc@ #fun 1 swap #call
+  0- 0; c@ $30- drop 0= IF hide off THEN ;
+:^ _postboot doargv "FFHIDE" zt _ffhide _hidepvt ;
 
 ( -f` must come after _postboot — it references _postboot for vector nop )
 :. _f_main mainxt ! _main ' _top ' !^ _postboot ' n^ ;
