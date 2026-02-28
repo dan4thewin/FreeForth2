@@ -268,3 +268,36 @@ SEGVthrow ( -- ) install SEGV handler via libc sigaction
   Called automatically during boot. Can be called again to
   re-install the handler (e.g., after a fork).
   see also: SEGVhndlr
+
+fixup ( addr len -- ) self-patching libc symbol resolver
+  Used in hidden definitions: :. _xxx "symbol" fixup ;
+  On first call: resolves "symbol" via dlsym, allocates an
+  11-byte trampoline (movabs rbx,imm64; ret), and patches
+  the caller's call instruction to point to the trampoline.
+  Subsequent calls go directly to the trampoline.
+  IMPORTANT: the hidden definition MUST end with ; for tail-call.
+  Loaded from: "fixup.ff" needed
+  see also: #lib #fun #call libc@
+
+strerror ( errno -- ) print error message for errno
+  Takes a negative errno (as returned by FreeForth syscalls),
+  negates it, and calls C strerror() via fixup to print the
+  corresponding error message.
+  Example: -13 strerror  →  "Permission denied"
+  Loaded from: "ior.ff" needed
+  see also: ?ior ?ior. ior
+
+ior ( -- addr ) variable holding last I/O result
+  Loaded from: "ior.ff" needed
+  see also: ?ior ?ior. strerror
+
+?ior ( n -- n ) store I/O result
+  Stores n in the ior variable. Does not consume n.
+  Loaded from: "ior.ff" needed
+  see also: ior ?ior. strerror
+
+?ior. ( n -- n ) store and optionally display I/O error
+  Stores n in ior. If n looks like an errno (dup $FF | -1 <>),
+  drops it silently. Otherwise calls strerror and throws.
+  Loaded from: "ior.ff" needed
+  see also: ior ?ior strerror

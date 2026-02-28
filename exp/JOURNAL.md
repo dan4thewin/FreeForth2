@@ -6200,3 +6200,182 @@ anonymous block via `ossetup`).
 - `exp/Makefile` — added 078-ffpath
 
 ---
+
+## Experiment 079 — fixup: Self-Patching libc Symbol Resolution
+
+### Goal
+
+Port Lavarenne's `fixup` mechanism from `ff.ff` to x86-64. This is the
+foundation for all libc wrapper words (strerror, malloc, free, getenv,
+etc.). Also port `strerror`, `?ior`, and `?ior.` as the first consumers.
+
+### Background: How fixup Works (i386)
+
+In i386 FreeForth, libc functions are called through a two-stage mechanism:
+
+1. **Hidden definition** (`:.`): `:. _xxx "symbol" fixup`
+2. **Public wrapper**: `: xxx ... _xxx N #call ... ;`
+
+On the **first call** to `_xxx`:
+- The inline string `"symbol"` pushes the symbol name
+- `fixup` resolves it via `libc@ #fun` (dlsym)
+- `fixup` patches the `call _xxx` instruction in the CALLER (the public
+  wrapper) to replace it with `mov ebx, funh` ($BB imm32 = 5 bytes)
+- Execution returns to the now-patched callsite, which loads the function
+  handle directly
+
+On **subsequent calls**: the patched `mov ebx, funh` loads the handle
+in one instruction. No resolution overhead.
+
+The i386 fixup replaces a 5-byte `call` (E8 rel32) with a 5-byte
+`mov ebx, imm32` (BB imm32). Both are exactly 5 bytes.
+
+### The x86-64 Challenge: 64-bit Function Handles
+
+On x86-64, `dlsym` returns 64-bit addresses (e.g., 0x71a7d5ab43a0).
+A `mov ebx, imm32` can't hold this. Options considered:
+
+1. `mov rbx, imm64` (48 BB imm64) — 10 bytes, won't fit in 5 bytes
+2. Truncate to 32 bits — fails with ASLR (libc lives above 4GB)
+3. **Trampoline** — allocate 11 bytes at `here`, patch the call to
+   point there
+
+We chose option 3: the **trampoline approach**.
+
+### Trampoline Design
+
+`fixup` allocates an 11-byte trampoline at `here`:
+
+```
+movabs rbx, funh   ; 48 BB <8 bytes of function handle>
+ret                 ; C3
+```
+
+Then patches the 5-byte `call _xxx` instruction's relative offset
+(the 4-byte rel32 after E8) to point to the trampoline instead.
+The E8 opcode stays; only the offset changes via `d!`.
+
+On subsequent calls: `call trampoline` → loads rbx, returns. Two
+instructions instead of one, but still no dlsym overhead.
+
+### The Tail-Call Discovery
+
+The first implementation crashed with SEGV. Investigation revealed:
+
+**i386 fixup has `rdrop`**: `: fixup libc@ #fun rdrop r> 5- dup>r $bb overc! 1+ ! ;`
+
+The `rdrop` removes fixup's own return address from R, so `r>` pops the
+CALLER's return address (pointing into the public wrapper). This is
+correct because i386's `_xxx` definitions CALL fixup (E8).
+
+**x86-64 applies tail-call optimization**: The `;;` (semi) in ff64.boot
+converts the last `call` in a definition to `jmp` when `callmark == rbp`.
+So `_xxx`'s `call fixup` becomes `jmp fixup` (E9). No return address
+is pushed for fixup.
+
+With `jmp fixup`: R has only [wrapper_return]. `r> 5-` correctly
+computes the callsite in the wrapper. No `rdrop` needed.
+
+With `call fixup`: R has [fixup_return, wrapper_return]. Without
+`rdrop`, `r> 5-` computes the wrong callsite (inside `_xxx`, not
+the wrapper).
+
+### The loadfile Bug: Missing Tail-Call Optimization
+
+Initial testing via REPL (stdin) worked. Testing via `-f` (loadfile)
+crashed with infinite recursion and stack corruption.
+
+**Root cause**: In the REPL, `_auto` calls `;` at end of each line,
+which runs `_semi` and applies tail-call optimization (E8→E9). In
+loadfile, `_compiler` processes the entire file. When `:` starts a
+new definition (`_colon`), it does NOT terminate the previous named
+definition — it just creates the new header. The hidden definition
+`_xxx` is never terminated, so tail-call optimization never triggers.
+
+Code layout in loadfile context:
+```
+_strerror: call _litstr_rt  "strerror"  call fixup  (NO ret!)
+strerror:  negate  1  dup  call _strerror  #call  ...
+```
+
+When strerror calls `_strerror`, fixup is called (E8, not JMP'd).
+`r> 5-` computes the wrong callsite. Fixup patches `_strerror`'s
+`call fixup` instead of `strerror`'s `call _strerror`. After patching,
+execution falls through into strerror's code, which calls `_strerror`
+again — infinite loop.
+
+**Fix**: Add explicit `;` to terminate the hidden definition:
+```
+:. _strerror "strerror" fixup ;
+:  strerror negate 1 dup _strerror #call zlen type cr ;
+```
+
+The `;` forces `_semi` to run, which applies tail-call optimization
+(E8→E9). This makes the behavior identical to the REPL case. The fix
+is documented in `lib/64/fixup.ff` as a requirement.
+
+### Implementation
+
+**lib/64/fixup.ff:**
+```forth
+: fixup ( addr len -- )
+  libc@ #fun
+  here swap
+  $48 c, $BB c, , $C3 c,
+  r> 5- dup>r
+  - 5- r 1+ d!
+;
+```
+
+Trace through fixup when JMP'd to from `_xxx`:
+1. `libc@ #fun` — resolves function handle via dlsym
+2. `here swap` — save trampoline address, move funh below
+3. `$48 c, $BB c, , $C3 c,` — write trampoline at here
+4. `r> 5- dup>r` — pop wrapper return, compute callsite, save for return
+5. `- 5- r 1+ d!` — compute relative offset, store at callsite+1
+
+**lib/64/ior.ff:**
+```forth
+"fixup.ff" needed ;
+:. _strerror "strerror" fixup ;
+:  strerror negate 1 dup _strerror #call zlen type cr ;
+variable ior
+:  ?ior dup ior!
+:  ?ior. dup $FF | -1 <> IF drop ;THEN strerror !"system_call_failed" ;
+```
+
+### GDB: The Debugging Hero (Again)
+
+The loadfile crash was diagnosed entirely through GDB:
+
+1. **Breakpoint at `_litstr_rt`** showed infinite calls from the same
+   return address (0x44f77f), with r15 decreasing by 32 each time
+2. **Conditional breakpoint** (`break *0x403942 if *(long*)$rsp == 0x44f77f`)
+   showed the compiled code at break time — revealing `E8` (call) where
+   `E9` (jmp) was expected
+3. **Disassembling `_strerror`'s code** showed no `ret` between it and
+   `strerror` — confirming `_colon` doesn't terminate the previous def
+
+Without GDB, this would have required manual SWAPbit tracing through
+the entire compilation process — the exact approach that failed
+spectacularly during the `ct=1` bug investigation (exp 038).
+
+### Tests (5 tests, all PASS)
+
+| Test | Description |
+|------|-------------|
+| fixup-resolve | fixup resolves strerror on first call |
+| fixup-patched | Second call uses patched trampoline |
+| strerror | strerror displays correct messages via loadfile |
+| strerror-needed | strerror works via needed/FFPATH |
+| qior | ?ior stores result in ior variable |
+
+**Files created:**
+- `lib/64/fixup.ff` — fixup word with trampoline approach
+- `lib/64/ior.ff` — strerror, ior, ?ior, ?ior.
+- `exp/079-fixup/Makefile` — 5 tests
+
+**Files modified:**
+- `exp/Makefile` — added 079-fixup
+
+---

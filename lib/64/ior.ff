@@ -1,0 +1,11 @@
+( ior.ff — I/O result checking and strerror )
+( Ported from Lavarenne's ff.ff for x86-64. )
+( Requires fixup.ff [loaded automatically via needed]. )
+"fixup.ff" needed ;
+
+:. _strerror "strerror" fixup ;
+:  strerror negate 1 dup _strerror #call zlen type cr ;
+
+variable ior
+: ?ior dup ior!
+: ?ior. dup $FF | -1 <> 2drop IF drop ;THEN strerror !"system_call_failed" ;

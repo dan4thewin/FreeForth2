@@ -3746,3 +3746,114 @@ The x86-64 version is simpler: no `eob` (end-of-buffer) word, no
 `marker` at compile time. The guard mechanism relies on loaded files
 defining their own backtick-suffixed marker word, or on the `needexec`
 pattern where the stub is overwritten on first load.
+
+### Self-Patching libc Resolution: The fixup Mechanism (Experiment 079)
+
+FreeForth provides access to C library functions (strerror, malloc, free,
+getenv, etc.) through a clever self-patching mechanism called `fixup`.
+Rather than resolving every libc symbol at boot time (wasteful if most
+are never called), fixup defers resolution until first use, then patches
+the calling code so subsequent calls go directly to the resolved function.
+
+#### The Two-Layer Pattern
+
+Every libc wrapper uses two definitions:
+
+```forth
+:. _xxx "symbol" fixup ;     ( hidden: resolve-on-first-call thunk )
+:  xxx ... _xxx N #call ... ; ( public: calls _xxx, then C function )
+```
+
+**First call to `xxx`:**
+1. `xxx` calls `_xxx` (the hidden thunk)
+2. `_xxx` pushes the symbol name ("symbol") via inline string
+3. `fixup` calls `libc@ #fun` (dlsym) to resolve the symbol
+4. `fixup` allocates an 11-byte trampoline at `here`:
+   ```
+   48 BB <8-byte function handle>  C3
+   (movabs rbx, funh)              (ret)
+   ```
+5. `fixup` patches `xxx`'s `call _xxx` instruction to redirect to the
+   trampoline (overwrites the 4-byte rel32 offset in the E8 instruction)
+6. Execution returns to `xxx`, which proceeds with `N #call`
+
+**Subsequent calls to `xxx`:**
+1. `xxx`'s patched `call` jumps to the trampoline
+2. Trampoline loads `rbx` with the function handle and returns
+3. `xxx` proceeds with `N #call` — no dlsym overhead
+
+#### i386 vs x86-64: Why a Trampoline?
+
+On i386, fixup replaces `call _xxx` (E8 rel32, 5 bytes) with
+`mov ebx, imm32` (BB imm32, 5 bytes). Both are exactly 5 bytes — a
+perfect in-place replacement. The callsite becomes a direct load
+instruction.
+
+On x86-64, function handles from `dlsym` are full 64-bit pointers
+(e.g., 0x71a7d5ab43a0). `mov rbx, imm64` is 10 bytes (48 BB + 8 bytes
+of immediate) — it doesn't fit in the 5-byte `call` slot. The
+trampoline adds one level of indirection: the 5-byte call redirects to
+an 11-byte code fragment that loads the 64-bit value and returns.
+
+| Aspect | i386 | x86-64 |
+|--------|------|--------|
+| Patch target | 5-byte `call` | 5-byte `call` |
+| Replacement | `mov ebx, imm32` (5 bytes) | redirect to trampoline |
+| Trampoline | (none needed) | 11 bytes: `movabs rbx, imm64; ret` |
+| After patch | Direct load, no call overhead | One extra call/ret pair |
+| `rdrop` needed? | Yes (E8 call, not JMP) | No (tail-call: E9 jmp) |
+
+#### The Tail-Call Requirement
+
+The x86-64 fixup REQUIRES tail-call optimization on the hidden
+definition. When `;` terminates `_xxx`, it converts the last `call fixup`
+(E8) to `jmp fixup` (E9). This means when fixup executes, the return
+stack contains only the wrapper's return address — exactly what fixup
+needs to compute the patch site.
+
+Without tail-call (as happens in loadfile without explicit `;`):
+```
+R = [fixup_return, wrapper_return]
+r> 5- → patches inside _xxx (WRONG!)
+```
+
+With tail-call (`;` applied):
+```
+R = [wrapper_return]
+r> 5- → patches inside xxx (CORRECT!)
+```
+
+This is why the hidden definition pattern MUST include `;`:
+```forth
+:. _xxx "symbol" fixup ;   ← the ; is critical
+```
+
+This differs from the i386 version, which uses `rdrop` to skip over
+fixup's return address. The x86-64 version eliminates `rdrop` because
+tail-call ensures only the wrapper's return address is present.
+
+#### Why `_colon` Matters
+
+This bug was subtle because it worked in the REPL but crashed in loadfile.
+The key is that FreeForth's `_colon` (`:`) does NOT terminate the previous
+named definition. In the REPL, `_auto` calls `;` at end of each line,
+providing implicit termination. In loadfile, definitions are only
+terminated by explicit `;` or by `_auto` at EOF.
+
+Without the `;`, the hidden definition _xxx has no `ret` or `jmp` at
+the end — execution falls through into the next definition's body.
+
+#### The First Consumers: strerror, ?ior, ?ior.
+
+`lib/64/ior.ff` provides I/O error checking:
+
+- **strerror** ( errno -- ): Prints error message for a given errno
+  (negated, as FreeForth returns negative errnos from syscalls)
+- **ior**: Variable storing the last I/O result
+- **?ior**: ( n -- n ) Stores n in `ior`
+- **?ior.**: ( n -- n ) Same, but also prints error if n looks like
+  an errno (tests `dup $FF | -1 <>`)
+
+These match Lavarenne's i386 `ff.ff` definitions exactly, including
+the `?ior.` quirk where the `<>` comparison doesn't consume its
+operands (by FreeForth's FLAGS-based conditional design).
