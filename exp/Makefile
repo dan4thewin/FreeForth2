@@ -55,7 +55,8 @@ EXPERIMENTS = 023-forthmacros64 \
               086-shrink \
               087-features \
               088-segv-fix \
-              089-anon-flush
+              089-anon-flush \
+              090-remove-fast-paths
 
 test:
 	@fail=0; for d in $(EXPERIMENTS); do \

@@ -766,6 +766,47 @@ This is what makes `swap` "zero-cost" — it emits no code at all.
 The compiler just remembers that TOS and NOS registers are
 conceptually swapped, and subsequent code generators account for it.
 
+### Restoring Lavarenne's compiler loop (exp 090)
+
+The x86-64 port's compiler originally had five hardcoded keyword checks
+before the backtick/dictionary lookup path. When the compiler read a
+token, it checked:
+
+1. Is it `;`? → call `_semi` directly
+2. Is it `:`? → call `_colon` directly
+3. Is it `variable`? → call `_variable` directly
+4. Is it `constant`? → call `_constant` directly
+5. Is it `include`? → call `_include` directly
+
+Only if all five checks failed did it proceed to the backtick name
+mangling and dictionary lookup that Lavarenne designed.
+
+Lavarenne's original ff.asm compiler (lines 1063-1089) has none of these
+fast-paths. Its loop is pure and simple:
+
+```
+wsparse → append backtick → find → dispatch by ct
+                                → OR strip backtick → find → dispatch by ct
+                                → OR literalcompiler
+```
+
+Every word — including `;`, `:`, `variable`, `constant` — is found via
+dictionary lookup. `;`` and `:`` are ct=2 backtick macros in the
+dictionary. `variable`` and `constant`` are Forth definitions in ff.boot.
+No special cases.
+
+This is a core Lavarenne principle: the compiler is *uniform*. It treats
+every word the same way. The dictionary IS the dispatch mechanism. Adding
+keyword fast-paths undermines this uniformity and creates maintenance
+burden — as proven by the anon-flush bug (exp 089), where the assembly
+`_variable` didn't flush pending anonymous blocks but the Forth
+`variable`` definition (via `:`` → `_colon` → `_semi`) would have.
+
+Experiment 090 removed all five fast-paths (197 lines of assembly) and
+moved the `create``, `variable``, and `constant`` Forth definitions
+earlier in ff64.boot so they're available before first use. The compiler
+loop now matches Lavarenne's design exactly.
+
 ### The `\` comment fix
 
 The `\` comment word originally set the input pointer to the end of

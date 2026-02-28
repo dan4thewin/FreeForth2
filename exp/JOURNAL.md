@@ -7240,3 +7240,72 @@ assembly level.
 **Running total:** 512 tests across 36 experiments, all passing.
 
 ---
+
+## Experiment 090: Remove Compiler Keyword Fast-Paths
+
+**Goal:** Remove the compiler keyword fast-paths for `;`, `:`, `variable`,
+`constant`, and `include` from ff64.asm. Make the compiler work purely via
+dictionary lookup, as Lavarenne's ff.asm does. This is the first step in
+walking ff64.asm back to match Lavarenne's minimalist character.
+
+**Context:** ff64.asm's compiler loop had five hardcoded keyword checks
+that intercepted `;`, `:`, `variable`, `constant`, and `include` by
+comparing the parsed token against string constants. If matched, it called
+internal routines (`_semi`, `_colon`, `_variable`, `_constant`, `_include`)
+directly, bypassing the dictionary entirely.
+
+Lavarenne's ff.asm compiler (lines 1063-1089) is elegantly simple:
+`_wsparse` → try backtick name → `_find` → try original name → `_find` →
+`literalcompiler`. No keyword fast-paths at all. Every word — including
+`;`, `:`, `variable`, `constant` — is found via dictionary lookup.
+
+**What was removed (197 lines from ff64.asm):**
+1. Five keyword checks in the compiler loop (lines 1480-1542): string
+   comparisons for `;`, `:`, `variable`, `constant`, `include`
+2. `_variable` routine (19 lines): parsed name, created header with ct=1,
+   allocated data cell
+3. `_constant` routine (20 lines): parsed name, stored TOS as literal value
+4. `_include` routine (83 lines): parsed filename, opened/read/compiled
+   file, restored input state. Dead code — never used by any boot file
+5. Keyword strings: `kw_variable`, `kw_constant`, `kw_include`
+6. Error message: `err_nofile_msg` (only used by `_include`)
+
+**What changed in ff64.boot:**
+- Moved `create``, `variable``, and `constant`` definitions earlier
+  (from line 323-348 to line 261-263, right after `ct|!` and `pvt``)
+- These were previously dead code (shadowed by assembly fast-paths),
+  now they are the ONLY definitions
+- Moving them early ensures they exist before their first use
+  (`variable mrk` at line 286, `constant h.ct` at line 317)
+
+**How it works now (matching Lavarenne's approach):**
+When the compiler encounters `variable`, it:
+1. Appends backtick → searches for `variable`` → finds the Forth definition
+2. Dispatches by ct=0 → `call rax` → executes `variable``
+3. `variable`` does: `create` 0 , anon:`` — creates header, allots cell
+
+The `;`` and `:`` backtick macros were already in the WORD64 dictionary
+(pointing to `_semi` and `_colon`), so removing their fast-paths has zero
+behavioral change — the dictionary lookup finds them immediately.
+
+**Chicken-and-egg consideration:** The boot file uses `variable` before
+defining `variable``. Moving the definition earlier in ff64.boot solves
+this. All dependencies (`ct|!`, `H@` via suffix mechanism, `:`` via
+assembly) are available by line 257.
+
+**Result:** 520 tests across 37 experiments, all passing. The compiler
+loop is now a faithful translation of Lavarenne's design: parse → backtick
+lookup → normal lookup → suffix/literal compiler. No keyword shortcuts.
+
+**Files modified:**
+- `ff64.asm` — removed 197 lines: compiler fast-paths, `_variable`,
+  `_constant`, `_include`, keyword strings
+- `ff64.boot` — moved `create``, `variable``, `constant`` to line 261
+- `exp/Makefile` — added exp 090
+
+**Files created:**
+- `exp/090-remove-fast-paths/Makefile` — 8 tests
+
+**Running total:** 520 tests across 37 experiments, all passing.
+
+---

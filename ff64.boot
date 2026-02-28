@@ -256,6 +256,11 @@
 : pvt` 8 H@ ct|! ;
 : :.` :` pvt` ;
 
+\ Dictionary defining words — early so variable/constant work in boot
+: create` :` 1 H@ ct|! anon:` ;
+: variable` create` 0 , anon:` ;
+: constant` :` 1 H@ ct|! H@ ! anon:` ;
+
 ( Advanced loop infrastructure: START/ENTER/BREAK/END )
 \ Structured loop with optional first-entry skip.
 \
@@ -320,8 +325,6 @@ variable mrk 0 mrk 8+ !
 
 ( Dictionary operations )
 : execute >r ;
-: create` :` 1 H@ ct|! anon:` ;
-: variable` create` 0 , anon:` ;
 : pvtmargin $10 H@ ct|! ;
 
 ( Vector words — :^ creates push/ret preamble, 6 bytes )
@@ -345,7 +348,6 @@ variable mrk 0 mrk 8+ !
 
 : _alias H@ ! $20 H@ ct|! anon:` ;
 : alias` :` _alias ;
-: constant` :` 1 H@ ct|! H@ ! anon:` ;
 
 ( Bracket state switching )
 : [` anon@ SC c@ anon:` ;

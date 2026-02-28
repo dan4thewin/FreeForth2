@@ -1424,49 +1424,6 @@ _semi_exec:
         mov byte [SC], 0
         ret
 
-;; variable: parse name, allocate 8-byte cell, create literal header
-;; Usage: variable x    → x pushes address of its cell
-_variable:
-        mov rax, [anon]
-        test rax, rax
-        jz .var_no_anon
-        call _semi_exec
-.var_no_anon:
-        call _wsparse
-        test ecx, ecx
-        jz _colon.missing_name
-        ;; rax=name addr, ecx=name len
-        ;; xt = rbp (current compilation pointer = address of data cell)
-        mov r8, rbp             ; xt = address of the cell
-        mov r9d, 1              ; ct=1 (literal → push xt as literal)
-        call _header
-        mov qword [rbp], 0      ; initialize cell to 0
-        add rbp, 8              ; advance past the cell
-        mov [anon], rbp          ; update anon so code doesn't get recycled
-        ret
-
-;; constant: parse name, TOS is the value, create literal header
-;; Usage: 42 constant answer    → answer pushes 42
-_constant:
-        mov rax, [anon]
-        test rax, rax
-        jz .const_no_anon
-        call _semi_exec
-.const_no_anon:
-        call _wsparse
-        test ecx, ecx
-        jz _colon.missing_name
-        ;; rax=name addr, ecx=name len
-        ;; xt = rbx (TOS = the constant value)
-        mov r8, rbx             ; xt = constant value
-        mov r9d, 1              ; ct=1 (literal → push xt as literal)
-        call _header
-        ;; Drop the constant value from data stack
-        mov rbx, rdx
-        mov rdx, [r15]
-        add r15, 8
-        mov [anon], rbp
-        ret
 
 ;; =====================================================================
 ;; Compiler main loop
@@ -1477,71 +1434,9 @@ _compiler:
         test ecx, ecx
         jz _compiler_done
 
-        cmp ecx, 1
-        jne .notsc
-        cmp byte [rax], ';'
-        jne .notsc
-        call _semi
-        jmp _compiler
-.notsc:
-        cmp ecx, 1
-        jne .notcol
-        cmp byte [rax], ':'
-        jne .notcol
-        call _colon
-        jmp _compiler
-.notcol:
-        ;; Check for "variable"
-        cmp ecx, 8
-        jne .notvar
-        push rdi
-        push rsi
-        mov rdi, rax
-        lea rsi, [kw_variable]
-        push rcx
-        repz cmpsb
-        pop rcx
-        pop rsi
-        pop rdi
-        jnz .notvar
-        call _variable
-        jmp _compiler
-.notvar:
-        ;; Check for "constant"
-        cmp ecx, 8
-        jne .notconst
-        push rdi
-        push rsi
-        mov rdi, rax
-        lea rsi, [kw_constant]
-        push rcx
-        repz cmpsb
-        pop rcx
-        pop rsi
-        pop rdi
-        jnz .notconst
-        ;; Execute accumulated code to get value on stack
-        call _semi_exec
-        call _constant
-        jmp _compiler
-.notconst:
-        ;; Check for "include"
-        cmp ecx, 7
-        jne .notincl
-        push rdi
-        push rsi
-        mov rdi, rax
-        lea rsi, [kw_include]
-        push rcx
-        repz cmpsb
-        pop rcx
-        pop rsi
-        pop rdi
-        jnz .notincl
-        call _include
-        jmp _compiler
-.notincl:
         ;; --- Backtick name mangling ---
+        ;; No keyword fast-paths: ; : variable constant are found via
+        ;; dictionary lookup (backtick macros), as in Lavarenne's ff.asm.
         ;; Temporarily append '`' to the word and search.
         ;; If found, execute immediately (compile-time macro).
         lea rdi, [rax + rcx]   ; point past end of word
@@ -2553,91 +2448,6 @@ _readline:
         test rax, rax
 .eof:   ret
 
-;; include: parse filename, open file, read contents, compile, close
-;; Saves and restores input state (tin, tp)
-_include:
-        ;; Parse filename from input
-        call _wsparse
-        test ecx, ecx
-        jz .err_nofile
-        ;; NUL-terminate the filename (wsparse leaves rax=start, ecx=len)
-        mov byte [rax + rcx], 0
-        ;; Save current input state and filebuf position
-        push qword [tin]
-        push qword [tp]
-        push qword [filebuf_ptr]
-        ;; Open file (sys_open=2, O_RDONLY=0)
-        mov rdi, rax            ; filename
-        xor esi, esi            ; O_RDONLY
-        xor edx, edx            ; mode (ignored for read)
-        mov rax, 2              ; sys_open
-        syscall
-        test rax, rax
-        js .err_open
-        mov r12, rax            ; save fd in r12
-        ;; Read file into current filebuf position (sys_read=0)
-        xor eax, eax            ; sys_read
-        mov rdi, r12            ; fd
-        mov rsi, [filebuf_ptr]  ; buffer at current nesting level
-        mov rdx, 65536          ; max 64KB per file
-        syscall
-        test rax, rax
-        js .err_read
-        ;; Close file (sys_close=3)
-        push rax                ; save bytes read
-        mov rax, 3              ; sys_close
-        mov rdi, r12
-        syscall
-        pop rax
-        ;; Set up input from file buffer, advance filebuf_ptr
-        mov rcx, [filebuf_ptr]
-        mov [tin], rcx
-        lea rcx, [rcx + rax]
-        mov [tp], rcx
-        lea rcx, [rcx + 16]    ; small gap between levels
-        mov [filebuf_ptr], rcx
-        ;; Compile the file contents
-        call _compiler
-        ;; Restore input state and filebuf position
-        pop qword [filebuf_ptr]
-        pop qword [tp]
-        pop qword [tin]
-        ret
-.err_nofile:
-        push rax
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [err_nofile_msg]
-        mov rdx, err_nofile_len
-        syscall
-        pop rax
-        ret
-.err_open:
-        push rax
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [err_open_msg]
-        mov rdx, err_open_len
-        syscall
-        pop rax
-        ;; Restore input state
-        pop qword [filebuf_ptr]
-        pop qword [tp]
-        pop qword [tin]
-        ret
-.err_read:
-        mov rax, 3              ; close fd
-        mov rdi, r12
-        syscall
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [err_read_msg]
-        mov rdx, err_read_len
-        syscall
-        pop qword [filebuf_ptr]
-        pop qword [tp]
-        pop qword [tin]
-        ret
 
 ;; loadfile ( addr len -- ) load and compile file from data stack
 ;; Like _include but takes filename string from stack instead of parsing.
@@ -3080,11 +2890,6 @@ errmsg:       db "error: "
 err_noname:   db "error: : without name"
               db 10
 err_noname_len = $ - err_noname
-kw_variable:  db "variable"
-kw_constant:  db "constant"
-kw_include:   db "include"
-err_nofile_msg: db "error: include without filename", 10
-err_nofile_len = $ - err_nofile_msg
 err_open_msg: db "error: cannot open file", 10
 err_open_len = $ - err_open_msg
 err_read_msg: db "error: cannot read file", 10
