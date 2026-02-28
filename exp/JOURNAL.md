@@ -6102,8 +6102,9 @@ document — only the test directories were moved.
 
 **Goal:** Implement a search-path system for `needed` so that library
 files can be found in `lib/64/` (64-bit specific), `lib/` (shared),
-or `.` (current directory), matching Lavarenne's i386 `openlib` in
-`fflin.boot`.
+or `.` (current directory). Lavarenne's i386 had a simpler `open'`
+path mechanism in `fflin.boot`; DG created the `FFPATH` search-path
+system and `openlib` for x86-64.
 
 **Motivation:** With the library system planned for `lib/64/`, we need
 `needed` to automatically find files across multiple directories. The
@@ -6205,13 +6206,22 @@ anonymous block via `ossetup`).
 
 ### Goal
 
-Port Lavarenne's `fixup` mechanism from `ff.ff` to x86-64. This is the
-foundation for all libc wrapper words (strerror, malloc, free, getenv,
-etc.). Also port `strerror`, `?ior`, and `?ior.` as the first consumers.
+Create DG's `fixup` mechanism for x86-64 libc symbol resolution. This
+replaces Lavarenne's `libc.` compile-time approach (which used `#fun`
+and `#call` directly) with a runtime self-patching trampoline. fixup is
+the foundation for all libc wrapper words (strerror, malloc, free,
+getenv, etc.). Also port `strerror`, `?ior`, and `?ior.` as the first
+consumers.
 
-### Background: How fixup Works (i386)
+### Background: How fixup Works
 
-In i386 FreeForth, libc functions are called through a two-stage mechanism:
+Lavarenne's i386 called libc functions at compile time via `libc.`:
+```forth
+: malloc 1 libc. malloc ;   \ calls #fun + #call inline
+```
+
+DG's `fixup` mechanism defers resolution to first runtime call, using a
+self-patching trampoline:
 
 1. **Hidden definition** (`:.`): `:. _xxx "symbol" fixup`
 2. **Public wrapper**: `: xxx ... _xxx N #call ... ;`
@@ -6383,8 +6393,9 @@ spectacularly during the `ct=1` bug investigation (exp 038).
 ## Experiment 080: lib/64 Library System
 
 **Goal:** Port ff.ff library words to x86-64 as loadable library files
-in `lib/64/`, following Lavarenne's design of keeping the boot image
-small by loading less-used words on demand.
+in `lib/64/`. Lavarenne kept less-used words in `ff.ff`, loaded on
+demand; DG's `lib/64/` directory organizes these by topic as separate
+loadable files.
 
 ### The fixup Buffer Allocation Bug (CRITICAL FIX)
 

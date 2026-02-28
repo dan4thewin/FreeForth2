@@ -2927,9 +2927,8 @@ On first call, this loads `lib/help64.ff`, which defines its own
 itself to grab the keyword argument — arguments cannot be passed on
 the stack through `needexec` because `loadfile` disrupts the stack.
 
-This is the same pattern used by `see\`` in the i386 FreeForth
-(`fflin.boot`). Lavarenne clearly valued this lazy-loading approach
-for keeping the core small.
+This is the same lazy-loading pattern DG uses for `see\`` — keep the
+core small by deferring rarely-used functionality to loadable files.
 
 ### The help file format
 
@@ -3678,8 +3677,9 @@ on the next line.
 ### FFPATH and Library Search (Experiment 078)
 
 FreeForth keeps the boot image small by loading less-used words on
-demand. Lavarenne's i386 design used `openlib` to search a configurable
-path (`FFPATH`) for library files. Experiment 078 ports this to x86-64.
+demand. Lavarenne's i386 had a simple path mechanism in `fflin.boot`
+(using `open'`). DG created the `FFPATH` search-path system and
+`openlib` for x86-64 (experiment 078).
 
 #### How FFPATH Works
 
@@ -3860,10 +3860,9 @@ operands (by FreeForth's FLAGS-based conditional design).
 
 ### The Library System (lib/64/)
 
-Lavarenne separated `ff.ff` from `ff.boot` to keep the boot image
-small. `ff.ff` contains less-used words loaded on demand via `needed`.
-For the x86-64 port, this functionality lives in `lib/64/` rather
-than a monolithic `ff64.ff`.
+Lavarenne kept less-used words in `ff.ff`, loaded on demand via
+`needed`. DG organized the x86-64 equivalents in `lib/64/` as
+separate topic-based files rather than a monolithic `ff64.ff`.
 
 #### Directory Structure
 

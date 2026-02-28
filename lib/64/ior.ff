@@ -1,5 +1,5 @@
 ( ior.ff — I/O result checking and strerror )
-( Ported from Lavarenne's ff.ff for x86-64. )
+( Equivalent of strerror/?ior from Lavarenne's ff.ff, via fixup. )
 ( Requires fixup.ff [loaded automatically via needed]. )
 "fixup.ff" needed ;
 

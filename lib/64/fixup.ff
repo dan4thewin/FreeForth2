@@ -1,5 +1,6 @@
 ( fixup.ff — self-patching first-call resolution for libc symbols )
-( Ported from Lavarenne's i386 fixup in ff.ff. )
+( fixup — self-patching libc resolution for x86-64. )
+( DG's mechanism; Lavarenne's i386 used libc. with direct dlsym. )
 (
   i386 fixup replaces a 5-byte "call _xxx" with "mov ebx,funh" [BB imm32].
   On x86-64, function handles are 64-bit, so we can't fit in 5 bytes.
