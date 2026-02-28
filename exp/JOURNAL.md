@@ -6468,7 +6468,8 @@ Terminal control: `cls`, `home`, `atxy`, `atx` (cursor),
 `key?`/`fdin?` (input polling), `ekey` (raw keyboard via termios),
 `stopdump?`/`;dump` (interactive dump).
 
-Fixed from i386: `&100` hex prefix → `$100` (ff64 hex syntax),
+Fixed from i386: `&100` octal prefix → `64` decimal (ff64 lacks `&`
+octal prefix; `&100` = octal 100 = 64 decimal, NOT hex),
 `2dump` → `dump` (ff64 equivalent).
 
 #### lib/64/time.ff
