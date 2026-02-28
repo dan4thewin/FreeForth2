@@ -1158,67 +1158,143 @@ _find:  push r8
         stc                     ; CF set = not found
         ret
 
+;;; number input — table-driven parser
+;;; Ported from Lavarenne's i386 _number (ff.asm:536-657).
+;;; Supports: decimal, $hex, &octal, %binary, #base, 'quoted ASCII,
+;;;           y-m-d Gregorian dates, h:m:s times, d_h day-hour,
+;;;           skip chars (' , /), negative sign.
+;;; API: rax=string addr, rcx=string length
+;;;      Success: rax=number, ZF set.  Failure: rax=orig addr, ZF clear.
+
+numaccu dq 0
+
 _number:
         push r8
         push rdx                ; save NOS (data stack)
-        mov r8, rax
-        xor edx, edx
-        xor r9d, r9d
-        mov rsi, rax
-        lea rdi, [rax + rcx]
-        cmp byte [rsi], '$'
-        je .hex_start
-        cmp byte [rsi], '-'
-        jne .dec
-        mov r9d, 1
-        inc rsi
-        cmp rsi, rdi
-        jae .fail
-.dec:   cmp rsi, rdi
-        jae .ok
-        movzx eax, byte [rsi]
-        sub al, '0'
-        cmp al, 9
-        ja .fail
-        imul rdx, 10
+        push r10                ; save r10 (used as current base)
+        mov r8, rax             ; r8 = original string addr (for fail)
+        mov r10d, 10            ; default base = decimal
+        mov rsi, rax            ; rsi = scan pointer
+        lea rdi, [rax + rcx]   ; rdi = string end
+        xor ecx, ecx            ; accumulator = 0
+        mov [numaccu], rcx      ; secondary accumulator = 0
+        lodsb                   ; al = first char
+        push rax                ; save initial (maybe '-' sign)
+        cmp al, '-'             ; skip initial sign
+        jne @f
+        lodsb
+@@:     cmp al, "'"             ; single quoted ASCII
+        jne .e
+        movzx ecx, byte [rsi]  ; ecx = ASCII value of next char
+        jmp .s
+.7:     mov r10d, 8             ; & → octal
+        jmp .4
+.6:     mov r10d, 2             ; % → binary
+        jmp .4
+.5:     mov r10d, 16            ; $ → hexadecimal
+        jmp .4
+.z:     mov r10d, 10
+        jmp .4
+.8:     test ecx, ecx           ; # → base = accumulated value
+        jz .z                   ; if zero, default to decimal
+        mov r10d, ecx           ; set base
+.d:     xor ecx, ecx            ; reset accumulator
+.4:     lodsb                   ; al = next character
+.e:     cmp al, $7F             ; reject >= $7F
+        jae .0
         movzx eax, al
-        add rdx, rax
-        inc rsi
-        jmp .dec
-.hex_start:
-        inc rsi
-        cmp rsi, rdi
-        jae .fail
-.hloop: cmp rsi, rdi
-        jae .ok
-        movzx eax, byte [rsi]
-        sub al, '0'
-        cmp al, 9
-        jbe .hadd
-        sub al, 'A'-'0'-10
-        cmp al, 15
-        jbe .hadd
-        sub al, 32
-        cmp al, 15
-        ja .fail
-.hadd:  shl rdx, 4
-        movzx eax, al
-        add rdx, rax
-        inc rsi
-        jmp .hloop
-.ok:    test r9d, r9d
-        jz .noneg
-        neg rdx
-.noneg: mov rax, rdx
-        pop rdx                 ; restore NOS
+        push rax                ; save digit value
+        movzx eax, byte [.ct + rax]   ; method index from char table
+        mov rax, [.jt + rax*8]        ; handler address from jump table
+        xchg rax, [rsp]               ; restore digit, push handler
+        ret                            ; dispatch to handler
+.jt:    dq .0,.1,.2,.3,.4,.5,.6,.7,.8,.9,.10,.11,.12
+.3:     sub al, 'a'-'A'         ; lowercase → uppercase
+.2:     sub al, 'A'-'0'-$A      ; uppercase hex digit
+.1:     sub al, '0'             ; decimal digit
+        cmp eax, r10d           ; reject digit >= base
+        jae .0
+        imul rcx, r10           ; accumulator *= base
+        add rcx, rax            ; accumulator += digit
+        cmp rsi, rdi            ; end of string?
+        jb .4                   ; no → next char
+        add rcx, [numaccu]      ; yes → add secondary accumulator
+.s:     cmp byte [rsp], '-'     ; saved initial sign
+        jne @f
+        neg rcx
+@@:     mov rax, rcx            ; result in rax
+        add rsp, 8              ; discard saved initial
+        pop r10
+        pop rdx
         pop r8
         cmp rax, rax            ; ZF set = success
         ret
-.fail:  mov rax, r8
-        pop rdx                 ; restore NOS
+.9:                              ; whitespace (wsparse compat)
+.0:     pop rax                  ; discard saved initial
+        mov rax, r8              ; restore original string addr
+        pop r10
+        pop rdx
         pop r8
-        test rax, rax           ; ZF clear (word addr is never 0)
+        test rax, rax            ; ZF clear (addr is never 0)
         ret
+
+.10:    xchg rcx, [numaccu]      ; Gregorian date: y-m-d
+        test ecx, ecx
+        jz .4                    ; first dash: year → accu, continue
+        xchg rcx, [numaccu]     ; ecx = month, [numaccu] = year
+        cmp ecx, 3
+        jge @f
+        add ecx, 12             ; move origin to March 1st
+        dec qword [numaccu]
+@@:     inc ecx
+        push rdx
+        mov eax, 31+30+31+30+31 ; = 153 (5-month period)
+        mul ecx                  ; edx:eax = 153*(m+1)
+        mov ecx, 5
+        div ecx                  ; eax = 153*(m+1)/5
+        sub eax, 123             ; day-of-year (can be negative)
+        cdqe                     ; sign-extend eax → rax (32→64 bit)
+        xchg rax, [numaccu]     ; rax = year, [numaccu] = day-of-year
+        imul ecx, eax, 1461
+        shr ecx, 2               ; ecx = 365y + y/4
+        add [numaccu], rcx
+        mov ecx, 100
+        xor edx, edx
+        div ecx                  ; eax = y/100
+        sub [numaccu], rax
+        shr eax, 2               ; eax = y/400
+        add [numaccu], rax
+        pop rdx
+        xor eax, eax
+        jmp .d
+.11:    cmp qword [numaccu], 730484  ; date-time separator
+        jl @f
+        sub qword [numaccu], 730485  ; translate to 2000-03-01 origin
+@@:     mov al, 24               ; d_h: multiply by 24
+        jmp @f
+.12:    mov al, 60               ; h:m:s: multiply by 60
+@@:     add rcx, [numaccu]
+        imul rcx, rax            ; shift accumulator
+        mov [numaccu], rcx
+        jmp .d
+
+;;;         0  1  2  3   4  5  6  7   8  9  A  B   C  D  E  F
+;;;    00: NUL                                                    ; 0:error
+.ct:    db  9, 0, 0, 0,  0, 0, 0, 0,  0, 9, 9, 9,  9, 9, 0, 0  ; 1:digit
+;;;    10: DLE                                                    ; 2:upper
+        db  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0  ; 3:lower
+;;;    20:     !  "  #   $  %  &  '   (  )  *  +   ,  -  .  /   ; 4:skip
+        db  9, 0, 0, 8,  5, 6, 7, 4,  0, 0, 0, 0,  4,10, 0, 4  ; 5:$hex
+;;;    30:  0  1  2  3   4  5  6  7   8  9  :  ;   <  =  >  ?   ; 6:%bin
+        db  1, 1, 1, 1,  1, 1, 1, 1,  1, 1,12, 0,  0, 0, 0, 0  ; 7:&oct
+;;;    40:  @  A  B  C   D  E  F  G   H  I  J  K   L  M  N  O   ; 8:#base
+        db  0, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2  ; 9:ws
+;;;    50:  P  Q  R  S   T  U  V  W   X  Y  Z  [   \  ]  ^  _   ; 10:- date
+        db  2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 0,  0, 0, 0,11  ; 11:_ ×24
+;;;    60:  `  a  b  c   d  e  f  g   h  i  j  k   l  m  n  o   ; 12:: ×60
+        db  0, 3, 3, 3,  3, 3, 3, 3,  3, 3, 3, 3,  3, 3, 3, 3
+;;;    70:  p  q  r  s   t  u  v  w   x  y  z  {   |  }  ~ DEL
+        db  3, 3, 3, 3,  3, 3, 3, 3,  3, 3, 3, 3,  3, 3, 3, 0
 
 _call_compile:
         call _rst               ; sync registers before call

@@ -6763,3 +6763,104 @@ in lib/64 files: `&100` in console.ff, `24:0:0` and date expressions
 in time.ff.
 
 ---
+
+## Experiment 081: Full Number Literal Parser
+
+**Goal:** Replace ff64's minimal `_number` (decimal + $hex + negative,
+60 lines) with a port of Lavarenne's table-driven parser from ff.asm
+(120 lines), supporting all twelve literal formats.
+
+### What Changed
+
+The old `_number` was replaced with a faithful port of the i386 parser.
+The new version uses:
+
+- **128-byte character classification table (`.ct`):** Maps each ASCII
+  value to a method index (0–12), identical to Lavarenne's original.
+- **13-entry jump table (`.jt`):** Dispatches to handler code. On x86-64,
+  entries are 8 bytes (`dq`) instead of i386's 4 bytes (`dd`).
+- **Dispatch trick:** Same as i386 — push digit, load handler address,
+  `xchg rax, [rsp]`, `ret`. The `ret` pops the handler address and
+  jumps to it while restoring the digit value. Works identically on
+  x86-64 because `push`/`ret` are naturally 8 bytes in long mode.
+- **Secondary accumulator (`numaccu`):** A qword (was dword) for
+  multi-field parsing (dates, times).
+
+### Register Mapping
+
+| Role | i386 | x86-64 | Why different |
+|------|------|--------|---------------|
+| Current base | ebp | r10 | rbp = compilation pointer (here) |
+| String scan | esi/edi | rsi/rdi | Same encoding, REX prefix |
+| Accumulator | ecx | rcx | 64-bit for large numbers |
+| Digit/temp | eax | rax | Same |
+| Secondary accu | [accu] (dd) | [numaccu] (dq) | 64-bit |
+| Saved original | (on stack) | r8 | ff64 convention |
+
+### The cdqe Bug
+
+The only non-trivial porting issue. In the Gregorian date handler,
+`sub eax, 123` can produce a negative result (e.g., -1 for March).
+On i386, this is fine — everything stays in 32-bit registers. On
+x86-64, writing to `eax` zeros the upper 32 bits of `rax`, so -1
+becomes 0x00000000FFFFFFFF (unsigned 4294967295) instead of
+0xFFFFFFFFFFFFFFFF (signed -1). When stored as a qword in `numaccu`
+and added to positive year contributions, the result was off by
+exactly 2^32.
+
+**Fix:** A single `cdqe` instruction after `sub eax, 123` sign-extends
+eax into the full rax. One byte, one bug.
+
+**Lesson:** Every `sub eax, imm` that can go negative needs sign
+extension before being used as a 64-bit value. The i386 code never
+needed this because all operations were naturally 32-bit. This is a
+recurring theme in this port.
+
+### Formats Now Supported
+
+| Format | Example | Result | Status |
+|--------|---------|--------|--------|
+| Decimal | `42` | 42 | Was working |
+| Negative | `-7` | -7 | Was working |
+| Hex | `$FF` | 255 | Was working |
+| Octal | `&100` | 64 | **New** |
+| Binary | `%1010` | 10 | **New** |
+| Base change | `8#77` | 63 | **New** |
+| Quoted ASCII | `'A` | 65 | **New** |
+| Skip chars | `1'000'000` | 1000000 | **New** |
+| Date | `2000-3-1` | 730485 | **New** |
+| Time | `24:0:0` | 86400 | **New** |
+| Day-hour | `1_0:0:0` | 86400 | **New** |
+| Compound | `[ 1970-1-1 2000-3-1- 24:0:0* 1:0:0+ ]` | -951865200 | **New** |
+
+All values verified against the i386 binary.
+
+### Tests (13 tests, all PASS)
+
+| Test | What it checks |
+|------|---------------|
+| decimal | `42` → 42 |
+| negative | `-7` → -7 |
+| hex | `$FF` → 255 |
+| octal | `&100` → 64 |
+| binary | `%1010` → 10 |
+| quoted-ascii | `'A` → 65 |
+| base-change | `8#77` → 63 |
+| skip-chars | `1'000'000` → 1000000 |
+| date | `2000-3-1` → 730485 |
+| date-1970 | `1970-1-1` → 719468 |
+| time | `24:0:0` → 86400 |
+| time-hour | `1:0:0` → 3600 |
+| epoch-expr | `[ 1970-1-1 2000-3-1- 24:0:0* 1:0:0+ ]` → -951865200 |
+
+Full test suite: 479 PASS (13 new + 466 existing), 1 pre-existing FAIL
+(exp/064 SEGV recovery).
+
+**Files modified:**
+- `ff64.asm` — `_number` replaced (lines 1161–1221 → ~120 lines)
+- `exp/Makefile` — added 081-numlit
+
+**Files created:**
+- `exp/081-numlit/Makefile` — 13 tests
+
+---

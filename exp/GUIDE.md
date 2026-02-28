@@ -244,6 +244,43 @@ calls, `BB`/`48 BB` for its literals, and `C3` for its end. Inline
 strings follow their `call` instruction as raw bytes — GDB will show
 them as nonsense instructions; use `x/Ns addr` to read the string.
 
+### Number literal parsing
+
+When the compiler encounters a token that isn't in the dictionary, it
+tries to parse it as a number. Lavarenne's original parser is
+table-driven: a 128-byte character classification table maps each ASCII
+value to one of 13 handler methods, dispatched via a jump table.
+
+The x86-64 port preserves this design exactly. Supported formats:
+
+| Prefix/syntax | Meaning | Example | Value |
+|---------------|---------|---------|-------|
+| (none) | Decimal | `42` | 42 |
+| `-` | Negative | `-7` | -7 |
+| `$` | Hexadecimal | `$FF` | 255 |
+| `&` | Octal | `&100` | 64 |
+| `%` | Binary | `%1010` | 10 |
+| `N#` | Base N | `8#77` | 63 |
+| `'` | Quoted ASCII | `'A` | 65 |
+| `'` `,` `/` | Skip (digit grouping) | `1'000` | 1000 |
+| `-` (interior) | Gregorian date | `2000-3-1` | 730485 |
+| `:` | Time (×60) | `1:30:0` | 5400 |
+| `_` | Day-hour (×24) | `1_12:0:0` | 129600 |
+
+The date parser uses the Gregorian calendar algorithm (origin March 1,
+five-month period approximation). Combined with the suffix mechanism
+(where `2000-3-1-` means "push date, compile subtract"), this enables
+compact compile-time expressions:
+
+```forth
+[ 1970-1-1 2000-3-1- 24:0:0* 1:0:0+ ]   \ → -951865200 (epoch offset)
+```
+
+**x86-64 porting note:** The only non-trivial issue was sign extension
+in the date algorithm. `sub eax, 123` can produce a negative result,
+but writing to `eax` on x86-64 zeros the upper 32 bits, turning -1
+into 4294967295. A single `cdqe` instruction fixes this.
+
 ---
 
 ## Part 4: Flow Control — Branches and Loops

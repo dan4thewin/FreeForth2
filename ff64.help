@@ -403,3 +403,28 @@ ms ( n -- ) delay n milliseconds
   Uses nanosleep (syscall 35).
   Loaded from: "time.ff" needed
   see also: ms@
+
+\ --- Number literal formats (full parser, ported from i386) ---
+
+$N ( -- n ) hexadecimal literal: $FF = 255, $deadbeef = 3735928559
+
+&N ( -- n ) octal literal: &100 = 64, &777 = 511
+
+%N ( -- n ) binary literal: %1010 = 10, %11111111 = 255
+
+N#M ( -- n ) explicit base: 8#77 = 63, 16#ff = 255, 2#1010 = 10
+  N is accumulated as decimal, # sets it as base for remaining digits.
+
+'C ( -- n ) quoted ASCII: 'A = 65, '0 = 48
+  Returns the ASCII value of the character following the quote.
+
+N'N ( -- n ) digit grouping with skip chars: 1'000'000 = 1000000
+  Apostrophe, comma, and slash are skip characters (ignored in numbers).
+
+Y-M-D ( -- n ) Gregorian date literal: 2000-3-1 = 730485
+  Converts year-month-day to a linear day number.
+
+H:M:S ( -- n ) time literal (×60 accumulation): 1:0:0 = 3600, 24:0:0 = 86400
+
+D_H:M:S ( -- n ) day-hour-minute-second: 1_0:0:0 = 86400
+  Underscore multiplies accumulated value by 24 (day→hours).
