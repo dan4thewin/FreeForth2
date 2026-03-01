@@ -92,9 +92,9 @@ t{ 65535 tv6 ! tv6 ws@ -> -1 }t
 
 testing dup@ dupc@ dupw@
 variable tv7
-t{ 42 tv7 ! tv7 dup@ swap drop -> 42 }t
-t{ 171 tv7 ! tv7 dupc@ swap drop -> 171 }t
-t{ 4660 tv7 ! tv7 dupw@ swap drop -> 4660 }t
+t{ 42 tv7 ! tv7 dup@ -> tv7 42 }t
+t{ 171 tv7 ! tv7 dupc@ -> tv7 171 }t
+t{ 4660 tv7 ! tv7 dupw@ -> tv7 4660 }t
 
 testing d! d@
 variable tv8
