@@ -59,7 +59,8 @@ EXPERIMENTS = 023-forthmacros64 \
               090-remove-fast-paths \
               091-remove-inline-words \
               092-remove-comparisons \
-              093-remove-dead-runtime
+              093-remove-dead-runtime \
+              095-locals-and-test
 
 test:
 	@fail=0; for d in $(EXPERIMENTS); do \

@@ -7538,3 +7538,116 @@ test: `7 0 3 m/mod` → quotient 2, remainder 1.
 **Running total:** 520 tests across 40 experiments, all passing.
 
 ---
+
+## Experiment 095: Locals and Test Framework
+
+**Goal:** Port DG's locals words (r0–r5, r0!–r5!, >>r, >>rr,
++r, -r) from i386 to x86-64, then create a pure-Forth test framework
+(lib/64/test.ff) so future experiments can be written entirely in Forth
+— eliminating the constant Make/shell quoting issues that had been a
+significant drag on progress.
+
+Copilot ported the locals to x86-64 and created the test framework,
+experiment infrastructure, and documentation.
+
+### Background
+
+DG pointed to `test/common1.ff` as an example of tests written purely
+in Forth using the `t{ ... -> ... }t` pattern from `lib/test.ff`.
+Attempting to load `lib/test.ff` on ff64 crashed immediately: it
+depends on `>>rr` (from locals) and console color words — neither
+available in ff64 yet.
+
+The locals words live in `ff.ff` (the i386 standard library) at lines
+142–171.  DG authored them as compile-time macros — backtick
+definitions that emit hard-coded machine code for direct return-stack
+access.  Rather than burning assembly routines on locals, he wrote
+them entirely in Forth using the compile-time infrastructure (`$XX,`,
+`,N`, `sNN` adjusters) — very much in the spirit of Lavarenne's
+minimalist design.
+
+### Machine Code Encodings
+
+The i386→x86-64 translation required working out every instruction
+encoding.  Key differences:
+
+| Operation | i386 bytes | x86-64 bytes | Why different |
+|-----------|-----------|-------------|---------------|
+| r0! (store TOS to [callstack]) | `89 18` mov [eax],ebx | `48 89 1C 24` mov [rsp],rbx | rsp needs SIB byte (24h) |
+| rN (read [callstack+N*8]) | `8B 58 XX` mov ebx,[eax+XX] | `48 8B 5C 24 XX` mov rbx,[rsp+XX] | SIB byte + 8-byte cells |
+| >>r loop body | `83 E8 04; 8F 00; 4B; 75 F8` (8 bytes) | `41 FF 37; 4D 8D 7F 08; 48 FF CB; 75 F4` (12 bytes) | No single "pop-to-[r15]" instruction |
+| +r | `C1 E3 02; 01 D8` shl 2/add | `48 C1 E3 03; 48 01 DC` shl 3/add | 8-byte cells, REX.W prefix |
+
+The x86-64 [rsp] addressing always requires a SIB byte (24h) because
+rsp=100b in the ModR/M encoding is reserved for "SIB follows."  This
+adds 1 byte to every return-stack access compared to i386's [eax].
+
+For >>r, the i386 loop used `pop [eax]` — a single instruction that
+pops from ESP (data stack) and stores to [EAX] (call stack).  x86-64
+has no equivalent single instruction: we need `push qword [r15]` +
+`lea r15,[r15+8]`, making the loop body 12 bytes instead of 8.
+
+For >>rr, which reverses the order, the approach is: compute total
+byte count (shl rdx,3), reserve space (sub rsp,rdx), then fill
+bottom-up: `mov rdi,[r15]; mov [rsp],rdi; lea r15,[r15+8];
+add rsp,8; dec rbx; jnz` — then reset rsp back down (sub rsp,rdx).
+
+### Implementation Decisions
+
+**Placement in ff64.boot:** The locals section requires `0-`, `0>`,
+`IF`, `THEN`, `2drop`, and `alias` — all defined well into ff64.boot.
+First attempt at line 132 (after rotation words) failed.  Moved to
+after `alias` at ~line 370, where all dependencies are available.
+
+**Wrappers instead of aliases:** In ff.ff (loaded at runtime), the
+syntax `` r` ' alias r0` `` works because the tick word (`'`) operates
+in a compilation context.  During boot (ff64.boot), this syntax fails.
+Simple wrapper definitions (`: r0` r` ;`) work everywhere.
+
+**BREAK incompatibility:** The test framework's `chkvals` word
+originally used `BREAK` with `BEGIN/REPEAT`.  In the i386 ff, `REPEAT`
+calls `END` internally, so BREAK addresses get resolved.  In ff64,
+`REPEAT` = `swap _jmp_back THEN` — it does NOT call END, so BREAK
+addresses are never patched.  Rewrote `chkvals` to use `;THEN` for
+early exit on mismatch instead of BREAK.
+
+**dropr> semantics:** `dropr>` OVERWRITES TOS (doesn't push like r>).
+The `depth 0; dropr>` pattern in chkvals works because the depth value
+is temporary — it gets overwritten by the expected value popped from
+the return stack.  NOS becomes the actual value for comparison.
+
+### Test Framework (lib/64/test.ff)
+
+The port of `lib/test.ff` provides TAP-compatible output with colored
+pass/fail indicators.  Key words:
+
+- `t{ ... -> ... }t` — test harness: execute left side, save expected
+  values from right side on return stack, compare
+- `plan` — declare test count
+- `testing` — print test group description
+- `tally-exit` — print summary, exit with code 0 (all pass) or 1
+
+The framework requires `needs console.ff` for colors and `>>rr` from
+the newly ported locals.  It defines `dd` (drop-depth) locally since
+ff64.boot doesn't have it.
+
+### Results
+
+- **32 tests** covering all locals words: r0!–r5!, r1–r5, >>r, >>rr,
+  +r, -r, xxr, r!, r0, plus colon definitions using locals (squares,
+  sumsq, rev3, swap-via-locals)
+- **All 41 experiments pass** (including the new exp 095)
+- **lib/64/test.ff** ready for future experiments
+
+### Files Changed
+
+- `ff64.boot` — added locals section (~40 lines after `alias`)
+- `lib/64/test.ff` — NEW: Forth test framework for ff64
+- `exp/095-locals-and-test/test-locals.ff` — 32 locals tests
+- `exp/095-locals-and-test/Makefile` — experiment runner
+- `exp/Makefile` — added exp 095
+- `ff64.help` — added locals documentation
+
+**Running total:** 552 tests across 41 experiments, all passing.
+
+---

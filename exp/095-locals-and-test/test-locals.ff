@@ -1,0 +1,81 @@
+needs test.ff
+32 >plan
+
+testing r0!` r!`
+t{ 42 >r 99 r0! r> -> 99 }t
+
+testing r1` r1!`
+t{ -1 -2 2>r r1 2rdrop -> -1 }t
+t{ -1 -2 2>r 99 r1! r> r> -> -2 99 }t
+
+testing r2` r2!`
+t{ 10 >r 20 >r 30 >r r2 3 +r -> 10 }t
+t{ 10 >r 20 >r 30 >r 99 r2! r> r> r> -> 30 20 99 }t
+
+testing r3` r3!`
+t{ 1 >r 2 >r 3 >r 4 >r r3 4 +r -> 1 }t
+t{ 1 >r 2 >r 3 >r 4 >r 99 r3! r> r> r> r> -> 4 3 2 99 }t
+
+testing r4` r4!`
+t{ $a >r $b >r $c >r $d >r $e >r r4 5 +r -> $a }t
+t{ $a >r $b >r $c >r $d >r $e >r $ff r4! r> r> r> r> r> -> $e $d $c $b $ff }t
+
+testing r5` r5!`
+t{ $a >r $b >r $c >r $d >r $e >r $f >r r5 6 +r -> $a }t
+t{ $a >r $b >r $c >r $d >r $e >r $f >r $ff r5! r> r> r> r> r> r> -> $f $e $d $c $b $ff }t
+
+testing >>r`
+t{ 1 2 3 3 >>r depth r> r> r> -> 0 1 2 3 }t
+t{ 10 1 >>r r> -> 10 }t
+t{ 0 >>r -> }t
+
+testing >>rr`
+t{ 1 2 3 3 >>rr depth r> r> r> -> 0 3 2 1 }t
+t{ 10 1 >>rr r> -> 10 }t
+t{ 0 >>rr -> }t
+
+testing +r` xxr`
+t{ 10 20 30 3 >>r 3 +r -> }t
+t{ 10 20 2 >>r 2 xxr -> }t
+
+testing -r`
+t{ 3 -r 3 +r -> }t
+
+testing -r` with rN!
+t{ $a $b $c $d $e $f 6 -r r5! r4! r3! r2! r1! r0!
+   depth r0 r2 r4 r1 r3 r5 6 +r -> 0 $a $c $e $b $d $f }t
+
+testing r0` alias
+t{ 42 >r r0 rdrop -> 42 }t
+
+testing locals round-trip via >>r
+t{ 10 20 30 3 >>r r0 r1 r2 3 +r -> 10 20 30 }t
+
+testing locals in colon definition
+: squares 3 -r r2! r1! r0! r0 r0 * r1 r1 * r2 r2 * 3 +r ;
+t{ 3 4 5 squares -> 9 16 25 }t
+
+testing empty cases
+t{ -> }t
+t{ 1 -> 1 }t
+t{ 1 2 3 -> 1 2 3 }t
+
+testing >>rr in colon definition
+: rev3 3 >>rr r> r> r> ;
+t{ 10 20 30 rev3 -> 30 20 10 }t
+
+testing sum of squares with locals
+: sumsq 3 -r r2! r1! r0! r0 r0 * r1 r1 * + r2 r2 * + 3 +r ;
+t{ 3 4 5 sumsq -> 50 }t
+
+testing mixed >>r and rN access
+t{ $aa $bb $cc 3 >>r r0 r1 r2 3 +r -> $aa $bb $cc }t
+
+testing >>rr order preserved
+t{ $11 $22 $33 3 >>rr r> r> r> -> $33 $22 $11 }t
+
+testing nested >r with locals
+: swap-via-locals 2 -r r1! r0! r1 r0 2 +r ;
+t{ 10 20 swap-via-locals -> 20 10 }t
+
+tally-exit ;

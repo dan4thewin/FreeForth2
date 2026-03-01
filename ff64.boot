@@ -368,6 +368,47 @@ variable mrk 0 mrk 8+ !
 : _alias H@ ! $20 H@ ct|! anon:` ;
 : alias` :` _alias ;
 
+\ Locals — direct access to call stack cells and bulk data↔call transfers
+\ r0/r0! alias r/r! — call stack top; r1..r5 access deeper cells
+\ mov [rsp+N],rbx = 48 89 5C 24 NN (s08: XOR 5C→54 swaps rbx↔rdx)
+\ mov rbx,[rsp+N] = 48 8B 5C 24 NN (s08: XOR 5C→54 swaps rbx↔rdx)
+: r0!` $48, ,1 $1C89, s08 $24, ,1 drop` ;
+: r1`  over` $48, ,1 $5C8B, s08 $24, ,1 $08, ,1 ;
+: r1!` $48, ,1 $5C89, s08 $24, ,1 $08, ,1 drop` ;
+: r2`  over` $48, ,1 $5C8B, s08 $24, ,1 $10, ,1 ;
+: r2!` $48, ,1 $5C89, s08 $24, ,1 $10, ,1 drop` ;
+: r3`  over` $48, ,1 $5C8B, s08 $24, ,1 $18, ,1 ;
+: r3!` $48, ,1 $5C89, s08 $24, ,1 $18, ,1 drop` ;
+: r4`  over` $48, ,1 $5C8B, s08 $24, ,1 $20, ,1 ;
+: r4!` $48, ,1 $5C89, s08 $24, ,1 $20, ,1 drop` ;
+: r5`  over` $48, ,1 $5C8B, s08 $24, ,1 $28, ,1 ;
+: r5!` $48, ,1 $5C89, s08 $24, ,1 $28, ,1 drop` ;
+\ >>r ( xn..x1 n -- | == xn..x1 ) move n items from data stack to call stack
+\ loop: push [r15](41 FF 37); lea r15,[r15+8](4D 8D 7F 08);
+\       dec rbx(48 FF CB); jnz -12(75 F4)
+: >>r` under` 0-` 0>` IF`
+  $37FF41, ,3 $087F8D4D, ,4 $CBFF48, ,3 $F475, ,2
+  THEN` 2drop` ;
+\ >>rr ( xn..x1 n -- | == x1..xn ) move n items, reversed order on call stack
+\ shl rdx,3(48 C1 E2 03); sub rsp,rdx(48 29 D4)
+\ loop: mov rdi,[r15](49 8B 3F); mov [rsp],rdi(48 89 3C 24);
+\       lea r15,[r15+8](4D 8D 7F 08); add rsp,8(48 83 C4 08);
+\       dec rbx(48 FF CB); jnz -20(75 EC)
+\ sub rsp,rdx(48 29 D4)
+: >>rr` dup` 0-` 0>` IF` $03E2C148, ,4 $D42948, ,3
+  $3F8B49, ,3 $243C8948, ,4 $087F8D4D, ,4 $08C48348, ,4
+  $CBFF48, ,3 $EC75, ,2
+  $D42948, ,3 THEN` 2drop` ;
+\ +r ( n -- | xn..x1 == ) pop n cells from call stack (lost)
+\ shl rbx,3(48 C1 E3 03); add rsp,rbx(48 01 DC)
+: +r` $48, ,1 $E3C1, s01 $03, ,1 $48, ,1 $DC01, s08 drop` ;
+\ -r ( n -- | == ?n..?1 ) reserve n uninitialized cells on call stack
+\ shl rbx,3(48 C1 E3 03); sub rsp,rbx(48 29 DC)
+: -r` $48, ,1 $E3C1, s01 $03, ,1 $48, ,1 $DC29, s08 drop` ;
+: r0` r` ;
+: r!` r0!` ;
+: xxr` +r` ;
+
 ( Bracket state switching )
 : [` anon@ SC c@ anon:` ;
 :. _] SC c! anon! ;

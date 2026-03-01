@@ -4204,3 +4204,79 @@ at line 48 — so the compiler fell back to the assembly WORD64.  Moving
 The `idiv` instruction on x86-64 divides the 128-bit rdx:rax by the
 operand.  The `m/mod` stack effect `( xl xh y -- x%y x/y )` maps to:
 xl→rax (loaded from memory stack), xh→rdx (NOS), y→rbx (TOS).
+
+### Locals: Compile-Time Return Stack Access (Experiment 095)
+
+DG authored "locals" in `ff.ff` (the i386 standard library) as
+compile-time macros — backtick definitions that emit hard-coded machine
+code for direct return-stack cell access.  Rather than burning assembly
+routines, he wrote them entirely in Forth using the compile-time
+infrastructure: `$XX,` (write bytes at HERE), `,N` (advance HERE by N),
+and the SWAPbit adjusters (`s01`, `s08`, `s09`) — very much in the
+spirit of Lavarenne's minimalist design.
+
+Copilot ported the locals to x86-64, translating each i386 machine
+code encoding to its x86-64 equivalent.
+
+#### The Words
+
+| Word | Stack effect | What it does |
+|------|-------------|-------------|
+| `r0!`–`r5!` | `( x -- )` | Store TOS into call-stack cell 0–5 |
+| `r0`–`r5` | `( -- x )` | Read call-stack cell 0–5 onto data stack |
+| `>>r` | `( xn..x1 n -- \| == xn..x1 )` | Move n items from data to call stack |
+| `>>rr` | `( xn..x1 n -- \| == x1..xn )` | Move n items, reversed order |
+| `+r` | `( n -- )` | Drop n cells from call stack |
+| `-r` | `( n -- )` | Reserve n uninitialized cells on call stack |
+
+`>>r` preserves stack order: `10 20 30 3 >>r` puts 10 at [rsp] (top).
+Individual `>r` reverses: `10 >r 20 >r 30 >r` puts 30 at [rsp].
+`>>rr` is the opposite of `>>r`: it reverses during transfer.
+
+#### x86-64 Encoding Challenges
+
+**SIB byte requirement:** On x86-64, `[rsp]` addressing always needs
+a SIB byte (24h) because rsp=100b in ModR/M is reserved for "SIB
+follows."  Every return-stack access costs 1 extra byte vs i386's
+`[eax]`.  For example, `mov [rsp],rbx` = `48 89 1C 24` (4 bytes)
+vs i386's `mov [eax],ebx` = `89 18` (2 bytes).
+
+**No pop-to-memory instruction:** The i386 `>>r` loop used `pop [eax]`
+— one instruction transferring from ESP (data stack) to [EAX] (call
+stack).  x86-64 needs two instructions: `push qword [r15]` (3 bytes) +
+`lea r15,[r15+8]` (4 bytes), making the loop body 12 bytes vs 8.
+
+**Cell size:** All offsets multiply by 8 instead of 4.  The `+r`/`-r`
+words use `shl rbx,3` instead of `shl ebx,2`.
+
+#### Boot-Time Alias Limitation
+
+In `ff.ff` (loaded at runtime), Lavarenne used tick-alias syntax:
+`` r` ' alias r0` ``.  During boot (ff64.boot), this fails because
+`'` (tick) needs a compilation context that doesn't exist at top level.
+The workaround is simple wrapper definitions: `: r0` r` ;`.
+
+#### The Test Framework (lib/64/test.ff)
+
+With locals available, we ported `lib/test.ff` to create
+`lib/64/test.ff`.  This provides the standard `t{ ... -> ... }t`
+testing pattern:
+
+```forth
+needs test.ff
+32 plan
+testing locals
+t{ 42 r0! r0 -> 42 }t
+t{ 10 20 2 >>r r1 r0 -> 20 10 }t
+tally-exit
+```
+
+The framework uses `>>rr` to save expected values on the return stack,
+then compares them one-by-one against actual results.  Output is
+TAP-compatible with colored pass/fail via `console.ff`.
+
+**BREAK incompatibility:** The original `chkvals` used `BREAK` with
+`BEGIN/REPEAT`.  In i386, `REPEAT` internally calls `END`, resolving
+BREAK addresses.  In ff64, `REPEAT` does NOT call `END`, so BREAK is
+only for `START/ENTER/END` loops.  The rewrite uses `;THEN` for early
+exit on mismatch.

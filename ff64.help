@@ -41,6 +41,29 @@ ds ( -- ) display the data stack contents (runtime version of .s`)
   Prints the current stack depth and all values.
   .s` is the compile-time equivalent (used in prompts).
 
+locals are compile-time macros for direct access to the top 6 cells
+  of the CALLstack and two ways to shift values from the DATAstack
+  to the CALLstack. Ported from DG's i386 locals in ff.ff.
+>>r`  ( xn..x1 n -- | == xn..x1 ) pop n DATAstack cells, push to CALLstack
+>>rr` ( xn..x1 n -- | == x1..xn ) pop n cells, push reversed to CALLstack
+-r` ( n -- | == ?n..?1 ) reserve n uninitialized cells on CALLstack
++r` ( n -- | xn..x1 == ) pop n CALLstack cells (values are lost)
+xxr` ( n -- | xn..x1 == ) alias for +r`
+r0` ( -- x | x == x ) push CALLstack top cell onto DATAstack
+r1` ( -- y | y x == y x ) push CALLstack 2nd cell
+r2` ( -- z | z y x == z y x ) push CALLstack 3rd cell
+r3`  ... 4th cell
+r4`  ... 5th cell
+r5`  ... 6th cell
+r0!` ( x -- | a == x ) store DATAstack top into CALLstack top cell
+r1!` ( x -- | b a == x a ) store into CALLstack 2nd cell
+r2!` ( x -- | c b a == x b a ) store into CALLstack 3rd cell
+r3!`  ... 4th cell
+r4!`  ... 5th cell
+r5!`  ... 6th cell
+r!` alias for r0!`
+  see also: >r r> dup>r dropr> rdrop 2rdrop
+
 h.name ( hdr -- ) print the name field of a dictionary header
   Given a header address, prints the word's name.
 
