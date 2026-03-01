@@ -3,7 +3,7 @@
 \ Run: ./ff64 ': prompt ;' -f test/test64.ff
 
 needs test.ff
-175 >plan
+177 >plan
 
 \ ============================================================
 \ Stack operations (from exp 023, 028, 091)
@@ -443,6 +443,17 @@ t{ _tconst99 -> 99 }t
 
 testing vector :^
 :^ _tvec 20 ;
+t{ _tvec -> 20 }t
+
+testing vector !^ redirect
+: _tvbody2 30 ;
+: _tvrd _tvbody2 ' _tvec !^ ;
+_tvrd ;
+t{ _tvec -> 30 }t
+
+testing vector n^ reset
+: _tvrst _tvec n^ ;
+_tvrst ;
 t{ _tvec -> 20 }t
 
 \ ============================================================

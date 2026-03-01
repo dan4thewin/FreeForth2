@@ -7741,3 +7741,69 @@ These are left for future experiments to fix.
 **Running total:** 175 permanent tests + 552 experiment tests, all passing.
 
 ---
+
+## Experiment 097: Vector Operations Fixed (!^, n^ as Backtick Macros)
+
+### Goal
+
+Fix vector manipulation words `!^` and `n^` which were incorrectly
+ported as runtime words. On i386, these are compile-time backtick
+macros that use `-call` to extract the vector XT from the preceding
+compiled call. The ff64 port had turned them into runtime words
+expecting an XT on the stack, which broke the `word !^` pattern.
+
+### The Bug
+
+DG's `t2` test demonstrated the failure:
+```forth
+:^ a 7 ;
+: b 9 ;
+b ' a !^    \ SEGV on ff64, works on i386
+a .         \ should print 9
+```
+
+On i386: `!^` is `!^' -call THEN $1D89, s08 1+ , drop'`. The `-call`
+extracts `a`'s XT from the preceding `call a`, then emits code to
+write the new target (from `b '`) into `a`'s push-immediate at xt+1.
+
+On ff64 (broken): `!^` was `: !^ 1+ d! ;`. This runtime word expected
+`( new-target xt -- )`, requiring TWO ticks: `b ' a ' !^`. But the
+i386 pattern uses ONE tick: `b ' a !^`.
+
+### The Fix
+
+Ported `!^` and `n^` as backtick macros:
+
+```forth
+: !^' -call 1+ lit' d!' ;
+: n^' -call dup 6+ swap 1+ d! ;
+```
+
+**!^**: `-call` extracts vector XT at compile time. `1+` skips the push
+opcode. `lit` emits the address as a runtime literal. `d!` emits code
+to write the new target (on stack from preceding `'`) at that address.
+
+**n^**: `-call` extracts XT at compile time. `dup 6+` computes the
+default body address (xt+6). `swap 1+` gets the push-immediate address
+(xt+1). `d!` writes at compile time — no runtime code emitted.
+
+Also fixed `_f_main` in fflin64.boot: removed extra `'` before `!^`
+and `n^` (the macros do their own `-call`).
+
+### Test Updates
+
+- `exp/041-vectors64/Makefile` — updated `!^` and `n^` test patterns
+- `exp/046-callvec64/Makefile` — updated `!^`, `n^`, `x^` test patterns
+- `test/test64.ff` — added `!^` redirect and `n^` reset tests (177 total)
+
+### Files Changed
+
+- `ff64.boot` — `!^` and `n^` changed from runtime words to backtick macros
+- `fflin64.boot` — `_f_main` fixed to use `_main ' _top !^` and `_postboot n^`
+- `exp/041-vectors64/Makefile` — test pattern updates
+- `exp/046-callvec64/Makefile` — test pattern updates
+- `test/test64.ff` — added vector redirect and reset tests
+
+**Running total:** 177 permanent tests + 552 experiment tests, all passing.
+
+---

@@ -28,10 +28,10 @@ test: $(FF)
 		':^ g ." hello" cr ; g '"'"' @^ .x cr ;' \
 		'0;'; \
 	run "vector n^" \
-		':^ g ." hello" cr ; g '"'"' n^ g ." done" cr ;' \
+		':^ g ." hello" cr ; : rst g n^ ; rst ; g ." done" cr ;' \
 		'done'; \
 	run "vector x^" \
-		':^ g ." hello" cr ; : nb ." nb" cr ; nb '"'"' g '"'"' !^ g g '"'"' x^ ;' \
+		':^ g ." hello" cr ; : nb ." nb" cr ; : rd nb '"'"' g !^ ; rd ; g : test g '"'"' x^ ; test ;' \
 		'hello'; \
 	run "callmark cleared by -c" \
 		': t 42 . ; t -c drop callmark @ . cr ;' \

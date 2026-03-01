@@ -107,7 +107,7 @@ variable mainxt pvt
 :^ _postboot doargv "FFHIDE" zt _ffhide _hidepvt ;
 
 ( -f` must come after _postboot — it references _postboot for vector nop )
-:. _f_main mainxt ! _main ' _top ' !^ _postboot ' n^ ;
+:. _f_main mainxt ! _main ' _top !^ _postboot n^ ;
 : -f` ;` wsparse needed "main" find 0- 0<> drop IF drop ;THEN _f_main ;
 
 ( ^^ — reset vector to its default body: xt -- )

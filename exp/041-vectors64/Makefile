@@ -24,11 +24,11 @@ test: ../../ff64
 	run "tick in colon def" \
 		$$': foo 42 ;\n: test foo \x27 drop 99 . cr ; test ;' '99'; \
 	run "redirect with !^" \
-		$$':^ g : body 42 . cr ;\n: nb 99 . cr ;\n: rd nb \x27 g \x27 !^ ; rd ;\ng ;' '99'; \
+		$$':^ g : body 42 . cr ;\n: nb 99 . cr ;\n: rd nb \x27 g !^ ; rd ;\ng ;' '99'; \
 	run "@^ reads target" \
 		$$':^ g : body 42 . cr ;\n: test g \x27 @^ g \x27 6 + - . cr ; test ;' '0'; \
 	run "n^ nops vector" \
-		$$':^ g : body 42 . cr ;\n: nb 99 . cr ;\nnb \x27 g \x27 !^ ;\ng \x27 n^ ;\ng ."done" cr ;' 'done'; \
+		$$':^ g : body 42 . cr ;\n: nb 99 . cr ;\n: rd nb \x27 g !^ ; rd ;\n: rst g n^ ; rst ;\ng ."done" cr ;' 'done'; \
 	run "x^ calls original body" \
-		$$':^ g : body 42 . cr ;\n: nb 99 . cr ;\nnb \x27 g \x27 !^ ;\n: test g \x27 x^ ; test ;' '42'; \
+		$$':^ g : body 42 . cr ;\n: nb 99 . cr ;\n: rd nb \x27 g !^ ; rd ;\n: test g \x27 x^ ; test ;' '42'; \
 	finish

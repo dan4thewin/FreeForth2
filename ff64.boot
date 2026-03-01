@@ -353,8 +353,8 @@ variable mrk 0 mrk 8+ !
 :. -c here dup 4- d@ + -5 allot 0 callmark! ;
 : -call callmark@ here = 2drop IF -c ELSE drop THEN ;
 : @^ ( xt -- target ) 1+ d@ ;
-: !^ ( new-target xt -- ) 1+ d! ;
-: n^ ( xt -- ) dup 5+ swap 1+ d! ;
+: !^` -call 1+ lit` d!` ;
+: n^` -call dup 6+ swap 1+ d! ;
 : x^ ( xt -- ) 6+ >r ;
 : '` -call lit` ;
 ( ?` converts preceding call to conditional jump )
