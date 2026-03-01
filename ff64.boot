@@ -182,8 +182,39 @@
 : */mod` >r` m*` r>` m/mod` ;
 : */` */mod` nip` ;
 
-( Flow control — Forth-defined, replacing assembly )
+( Private word infrastructure )
+: ct|! 8+ dupc@ rot | swap c! ;
+: pvt` 8 H@ ct|! ;
+: :.` :` pvt` ;
+
+( Dictionary defining words )
+: create` :` 1 H@ ct|! anon:` ;
+: variable` create` 0 , anon:` ;
+: constant` :` 1 H@ ct|! H@ ! anon:` ;
+
+( FLAGS-based conditionals — ported from ff.boot )
+\ 0- emits test TOS,TOS (48 85 DB) with SWAPbit via s09
+: 0-` $48, ,1 $DB85, s09 ;
+\ _?1: unary condition — store Jcc opcode in ?#
+:. _?1 ?# c! ;
+\ _?2: binary condition — store Jcc + emit cmp rdx,rbx (48 39 DA)
+:. _?2 _?1 $48, ,1 $DA39, s09 ;
+\ Condition code factory: JE=$74 JNE=$75 JL=$7C JGE=$7D JLE=$7E JG=$7F
+$74 dup : 0=`  lit _?1 ; : =`  lit _?2 ;
+$75 dup : 0<>` lit _?1 ; : <>` lit _?2 ;
+$7C dup : 0<`  lit _?1 ; : <`  lit _?2 ;
+$7D dup : 0>=` lit _?1 ; : >=` lit _?2 ;
+$7E dup : 0<=` lit _?1 ; : <=` lit _?2 ;
+$7F dup : 0>`  lit _?1 ; : >`  lit _?2 ;
+\ Unsigned: JB=$72 JAE=$73 JBE=$76 JA=$77
+$72 : u<`  lit _?2 ;
+$73 : u>=` lit _?2 ;
+$76 : u<=` lit _?2 ;
+$77 : u>`  lit _?2 ;
+
+( Flow control — Forth-defined )
 : d, here d! 4 allot ;
+: _then here over - 4 - swap d! ;
 : cond ?# c@ 0 ?# c! 1 ^ ;
 : IF` >S0 cond $0F c, $10+ c, here 4 allot ;
 : THEN` >S0 here over - 4- swap d! 0 callmark! ;
@@ -246,20 +277,6 @@
 ( Inline macros — miscellaneous )
 \ reverse` pops return address and calls it (turns call into jmp)
 : reverse` $D1FF59, ,3 ;
-
-( Forward jump resolution helper )
-\ _then ( addr -- ) patches a forward jmp's rel32 at addr to target here
-: _then here over - 4 - swap d! ;
-
-( Private word infrastructure — moved early so :. is available throughout )
-: ct|! 8+ dupc@ rot | swap c! ;
-: pvt` 8 H@ ct|! ;
-: :.` :` pvt` ;
-
-\ Dictionary defining words — early so variable/constant work in boot
-: create` :` 1 H@ ct|! anon:` ;
-: variable` create` 0 , anon:` ;
-: constant` :` 1 H@ ct|! H@ ! anon:` ;
 
 ( Advanced loop infrastructure: START/ENTER/BREAK/END )
 \ Structured loop with optional first-entry skip.

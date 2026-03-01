@@ -813,6 +813,43 @@ The `\` comment word originally set the input pointer to the end of
 the buffer. This broke when input was piped (multiple lines read in
 one sys_read call). Fixed to scan forward to the next newline only.
 
+### Restoring the comparison factory (exp 091–092)
+
+**Exp 091** removed 13 ct=2 WORD64 entries for stack/arithmetic words
+(`dup`, `drop`, `swap`, `over`, `nip`, `rot`, `tuck`, `negate`, `+`,
+`-`, `*`, `@`, `c@`) and their dead assembly routines. These were
+redundant because the compiler always found the backtick version first.
+
+**Exp 092** replaced all 34 comparison WORD64 entries and ~70 lines of
+assembly with Lavarenne's elegant factory pattern from ff.boot:
+
+```forth
+: 0-` $48, ,1 $DB85, s09 ;          \ test rbx,rbx (i386: $DB09,)
+:. _?1 ?# c! ;                       \ store Jcc opcode
+:. _?2 _?1 $48, ,1 $DA39, s09 ;     \ store Jcc + cmp rdx,rbx
+$74 dup : 0=`  lit _?1 ; : =`  lit _?2 ;
+$75 dup : 0<>` lit _?1 ; : <>` lit _?2 ;
+$7C dup : 0<`  lit _?1 ; : <`  lit _?2 ;
+...
+```
+
+Each line in the factory defines two words simultaneously: a unary
+condition (`0=\``) and a binary condition (`=\``). The `dup` before
+the pair leaves the Jcc opcode for the second definition. `lit`
+compiles the opcode as a literal push into the macro body — when the
+macro later executes during user compilation, it pushes the opcode and
+`_?1`/`_?2` stores it in `?#`.
+
+The x86-64 differences are minimal: `0-\`` emits `48 85 DB` (test
+rbx,rbx with REX prefix) instead of i386's `09 DB` (or ebx,ebx), and
+`_?2` emits `48 39 DA` (cmp rdx,rbx) instead of `39 DA` (cmp edx,ebx).
+
+As part of exp 092, ff64.boot was comprehensively reordered to match
+ff.boot's logical structure: infrastructure → defining words →
+comparisons → flow control → runtime words.
+
+WORD64 count dropped from 126 to 78 across experiments 090–092.
+
 ---
 
 ## Part 10: The Macro Library Grows (Experiments 024–029)

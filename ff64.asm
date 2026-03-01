@@ -691,74 +691,8 @@ _swap_inline:
 ;; Comparison words set CPU FLAGS and store a conditional jump opcode
 ;; in cond_jmp. IF/UNTIL/WHILE read it and emit the conditional jump.
 ;; =====================================================================
-
-;; 0- ( -- ): emit test TOS,TOS to set FLAGS without modifying stack
-_0minus_inline:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DB85     ; test rbx, rbx
-        add rbp, 3
-        jmp _s09
-
-;; Binary flags-based comparisons: emit cmp NOS,TOS and store condition.
-_lt_flags:
-        mov byte [cond_jmp], $7C
-        jmp _emit_cmp_s
-_gt_flags:
-        mov byte [cond_jmp], $7F
-        jmp _emit_cmp_s
-_eq_flags:
-        mov byte [cond_jmp], $74
-        jmp _emit_cmp_s
-_neq_flags:
-        mov byte [cond_jmp], $75
-        jmp _emit_cmp_s
-_le_flags:
-        mov byte [cond_jmp], $7E
-        jmp _emit_cmp_s
-_ge_flags:
-        mov byte [cond_jmp], $7D
-        jmp _emit_cmp_s
-
-;; Unsigned binary comparisons (JB=$72, JAE=$73, JBE=$76, JA=$77)
-_ult_flags:
-        mov byte [cond_jmp], $72
-        jmp _emit_cmp_s
-_ugt_flags:
-        mov byte [cond_jmp], $77
-        jmp _emit_cmp_s
-_ule_flags:
-        mov byte [cond_jmp], $76
-        jmp _emit_cmp_s
-_uge_flags:
-        mov byte [cond_jmp], $73
-        jmp _emit_cmp_s
-
-;; Shared: emit cmp rdx, rbx (48 39 DA) with SWAPbit
-_emit_cmp_s:
-        mov byte [rbp], $48
-        mov word [rbp+1], $DA39
-        add rbp, 3
-        jmp _s09
-
-;; Unary flags-based conditions: store condition in cond_jmp.
-_zeq_flags:
-        mov byte [cond_jmp], $74
-        ret
-_zneq_flags:
-        mov byte [cond_jmp], $75
-        ret
-_zlt_flags:
-        mov byte [cond_jmp], $7C
-        ret
-_zgt_flags:
-        mov byte [cond_jmp], $7F
-        ret
-_zle_flags:
-        mov byte [cond_jmp], $7E
-        ret
-_zge_flags:
-        mov byte [cond_jmp], $7D
-        ret
+;; Comparison routines removed — now Forth-defined in ff64.boot
+;; (0-`, _?1, _?2, condition factory matching ff.boot pattern)
 
 ;; Compile-time words (ct=2): executed during compilation
 ;; Flow control (IF/THEN/ELSE/BEGIN/AGAIN/UNTIL/WHILE/REPEAT)
@@ -2578,42 +2512,7 @@ macro GENWORDS64 {
 ;; as Forth backtick macros in ff64.boot, matching Lavarenne's approach.
 ; Flow control (IF/THEN/ELSE/BEGIN/AGAIN/UNTIL/WHILE/REPEAT)
 ; moved to ff64.boot — Forth-defined using cond/d!
-WORD64 "0>=`", _zge_flags, 0, 4
-WORD64 "0<=`", _zle_flags, 0, 4
-WORD64 "0>`", _zgt_flags, 0, 3
-WORD64 "0<`", _zlt_flags, 0, 3
-WORD64 "0<>`", _zneq_flags, 0, 4
-WORD64 "0=`", _zeq_flags, 0, 3
-WORD64 ">=`", _ge_flags, 0, 3
-WORD64 "<=`", _le_flags, 0, 3
-WORD64 "u>=`", _uge_flags, 0, 4
-WORD64 "u<=`", _ule_flags, 0, 4
-WORD64 "u>`", _ugt_flags, 0, 3
-WORD64 "u<`", _ult_flags, 0, 3
-WORD64 "<>`", _neq_flags, 0, 3
-WORD64 ">`", _gt_flags, 0, 2
-WORD64 "<`", _lt_flags, 0, 2
-WORD64 "=`", _eq_flags, 0, 2
-WORD64 "0-`", _0minus_inline, 0, 3
-
-;; FLAGS-based comparison words (ct=2)
-WORD64 "0-", _0minus_inline, 2, 2
-WORD64 "0>=", _zge_flags, 2, 3
-WORD64 "0<=", _zle_flags, 2, 3
-WORD64 "0>", _zgt_flags, 2, 2
-WORD64 "0<", _zlt_flags, 2, 2
-WORD64 "0<>", _zneq_flags, 2, 3
-WORD64 "0=", _zeq_flags, 2, 2
-WORD64 "u>=", _uge_flags, 2, 3
-WORD64 "u<=", _ule_flags, 2, 3
-WORD64 "u>", _ugt_flags, 2, 2
-WORD64 "u<", _ult_flags, 2, 2
-WORD64 ">=", _ge_flags, 2, 2
-WORD64 "<=", _le_flags, 2, 2
-WORD64 "<>", _neq_flags, 2, 2
-WORD64 ">", _gt_flags, 2, 1
-WORD64 "<", _lt_flags, 2, 1
-WORD64 "=", _eq_flags, 2, 1
+; Comparisons moved to ff64.boot — Forth-defined matching ff.boot pattern
 
 ;; Runtime words (ct=0) — still called via compiled CALL instruction
 WORD64 "cr", _cr, 0, 2

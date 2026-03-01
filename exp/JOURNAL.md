@@ -7369,3 +7369,98 @@ reduced from 125 to 112.
 **Running total:** 533 tests across 38 experiments, all passing.
 
 ---
+
+## Experiment 092: Remove Comparison WORD64 Entries
+
+**Date:** 2026-03-01
+**Branch:** exp64-1
+
+### Goal
+
+Remove all 34 comparison WORD64 entries (17 backtick ct=0 + 17 runtime ct=2)
+and their assembly routines from ff64.asm, replacing them with Forth definitions
+in ff64.boot that match Lavarenne's ff.boot pattern exactly.
+
+### Background
+
+In ff.boot, comparisons are a compact factory pattern:
+
+```
+: 0-` $DB09, s09 ;
+:. _?1 ?# c! ;
+:. _?2 _?1 $DA39, s09 ;
+$74 dup : 0=` lit _?1 ; : =` lit _?2 ;
+$75 dup : 0<>` lit _?1 ; : <>` lit _?2 ;
+...
+```
+
+Each line defines both unary (0=\`) and binary (=\`) conditions by storing a Jcc
+opcode in `?#` (and for binary, emitting a `cmp` instruction). The unary
+conditions require a preceding `0-` to emit `test TOS,TOS` and set FLAGS.
+This is a defining attribute of FreeForth's FLAGS-based conditionals.
+
+The x86-64 port had 34 assembly WORD64 entries and ~70 lines of hand-written
+assembly routines doing the same thing. This experiment replaces all of that
+with the Forth factory pattern — 18 lines of Forth.
+
+### Actions
+
+1. **Ported comparison definitions from ff.boot to ff64.boot:**
+   - `0-\`` emits `test rbx,rbx` (48 85 DB) with SWAPbit — x86-64 needs
+     REX prefix $48 where i386 used `or ebx,ebx` (09 DB)
+   - `_?1` (unary): stores Jcc opcode in `?#`
+   - `_?2` (binary): stores Jcc + emits `cmp rdx,rbx` (48 39 DA)
+   - Factory lines for all 22 condition words (6 signed pairs + 4 unsigned)
+
+2. **Comprehensive ff64.boot reordering** (following ff.boot's order):
+   - Private word infrastructure (`ct|!`, `pvt\``, `:.`) — first after macros
+   - Defining words (`create\``, `variable\``, `constant\``) — before first use
+   - Comparison factory — after defining words, before flow control
+   - Flow control (`_then`, `cond`, `IF\``, `THEN\``, etc.) — after comparisons
+   - Runtime words, advanced loops — last
+
+3. **Fixed Makefile grep filter:** Added `$` to allowed line-start chars
+   (`'^[: _$A-Za-z0-9]'`). This fixes `$`-prefixed hex literals being
+   stripped from boot.min, including `$40000000 SEGVact 136+ !`.
+
+4. **Removed from ff64.asm:**
+   - 34 WORD64 entries (17 backtick ct=0 + 17 runtime ct=2)
+   - All comparison assembly routines: `_0minus_inline`, `_lt_flags`,
+     `_gt_flags`, `_eq_flags`, `_neq_flags`, `_le_flags`, `_ge_flags`,
+     `_ult_flags`, `_ugt_flags`, `_ule_flags`, `_uge_flags`, `_emit_cmp_s`,
+     `_zeq_flags`, `_zneq_flags`, `_zlt_flags`, `_zgt_flags`, `_zle_flags`,
+     `_zge_flags` (~70 lines of assembly)
+
+### Reasoning
+
+The comparison factory is a beautiful example of Lavarenne's philosophy:
+a handful of Forth lines replace 34 dictionary entries and 70 lines of
+assembly. Each condition is defined by its Jcc opcode byte — the factory
+`$74 dup : 0= lit _?1 ; : = lit _?2 ;` creates both unary and binary
+versions in a single line.
+
+The x86-64 differences from i386 are minimal:
+- `0-\`` uses `$48 $85 $DB` (test rbx,rbx) vs i386's `$09 $DB` (or ebx,ebx)
+- `_?2` uses `$48 $39 $DA` (cmp rdx,rbx) vs i386's `$39 $DA` (cmp edx,ebx)
+
+Both need the REX prefix $48 for 64-bit operand size. Everything else is
+identical to ff.boot.
+
+### Results
+
+- **WORD64 count:** 78 (down from 112, target ~61 matching ff.asm)
+- **Binary size:** 364888 bytes (down from 366344)
+- **Tests:** 555 across 39 experiments, all passing
+- **ff64.boot:** Reordered to match ff.boot's logical structure
+
+### Files Changed
+
+- `ff64.asm` — removed 34 WORD64 entries + ~70 lines of comparison routines
+- `ff64.boot` — added comparison factory (18 lines), comprehensive reordering
+- `Makefile` — grep filter fix (added `$` to allowed line-start chars)
+- `exp/Makefile` — added exp 092
+- `exp/092-remove-comparisons/Makefile` — 22 tests
+
+**Running total:** 555 tests across 39 experiments, all passing.
+
+---
