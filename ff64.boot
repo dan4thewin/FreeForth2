@@ -42,6 +42,10 @@
 : /` /%` nip` ;
 : %` /%` drop` ;
 
+\ w,` ( n -- ): store 16-bit word at [rbp], advance rbp by 2
+\ Needed early: _m/mod and _m* use w, before the compilation-emit section
+: w,` $66, ,1 $5D89, s08 $00, ,1 $02C58348, ,4 drop` ;
+
 \ Extended arithmetic helpers — parameterized via w, for the mul/div opcode
 : _m/mod >S0 $078B49, ,3 $08C78349, ,4 $48, ,1 w, $C38948, ,3 ;
 : m/mod` $FBF7 _m/mod ;
@@ -138,8 +142,6 @@
 \ Compilation emit: store value at [rbp] and advance rbp
 \ c,` ( n -- ): store byte, advance 1
 : c,` $5D88, s08 $00, ,1 $C5FF48, ,3 drop` ;
-\ w,` ( n -- ): store 16-bit word, advance 2
-: w,` $66, ,1 $5D89, s08 $00, ,1 $02C58348, ,4 drop` ;
 \ ,` ( n -- ): store 64-bit cell, advance 8
 : ,` $48, ,1 $5D89, s08 $00, ,1 $086D8D48, ,4 drop` ;
 \ d,` ( n -- ): store 32-bit dword, advance 4

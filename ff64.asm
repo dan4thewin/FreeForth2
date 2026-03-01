@@ -135,43 +135,6 @@ _zlt:   test rbx, rbx           ; 0< ( n -- flag )
         sar rbx, 63             ; -1 if negative, 0 if positive
         ret
 
-_dot:   push r15
-        push rdx
-        mov rax, rbx
-        test rax, rax
-        jns .pos
-        push rax
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [minus_char]
-        mov rdx, 1
-        syscall
-        pop rax
-        neg rax
-.pos:   lea rdi, [numbuf+20]
-        mov rcx, 10
-.loop:  xor edx, edx
-        div rcx
-        add dl, '0'
-        dec rdi
-        mov [rdi], dl
-        test rax, rax
-        jnz .loop
-        lea rax, [numbuf+20]
-        mov byte [rax], ' '
-        lea rdx, [numbuf+21]
-        sub rdx, rdi
-        mov rsi, rdi
-        mov rax, 1
-        mov rdi, 1
-        syscall
-        pop rdx
-        pop r15
-        mov rbx, rdx
-        mov rdx, [r15]
-        add r15, 8
-        ret
-
 _cr:    push rax
         push rdi
         push rsi
@@ -189,23 +152,6 @@ _cr:    push rax
 
 
 
-;; Return stack words
-;; Note: rsp has the return address from calling >r/r>/r@, so we work
-;; around it: pop ret addr, do the operation, push ret addr back.
-_tor:   pop rax                 ; >r ( x -- ) R:( -- x )
-        push rbx
-        mov rbx, rdx
-        mov rdx, [r15]
-        add r15, 8
-        jmp rax
-
-_rfrom: pop rax                 ; r> ( -- x ) R:( x -- )
-        sub r15, 8
-        mov [r15], rdx
-        mov rdx, rbx
-        pop rbx
-        jmp rax
-
 ;; String/memory operations
 _zlen:                          ; zlen ( addr -- addr len )
         sub r15, 8              ; DUP: push NOS
@@ -219,19 +165,6 @@ _zlen:                          ; zlen ( addr -- addr len )
         inc ecx
         jmp .loop
 .done:  mov rbx, rcx            ; TOS = length
-        ret
-
-_cmove: push rsi                ; cmove ( src dst n -- )
-        push rdi
-        mov rcx, rbx            ; n
-        mov rdi, rdx            ; dst
-        mov rsi, [r15]          ; src
-        rep movsb
-        pop rdi
-        pop rsi
-        mov rbx, [r15+8]
-        mov rdx, [r15+16]
-        add r15, 24
         ret
 
 ;; cmove> ( src dst n -- ) copy n bytes backward (for overlapping dst>src)
@@ -320,45 +253,10 @@ _emit:  push rax                ; emit ( char -- )
 _fetch: mov rbx, [rbx]          ; @ ( addr -- val )
         ret
 
-_store: mov [rbx], rdx          ; ! ( val addr -- )
-        mov rbx, [r15]
-        mov rdx, [r15+8]
-        add r15, 16
-        ret
-
 _cfetch: movzx rbx, byte [rbx]  ; c@ ( addr -- char )
         ret
 
 _dfetch: movsxd rbx, dword [rbx] ; d@ ( addr -- sval ) sign-extended 32-bit fetch
-        ret
-
-_dstore: mov [rbx], edx         ; d! ( val addr -- ) store 32-bit dword
-        mov rbx, [r15]
-        mov rdx, [r15+8]
-        add r15, 16
-        ret
-
-_cstore: mov [rbx], dl          ; c! ( char addr -- )
-        mov rbx, [r15]
-        mov rdx, [r15+8]
-        add r15, 16
-        ret
-
-_addstore:                      ; +! ( n addr -- )
-        add [rbx], rdx
-        mov rbx, [r15]
-        mov rdx, [r15+8]
-        add r15, 16
-        ret
-
-;; More arithmetic
-_div:   mov rcx, rbx            ; / ( a b -- a/b ) — rcx = divisor
-        mov rax, rdx            ; rax = dividend (NOS)
-        cqo                     ; sign-extend rax into rdx:rax
-        idiv rcx
-        mov rbx, rax            ; quotient
-        mov rdx, [r15]
-        add r15, 8
         ret
 
 
@@ -395,26 +293,6 @@ _here:  sub r15, 8              ; here ( -- addr )
         mov [r15], rdx
         mov rdx, rbx
         mov rbx, rbp
-        ret
-
-_allot: add rbp, rbx            ; allot ( n -- )
-        mov rbx, rdx
-        mov rdx, [r15]
-        add r15, 8
-        ret
-
-_comma: mov [rbp], rbx          ; , ( x -- ) compile 8-byte cell
-        add rbp, 8
-        mov rbx, rdx
-        mov rdx, [r15]
-        add r15, 8
-        ret
-
-_wcomma: mov [rbp], bx          ; w, ( w -- ) compile 16-bit word
-        add rbp, 2
-        mov rbx, rdx
-        mov rdx, [r15]
-        add r15, 8
         ret
 
 ;; Internal state accessors — push addresses of compiler variables
@@ -486,20 +364,6 @@ _cs_pop:                        ; cs> ( -- x ) pop from compile-time stack to TO
         mov rbx, [rax]
         add rax, 8
         mov [csp], rax
-        ret
-
-_dcomma: mov [rbp], ebx         ; d, ( x -- ) compile 32-bit dword
-        add rbp, 4
-        mov rbx, rdx
-        mov rdx, [r15]
-        add r15, 8
-        ret
-
-_ccomma: mov [rbp], bl          ; c, ( c -- ) compile byte
-        add rbp, 1
-        mov rbx, rdx
-        mov rdx, [r15]
-        add r15, 8
         ret
 
 ;; Shift operations
@@ -2517,15 +2381,8 @@ macro GENWORDS64 {
 ;; Runtime words (ct=0) — still called via compiled CALL instruction
 WORD64 "cr", _cr, 0, 2
 
-WORD64 ".", _dot, 0, 1
-WORD64 "d,", _dcomma, 0, 2
-WORD64 "w,", _wcomma, 0, 2
-WORD64 "c,", _ccomma, 0, 2
-WORD64 ",", _comma, 0, 1
-WORD64 "allot", _allot, 0, 5
-;; "here" intentionally omitted — defined as backtick macro in ff64.boot
-;; (the assembly _here was ct=0, causing runtime rbp capture instead of
-;; compile-time inline; the boot here` is the correct implementation)
+; ., d,, w,, c,, ,, allot, /, +!, d!, c!, !, cmove, >r, r> removed:
+; shadowed by backtick macros or Forth defs in ff64.boot
 WORD64 "SC", SC, 1, 2
 WORD64 "?#", cond_jmp, 1, 2
 WORD64 "callmark", callmark, 1, 8
@@ -2539,21 +2396,16 @@ WORD64 "_bootxt", bootxt, 1, 7
 WORD64 "depth", _depth, 0, 5
 WORD64 "DS0", _DS0, 0, 3
 WORD64 "segvsetup", _install_segv, 1, 9
-WORD64 "/", _div, 0, 1
-WORD64 "+!", _addstore, 0, 2
+; /, +!, d!, c!, ! removed — shadowed by backtick macros
 WORD64 "d@", _dfetch, 0, 2
-WORD64 "d!", _dstore, 0, 2
-WORD64 "c!", _cstore, 0, 2
-WORD64 "!", _store, 0, 1
 WORD64 "emit", _emit, 0, 4
 WORD64 "erase", _erase, 0, 5
 WORD64 "$-", _strcmp, 0, 2
 WORD64 "fill", _fill, 0, 4
-WORD64 "cmove", _cmove, 0, 5
+; cmove removed — shadowed by cmove` backtick macro
 WORD64 "cmove>", _cmove_up, 0, 6
 WORD64 "zlen", _zlen, 0, 4
-WORD64 "r>", _rfrom, 0, 2
-WORD64 ">r", _tor, 0, 2
+; >r, r> removed — shadowed by backtick macros (runtime also broken)
 WORD64 "parse", _parse, 0, 5
 WORD64 "lnparse", _lnparse, 0, 7
 WORD64 "wsparse", _wsparse_forth, 0, 7

@@ -1,48 +1,47 @@
 FF = ../../ff64
-BOOT = ../../ff64.boot
 SHELL := /bin/bash
-PASS = 0
-FAIL = 0
-TOTAL = 0
+TMP := /tmp/ff64-test-092.ff
 
 .PHONY: test
 test:
 	@echo "=== Exp 092: remove comparison WORD64 entries ==="
 	@pass=0; fail=0; \
-	run_test() { \
-		total=$$((total+1)); \
-		local desc="$$1"; shift; \
-		local input="$$1"; shift; \
-		local expected="$$1"; shift; \
-		actual=$$(echo "$$input" | timeout 5 $(FF) -f $(BOOT) 2>/dev/null | tr -d '\r'); \
-		if echo "$$actual" | grep -qF "$$expected"; then \
+	run() { \
+		local desc="$$1" input="$$2" expected="$$3"; \
+		printf '%s\n' "$$input" > $(TMP); \
+		actual=$$(timeout 5 $(FF) ': prompt ;' -f $(TMP) 2>/dev/null); \
+		if [[ $$actual = $$expected ]]; then \
 			echo "  PASS: $$desc"; pass=$$((pass+1)); \
 		else \
-			echo "  FAIL: $$desc (expected '$$expected', got '$$actual')"; fail=$$((fail+1)); \
+			echo "  FAIL: $$desc"; \
+			echo "    expected: [$$expected]"; \
+			echo "    actual:   [$$actual]"; \
+			fail=$$((fail+1)); \
 		fi; \
 	}; \
-	run_test "0- 0= true"  "0 0- 0= IF 1 . THEN bye" "1"; \
-	run_test "0- 0= false" "5 0- 0= IF 1 . THEN bye" ""; \
-	run_test "0- 0<> true"  "5 0- 0<> IF 1 . THEN bye" "1"; \
-	run_test "0- 0<> false" "0 0- 0<> IF 1 . THEN bye" ""; \
-	run_test "0- 0< true"  "-1 0- 0< IF 1 . THEN bye" "1"; \
-	run_test "0- 0< false" "5 0- 0< IF 1 . THEN bye" ""; \
-	run_test "0- 0> true"  "5 0- 0> IF 1 . THEN bye" "1"; \
-	run_test "0- 0> false" "-1 0- 0> IF 1 . THEN bye" ""; \
-	run_test "0- 0<= true" "0 0- 0<= IF 1 . THEN bye" "1"; \
-	run_test "0- 0>= true" "0 0- 0>= IF 1 . THEN bye" "1"; \
-	run_test "= true"   "5 5 = IF 1 . THEN bye" "1"; \
-	run_test "= false"  "5 3 = IF 1 . THEN bye" ""; \
-	run_test "<> true"  "5 3 <> IF 1 . THEN bye" "1"; \
-	run_test "< true"   "3 5 < IF 1 . THEN bye" "1"; \
-	run_test "> true"   "5 3 > IF 1 . THEN bye" "1"; \
-	run_test "<= true"  "3 5 <= IF 1 . THEN bye" "1"; \
-	run_test ">= true"  "5 3 >= IF 1 . THEN bye" "1"; \
-	run_test "u< true"  "3 5 u< IF 1 . THEN bye" "1"; \
-	run_test "u> true"  "5 3 u> IF 1 . THEN bye" "1"; \
-	run_test "u<= true" "3 5 u<= IF 1 . THEN bye" "1"; \
-	run_test "u>= true" "5 3 u>= IF 1 . THEN bye" "1"; \
-	run_test "0- in def" ": t 0- 0= IF 99 . THEN ; 0 t bye" "99"; \
+	run "0- 0= true"   ": t 0 0- 0= drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "0- 0= false"  ": t 5 0- 0= drop IF 1 . THEN depth .\\ cr ; t bye" "0"; \
+	run "0- 0<> true"  ": t 5 0- 0<> drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "0- 0<> false" ": t 0 0- 0<> drop IF 1 . THEN depth .\\ cr ; t bye" "0"; \
+	run "0- 0< true"   ": t -1 0- 0< drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "0- 0< false"  ": t 5 0- 0< drop IF 1 . THEN depth .\\ cr ; t bye" "0"; \
+	run "0- 0> true"   ": t 5 0- 0> drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "0- 0> false"  ": t -1 0- 0> drop IF 1 . THEN depth .\\ cr ; t bye" "0"; \
+	run "0- 0<= true"  ": t 0 0- 0<= drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "0- 0>= true"  ": t 0 0- 0>= drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "= true"       ": t 5 5 = 2drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "= false"      ": t 5 3 = 2drop IF 1 . THEN depth .\\ cr ; t bye" "0"; \
+	run "<> true"      ": t 5 3 <> 2drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "< true"       ": t 3 5 < 2drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "> true"       ": t 5 3 > 2drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "<= true"      ": t 3 5 <= 2drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run ">= true"      ": t 5 3 >= 2drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "u< true"      ": t 3 5 u< 2drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "u> true"      ": t 5 3 u> 2drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "u<= true"     ": t 3 5 u<= 2drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "u>= true"     ": t 5 3 u>= 2drop IF 1 . THEN depth .\\ cr ; t bye" "1 0"; \
+	run "0- in def"    ": t 0- 0= drop IF 99 . THEN depth .\\ cr ; 0 t bye" "99 0"; \
+	rm -f $(TMP); \
 	echo "  ----"; \
 	echo "  $$pass passed, $$fail failed"; \
-	[ $$fail -eq 0 ]
+	[[ $$fail -eq 0 ]]

@@ -58,7 +58,8 @@ EXPERIMENTS = 023-forthmacros64 \
               089-anon-flush \
               090-remove-fast-paths \
               091-remove-inline-words \
-              092-remove-comparisons
+              092-remove-comparisons \
+              093-remove-dead-runtime
 
 test:
 	@fail=0; for d in $(EXPERIMENTS); do \

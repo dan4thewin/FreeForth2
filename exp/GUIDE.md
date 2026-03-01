@@ -4134,3 +4134,73 @@ marker, causing every `needed` call to reload the file.
 The fix adds `2dup marker pvtmargin` before discarding the filename
 and calling `loadfile`. Now `needed` creates the guard on first load,
 and subsequent calls find the marker and skip.
+
+### Walking Back Excess Assembly (Experiments 090–093)
+
+FreeForth's design philosophy is that assembly should be minimal — most
+functionality lives in Forth.  The ff64 port accumulated excess assembly
+during development: runtime routines and WORD64 entries that duplicate
+what backtick macros and Forth definitions already provide.
+
+#### The WORD64 Shadowing Principle
+
+The FreeForth compiler always tries the backtick form (`word``) before
+the plain form.  If a backtick macro exists, the compiler uses it to
+inline code directly.  The plain WORD64 entry is never reached — it's
+dead code.
+
+This means any WORD64 entry with a matching backtick macro in ff64.boot
+can safely be removed, **provided** the backtick definition appears
+before any use of the word.  Ordering matters: if `_m/mod` uses `w,`
+on line 48, but `w,`` is defined on line 142, the compiler can't find
+the backtick form and falls back to the WORD64.  Moving `w,`` before
+line 48 eliminates the dependency.
+
+#### What Was Removed
+
+| Experiment | Category | WORD64 removed | Count |
+|------------|----------|----------------|-------|
+| 090 | Compiler fast-paths | `[`, `]`, `:`, `;`, `variable`, `constant`, `create`, `VECT`, `DATA`, `CSTE` | 10 |
+| 091 | ct=2 inline entries | `swap`, `drop`, `nip`, `over`, `under`, `dup`, `+`, `-`, `and`, `or`, `xor`, `@`, `c@` | 13 |
+| 092 | Comparison words | 17 backtick + 17 runtime comparison entries | 34 |
+| 093 | Dead runtime words | `.`, `w,`, `,`, `d,`, `c,`, `allot`, `/`, `+!`, `d!`, `c!`, `!`, `cmove`, `>r`, `r>` | 14 |
+
+**Total removed:** 71 WORD64 entries (from 135 to 64)
+
+The target is approximately 61, matching ff.asm's original CODE/VECT
+count.  The remaining 64 are close to this target.
+
+#### The Comparison Factory (Experiment 092)
+
+Rather than defining each comparison word individually in assembly,
+ff64.boot uses a factory pattern matching ff.boot:
+
+```forth
+: 0-` $48, ,1 $DB85, s01 ;       \ test rbx,rbx (with REX prefix)
+: _?1 cond d! drop` ;            \ unary: store Jcc, drop operand
+: _?2 $48, ,1 $DA39, s09 _?1 ;   \ binary: cmp rdx,rbx + unary
+
+$74 dup : 0=` lit _?1 ; : =` lit _?2 ;
+$75 dup : 0<>` lit _?1 ; : <>` lit _?2 ;
+\ ... (9 pairs total)
+```
+
+The factory takes a Jcc opcode byte (e.g., `$74` for JE) and defines
+both the unary (`0=`) and binary (`=`) forms.  The `dup` before the
+two `:` definitions feeds the same opcode to both.
+
+#### The w, Ordering Lesson (Experiment 093)
+
+The `_m/mod` helper uses `w,` to write parameterized 2-byte opcodes
+(e.g., `F7 FB` for `idiv rbx` vs `F7 F3` for `div rbx`).  This is
+a compile-time technique: `m/mod`` pushes `$FBF7` then calls `_m/mod`,
+which emits `w,` to write those two bytes into the generated code.
+
+On i386, `w,`` is defined at ff.boot line 17, well before `_m/mod` at
+line 114.  On ff64, `w,`` was originally at line 142, after `_m/mod`
+at line 48 — so the compiler fell back to the assembly WORD64.  Moving
+`w,`` to line 45 eliminated this last assembly dependency.
+
+The `idiv` instruction on x86-64 divides the 128-bit rdx:rax by the
+operand.  The `m/mod` stack effect `( xl xh y -- x%y x/y )` maps to:
+xl→rax (loaded from memory stack), xh→rdx (NOS), y→rbx (TOS).

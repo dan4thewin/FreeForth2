@@ -1,51 +1,39 @@
 FF = ../../ff64
-BOOT = ../../ff64.boot
+SHELL := /bin/bash
+TMP := /tmp/ff64-test-090.ff
 
 .PHONY: test
 test:
 	@echo "=== Exp 090: remove compiler keyword fast-paths ==="
-	@PASS=0; FAIL=0; \
-	\
-	run_test() { \
-		name="$$1"; shift; \
-		input="$$1"; shift; \
-		expected="$$1"; shift; \
-		actual=$$(echo "$$input" | $(FF) -f $(BOOT) 2>&1 | tr -d '\n '); \
-		expected_clean=$$(echo "$$expected" | tr -d '\n '); \
-		if echo "$$actual" | grep -qF "$$expected_clean"; then \
-			echo "  PASS: $$name"; PASS=$$((PASS+1)); \
-		else \
-			echo "  FAIL: $$name"; \
-			echo "    expected: $$expected_clean"; \
-			echo "    actual:   $$actual"; \
-			FAIL=$$((FAIL+1)); \
-		fi; \
+	@pass=0; fail=0; \
+	run() { \
+	local desc="$$1" input="$$2" expected="$$3"; \
+	printf '%s\n' "$$input" > $(TMP); \
+	actual=$$(timeout 5 $(FF) ': prompt ;' -f $(TMP) 2>/dev/null); \
+	if [[ $$actual = $$expected ]]; then \
+	echo "  PASS: $$desc"; pass=$$((pass+1)); \
+	else \
+	echo "  FAIL: $$desc"; \
+	echo "    expected: [$$expected]"; \
+	echo "    actual:   [$$actual]"; \
+	fail=$$((fail+1)); \
+	fi; \
 	}; \
-	\
-	run_test "variable creates and stores" \
-		"variable x 42 x ! x @ . bye" "42"; \
-	\
-	run_test "constant stores value" \
-		"99 constant y y . bye" "99"; \
-	\
-	run_test "variable flushes anon block" \
-		": foo .\"foo\" ; foo variable z :. bar .\"bar\" ; bar bye" "foobar"; \
-	\
-	run_test "constant flushes anon block" \
-		": foo .\"foo\" ; foo 7 constant c :. bar .\"bar\" ; bar bye" "foobar"; \
-	\
-	run_test "semicolon via dictionary" \
-		"1 2 + . bye" "3"; \
-	\
-	run_test "colon via dictionary" \
-		": sq dup * ; 5 sq . bye" "25"; \
-	\
-	run_test "multiple variables" \
-		"variable a variable b 10 a ! 20 b ! a @ b @ + . bye" "30"; \
-	\
-	run_test "variable in loadfile" \
-		"bye" ""; \
-	\
+	run "variable creates and stores" \
+	"variable x 42 x ! x @ . depth .\ cr bye" "42 0"; \
+	run "constant stores value" \
+	"99 constant y y . depth .\ cr bye" "99 0"; \
+	run "variable flushes anon block" \
+	': foo ."foo" ; foo variable z :. bar ."bar" ; bar depth .\ cr bye' "foobar0"; \
+	run "constant flushes anon block" \
+	': foo ."foo" ; foo 7 constant c :. bar ."bar" ; bar depth .\ cr bye' "foobar0"; \
+	run "semicolon via dictionary" \
+	"1 2 + . depth .\ cr bye" "3 0"; \
+	run "colon via dictionary" \
+	": sq dup * ; 5 sq . depth .\ cr bye" "25 0"; \
+	run "multiple variables" \
+	"variable a variable b 10 a ! 20 b ! a @ b @ + . depth .\ cr bye" "30 0"; \
+	rm -f $(TMP); \
 	echo "  ----"; \
-	echo "  $$PASS passed, $$FAIL failed"; \
-	test $$FAIL -eq 0
+	echo "  $$pass passed, $$fail failed"; \
+	[[ $$fail -eq 0 ]]

@@ -7464,3 +7464,77 @@ identical to ff.boot.
 **Running total:** 555 tests across 39 experiments, all passing.
 
 ---
+
+## Experiment 093: Remove Dead Runtime WORD64 Entries
+
+**Date:** 2026-03-01
+**WORD64 before:** 78 → **after:** 64
+
+### Goal
+
+Remove WORD64 entries that are completely shadowed by backtick macros in
+ff64.boot.  The compiler always tries `word`` before falling back to the
+WORD64 dictionary, so if a backtick macro exists and is defined before
+first use, the WORD64 entry is dead code.
+
+### Analysis
+
+Audited all 78 remaining WORD64 entries.  Identified 14 whose backtick
+equivalents (or Forth `:` definitions) were already present in ff64.boot:
+
+| Removed WORD64 | Replacement in ff64.boot |
+|----------------|--------------------------|
+| `.`            | `.` Forth def (pno/type) |
+| `d,`           | `d,`` backtick macro     |
+| `w,`           | `w,`` backtick macro     |
+| `c,`           | `c,`` backtick macro     |
+| `,`            | `,`` backtick macro      |
+| `allot`        | `allot`` backtick macro  |
+| `/`            | `/`` backtick macro      |
+| `+!`           | `+!`` backtick macro     |
+| `d!`           | `d!`` backtick macro     |
+| `c!`           | `c!`` backtick macro     |
+| `!`            | `!`` backtick macro      |
+| `cmove`        | `cmove` Forth def        |
+| `>r`           | `>r`` backtick macro     |
+| `r>`           | `r>`` backtick macro     |
+
+### The w, Ordering Problem
+
+`w,` required special handling.  The `_m/mod` and `_m*` definitions
+(line 48-51 of ff64.boot) use `w,` to write parameterized 2-byte
+opcodes.  But `w,`` was originally defined at line 142, well after
+these uses.  With the WORD64 present, the compiler fell back to
+`CALL _wcomma`; without it, `w,` was undefined at compile time.
+
+**Solution:** moved `w,`` definition to line 45, before `_m/mod`.
+This matches ff.boot, where `w,`` (line 17) precedes `_m/mod`
+(line 114).  The i386 ff.boot never had `w,` in assembly either.
+
+### Key Insight: m/mod Stack Diagram
+
+During debugging, a test `7 3 m/mod` crashed with SIGFPE.  The root
+cause was not a w, bug — it was a wrong test.  `m/mod` takes THREE
+arguments: `( xl xh y -- x%y x/y )`.  On x86-64, `idiv rbx` divides
+the 128-bit rdx:rax by rbx, so the three inputs are: xl→rax (loaded
+from memory stack via `>S0`), xh→rdx (NOS), y→rbx (TOS).  Correct
+test: `7 0 3 m/mod` → quotient 2, remainder 1.
+
+### Results
+
+- **WORD64 count:** 64 (down from 78)
+- **Assembly routines removed:** `_dot`, `_wcomma`, `_comma`, `_dcomma`,
+  `_ccomma`, `_allot`, `_div`, `_addstore`, `_dstore`, `_cstore`,
+  `_store`, `_cmove`, `_tor`, `_rfrom` (14 routines, ~140 lines)
+- **Tests:** 520 across 40 experiments, all passing
+
+### Files Changed
+
+- `ff64.asm` — removed 14 WORD64 entries + 14 assembly routines (~140 lines)
+- `ff64.boot` — moved `w,`` from line 142 to line 45 (before `_m/mod`)
+- `exp/Makefile` — added exp 093
+- `exp/093-remove-dead-runtime/Makefile` — 16 tests
+
+**Running total:** 520 tests across 40 experiments, all passing.
+
+---
