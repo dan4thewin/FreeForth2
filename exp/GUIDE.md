@@ -4280,3 +4280,37 @@ TAP-compatible with colored pass/fail via `console.ff`.
 BREAK addresses.  In ff64, `REPEAT` does NOT call `END`, so BREAK is
 only for `START/ENTER/END` loops.  The rewrite uses `;THEN` for early
 exit on mismatch.
+
+#### Consolidated Regression Tests (test/test64.ff)
+
+All validated functionality from experiments 001–095 was consolidated
+into a single permanent test file: `test/test64.ff`.  This 175-test
+suite covers stack operations, memory, arithmetic, comparisons, flow
+control, strings, dictionary, return stack, locals, and more.
+
+Run it with:
+
+```bash
+./ff64 ': prompt ;' -f test/test64.ff
+```
+
+The `: prompt ;` suppresses the interactive prompt.  The file loads
+`lib/64/test.ff` via `needs test.ff` and exits with code 0 on success,
+1 on failure.
+
+**Key insight from consolidation:** FreeForth comparisons (`=`, `<`,
+`>`, `0=`, etc.) do NOT consume stack operands — they only set FLAGS.
+After `a b =`, both `a` and `b` remain.  Every test involving
+comparisons needs explicit cleanup (`2drop`, `nip`, `drop`).
+
+**chkvals bug fix:** The original `chkvals` in `lib/64/test.ff` used
+`depth TIMES rdrop LOOP` to clean the return stack on mismatch.  But
+`rdrop` inside `TIMES/LOOP` dropped the loop counter, not the expected
+values.  Fixed to `depth +r` (the locals word adjusts rsp directly).
+
+**Known broken words (skipped in tests):**
+- `++`/`--` — peephole `>mov` optimization produces wrong results
+- `within` — FLAGS-based conditional chain clobbers flags
+- `2over`/`pick` — pick peephole corrupts the stack
+- Vector `!^`/`n^` — requires actual XTs which `'` doesn't provide
+  for non-vector words

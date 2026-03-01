@@ -30,7 +30,7 @@ variable savedepth pvt
 :. chkdepth	depth savedepth@ 2* - 0; yellow. ."wrong number of results^J" n. ;
 :. chkvals	savedepth@ >>rr
   BEGIN depth 0; dropr> <> 2drop IF
-    depth TIMES rdrop LOOP yellow. ."incorrect result^J" n. -1 ;THEN AGAIN ;
+    depth +r yellow. ."incorrect result^J" n. -1 ;THEN AGAIN ;
 :. chk		chkdepth chkvals 0= ? ;
 :. ok?		chk 0= IF okcnt@ ++ green. ."ok " ELSE red. ."not ok " dd THEN
 		index@ .dec n. cr ;
