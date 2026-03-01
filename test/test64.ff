@@ -3,7 +3,7 @@
 \ Run: ./ff64 ': prompt ;' -f test/test64.ff
 
 needs test.ff
-177 >plan
+178 >plan
 
 \ ============================================================
 \ Stack operations (from exp 023, 028, 091)
@@ -468,6 +468,7 @@ testing create allot
 create _tbuf 16 allot
 t{ 42 _tbuf ! _tbuf @ -> 42 }t
 t{ 99 _tbuf 8 + ! _tbuf 8 + @ -> 99 }t
+t{ here 8 allot here swap - -> 8 }t
 
 testing mark forgets
 : _tmkword 77 ;
