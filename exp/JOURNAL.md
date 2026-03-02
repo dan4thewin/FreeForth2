@@ -8227,3 +8227,54 @@ confirms the register byte toggles correctly (fbx→rdx).
   m/mod integration, SWAPbit
 
 ---
+
+## Experiment 103: see64 tty detection and register display fix
+
+**Date:** 2025-07-16
+**Commit:** `9008417`
+
+### Goal
+
+Two improvements to see64.ff:
+1. Make `_atx` (column alignment) emit a tab when piped instead of ANSI
+   escape codes, eliminating artifacts in captured output.
+2. Fix register display for shift instructions (shl/shr/sar) and
+   group-1 arithmetic ($80/$81/$83) — they showed wrong register names
+   (e.g., `sar r11,3f` instead of `sar rbx,3f`).
+
+### Actions
+
+**tty detection:**
+- Added `_tty` variable and `_tiob` buffer (64 bytes for termios).
+- At load time, runs `ioctl(1, TCGETS, _tiob)` via `3 16 syscall`.
+  If ioctl succeeds (result ≥ 0), stdout is a terminal → `_tty = 1`.
+  If it fails (result < 0), stdout is a pipe → `_tty = 0`.
+- `_atx` now checks `_tty @` — emits `ESC[41G` for terminals, `\t`
+  for pipes.
+
+**Key bug during development:** Initial `_atx` used
+`_tty @ IF ... ;THEN 9 emit ;` without `drop`. FreeForth comparisons
+(`0- 0<>`) don't consume their operand, so the value from `_tty @`
+leaked onto the data stack, corrupting `see.`'s loop state. Fix:
+`_tty @ 0- 0<> drop IF ...` — the flags-preserving `drop` removes
+the comparison operand while keeping FLAGS intact for IF.
+
+**register display fix:**
+- Root cause: `ext` does `dup 3 >> 7&` — extracts the extension field
+  (bits 5-3) but leaves the raw ModR/M byte on the stack. When handlers
+  then call `r64` or `r8`, they receive the full byte (e.g., $FB=251)
+  instead of just the r/m field (bits 2-0, e.g., 3=rbx).
+- Fix: added `7&` before `r64`/`r8` in all 6 affected handlers:
+  - Group-1: `$80`, `$81`, `$83`
+  - Shift/rotate: `$c1` (shl/shr/sar+imm), `$d1` (shl/sar by 1),
+    `$d3` (shl/shr by CL)
+- Handlers using `split` (which properly extracts all three ModR/M
+  fields) were already correct.
+
+### Result
+
+All 178 regression tests + all experiment tests pass.
+`see s>d` now correctly shows `sar rbx,3f`. Piped output uses clean
+tab alignment instead of ANSI escape artifacts.
+
+---
