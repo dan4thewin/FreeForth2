@@ -20,7 +20,7 @@ test-lib-features:
 # see64.ff loads pno.ff and shows in features
 test-see-features:
 	@result=$$(cd $(ROOT) && printf '"see64.ff" needed ;\n-v\nbye\n' | ./ff64 2>&1); \
-	echo "$$result" | grep -q 'pno' && echo "$$result" | grep -q 'see' \
+	echo "$$result" | grep -q 'see' \
 	&& echo "PASS $@" || (echo "FAIL $@ (got: $$result)"; exit 1)
 
 # needed guard prevents double loading (features not duplicated)

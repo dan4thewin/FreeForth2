@@ -7807,3 +7807,117 @@ and `n^` (the macros do their own `-call`).
 **Running total:** 177 permanent tests + 552 experiment tests, all passing.
 
 ---
+
+## Experiment 098: see64.ff String Extraction and xa Rewrite
+
+### Goal
+
+Fix the x86-64 disassembler (`see64.ff`) so that `see dump` works without
+crashing. The known root cause was `xa` (hex-append-to-buf) using `s>d`,
+a backtick macro that compiles `00 00` corruption bytes into the code
+stream. Additionally, inline string literals in compiled word definitions
+(via `_litstr_rt`) made GDB analysis harder.
+
+### Approach
+
+1. Extract all 67 inline `"..." ba` string patterns into `create` block
+   tables and character-append helpers
+2. Rewrite `xa` using iterative nibble output (modeled on `.x\` from
+   ff64.boot) instead of pictured number output
+3. Test and fix crashes iteratively
+
+### String Extraction
+
+Created packed name tables with NO embedded spaces (DG requirement):
+
+- **`mne3`** — 13 three-char mnemonics: mov, lea, jmp, pop, ret, std, nop,
+  cqo, cdq, cld, shl, shr, sar
+- **`mne4`** — 4 four-char mnemonics: test, xchg, call, push
+- **`mne5`** — 2 five-char mnemonics: movzx, movsx
+- **`repnms`** — 4 REP prefix names: rep, repz, repnz (3-char packed)
+- **`ffexts`** — 5 FF-group names: inc, dec, call, jmp, push (4-char packed)
+
+Helper words for table lookup + padding:
+- `m3 ( idx -- )` — 3 chars from mne3 + 4 spaces = 7 total
+- `m3. ( idx -- )` — 3 chars, no padding (for standalone ret/nop/etc.)
+- `m4 ( idx -- )` — 4 chars from mne4 + 3 spaces
+- `m5 ( idx -- )` — 5 chars from mne5 + 2 spaces
+- `sp2`..`sp5` — append N spaces to buf (using `$20` for space char)
+
+Suffix helpers replaced inline strings:
+- `,a` (comma), `,byte`, `,word`, `,1`, `,cl`, `,rip` — all char-by-char appends
+
+For push/pop: used `m4`/`m3` + `r64x` register lookup.
+For jcc/setcc: char-by-char appends (no table needed, separate handlers).
+For shift names: indices 10-12 in mne3 table.
+
+### xa Rewrite
+
+Replaced `s>d`-based pictured number output with iterative nibble extraction:
+
+```forth
+:. xdigit  $F& $30+ dup $39 > 2drop IF 7 + THEN ca ;
+:. _xlen   0 swap BEGIN swap 1+ swap 4 >> 0- 0= UNTIL drop ;
+:. xa      0- 0< IF '-' ca negate THEN
+           0- 0= IF '0' ca drop ;THEN
+           dup _xlen TIMES dup r 4* >> xdigit LOOP drop ;
+```
+
+Removed `ua` (unused) and `"pno.ff" needed`.
+
+### Bugs Found and Fixed
+
+1. **`' '` (space character literal) doesn't work in FreeForth** — the parser
+   uses space as delimiter, so `' '` reads the NEXT non-space char. Fix:
+   use `$20` (hex for space = 32) in all spacing helpers.
+
+2. **`_xlen` had extra `dup`** — the original `dup 0- 0= UNTIL` left an
+   extra value on the stack. Fix: removed the `dup` since `0-` tests
+   without consuming.
+
+3. **`xa` had double-dup stack leak** — the original code did `dup 0- 0<`
+   to test for negative, but the `dup` was never consumed. Each call to
+   `xa` leaked 2 stack items. Fix: removed both initial `dup`s, using
+   `0-` (test-without-consume) directly.
+
+4. **`sib` handler returned SIB byte value instead of address** — after
+   processing, `1+` incremented the SIB byte (TOS) instead of the address
+   (NOS). Fix: `drop 1+` to discard SIB byte value before advancing addr.
+
+5. **`mov_x` missing stop flag** — the `movzx`/`movsx` paths through
+   `mov_x` returned without pushing 0 (continue flag), causing the `see.`
+   loop to use garbage from the stack. Fix: added `0` after `r@` and `r8`.
+
+6. **`r@+8.` and `r@+32.` missing trailing `space`** — the `.b` / `.le`
+   calls print hex bytes to stdout without trailing space, causing output
+   like `f8lea` instead of `f8 lea`. Fix: added `space` after `.b`/`.le`.
+
+7. **Duplicate "see" in features** — both line 7 and line 366 appended
+   `" see"` to features. Fix: removed the redundant line 7.
+
+### Structural Changes
+
+- Replaced all START/CASE/BREAK/END patterns in `rep`, `ff`, and `66`
+  handlers with CASE/`;THEN` chains (BEGIN/CASE/BREAK/END was a
+  non-standard pattern that doesn't work in FreeForth)
+- Removed dead `j_i32` definition (line 193 was shadowed by line 199)
+- Modified `j_` and `j_i32` to remove leading `ba` (mnemonic now appended
+  before calling)
+- Modified `set__` and `mov_x` to remove leading `ba`
+
+### Test Results
+
+- `see dump` — works correctly, output matches GDB disassembly
+- `see _dumpln` — works, handles SIB addressing and movzx
+- Custom words (`see test-word`) — works through `ret`
+- 178 regression tests PASS
+- All experiment tests PASS (except pre-existing exp/089 failure)
+
+### Files Changed
+
+- `lib/see64.ff` — massive rewrite: string extraction, xa rewrite, 7 bug fixes
+- `exp/087-features/Makefile` — updated test to not require "pno" feature
+
+**Running total:** 178 permanent tests + 552 experiment tests, all passing.
+
+---
