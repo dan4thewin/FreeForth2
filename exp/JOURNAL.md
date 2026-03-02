@@ -8131,3 +8131,99 @@ That's `WHILE`, not `UNTIL`.
 - `ff64.boot` — constant\` now sets $20 flag (ct=$21)
 
 ---
+
+## Experiment 102: s>d Code Generation Fix
+
+### Goal
+
+Fix the `s>d\`` backtick macro which generated 2 spurious `00 00` bytes
+(decoding as `add [rax],al`) between the `sar rbx,63` and `ret`
+instructions.
+
+### Background
+
+`s>d` (sign-extend single to double cell) is needed for double-cell
+arithmetic (`m/mod`, `d+`, `*/mod`, etc.). The i386 defines it as
+`dup\` 0<.\`` — duplicate TOS, then replace the copy with 0 (positive)
+or -1 (negative) via the dotted conditional `0<.\``.
+
+The ff64 port couldn't use `0<.\`` (dotted conditionals aren't ported)
+and instead hand-coded the `sar` instruction directly:
+
+```
+: s>d` dup` $FBC148, ,3 $3F, ,1 s01 ;
+```
+
+This intended to emit `48 C1 FB 3F` (`sar rbx, 63`), but the `s01` at
+the end added 2 extra bytes. The generated code was:
+```
+48 c1 fb 3f 00 00 c3
+```
+where `00 00` decodes as `add [rax],al` — silently writing to whatever
+`rax` points to at runtime.
+
+### Root Cause
+
+The `s01` SWAPbit adjuster (in ff64.asm `_s01_word`) does TWO things:
+1. Advance rbp by 2
+2. XOR `[rbp-1]` with 1 (toggling bit 0 of the register-encoding byte)
+
+The macro already emitted all 4 bytes via `$FBC148, ,3 $3F, ,1` and
+advanced rbp by 4. The `s01` then advanced rbp by 2 MORE, leaving 2
+uninitialized (zero) bytes in the code stream.
+
+The design intent of `s01` is to manage the LAST 2 bytes of an
+instruction — emitting them and doing the SWAPbit toggle. But here,
+`s01` was being used only for its toggle, while the bytes had already
+been emitted by the litcomma suffix.
+
+### How litcomma works
+
+The `,` suffix on a hex number (e.g., `$FBC148,`) is handled by the
+compiler's suffix dispatch. It calls `_litcomma` which emits a
+`mov [rbp], imm` meta-instruction into the macro's code body:
+- byte value: `C6 45 00 xx` (4 bytes)
+- word value: `66 C7 45 00 xx xx` (6 bytes)
+- dword value: `C7 45 00 xx xx xx xx` (7 bytes)
+
+When the backtick macro later EXECUTES (at compile time of a word using
+`s>d`), these meta-instructions run and write the raw bytes at `[rbp]`.
+The `,N` words then advance rbp by N. This two-step design (store
+without advance, then advance separately) enables overlapping writes
+where a later store overwrites trailing bytes from an earlier one.
+
+### Fix
+
+Use `s1` (1-byte advance + toggle) instead of `s01` (2-byte), and
+restructure the emission so `s1` handles the register-encoding byte:
+
+```
+: s>d` dup` $C148, ,2 $FB, s1 $3F, ,1 ;
+```
+
+Breakdown:
+- `$C148, ,2` — emit `48 C1` (REX.W + shift group opcode), advance 2
+- `$FB, s1` — emit `FB` at [rbp], advance 1, XOR with 1 if SWAPbit
+  (FB = rbx encoding, FA = rdx encoding)
+- `$3F, ,1` — emit `3F` (shift count 63), advance 1
+
+Total: 4 bytes, no extra. SWAPbit correctly toggles the register byte.
+
+### Verification
+
+Generated code now: `48 c1 fb 3f c3` (no spurious `00 00`)
+
+With SWAPbit active (e.g., `over s>d`): `48 c1 fa 3f` — the `fa`
+confirms the register byte toggles correctly (fbx→rdx).
+
+- 178 regression tests pass
+- All experiment tests pass (including new exp 102 with 5 tests)
+
+### Files Changed
+
+- `ff64.boot` — fixed `s>d\`` from `$FBC148, ,3 $3F, ,1 s01` to
+  `$C148, ,2 $FB, s1 $3F, ,1`
+- `exp/102-s2d-fix/Makefile` — 5 tests: positive, negative, zero,
+  m/mod integration, SWAPbit
+
+---

@@ -245,7 +245,7 @@ $77 : u>`  lit _?2 ;
 : abs` 0-` 0<` IF` negate` THEN` ;
 : max` >` IF` swap` THEN` nip` ;
 : min` <` IF` swap` THEN` nip` ;
-: s>d` dup` $FBC148, ,3 $3F, ,1 s01 ;
+: s>d` dup` $C148, ,2 $FB, s1 $3F, ,1 ;
 : adc` $48, ,1 $D311, s09 nip` ;
 : dnegate` ~` swap` negate` swap` ;
 : dabs` 0-` 0<` IF` dnegate` THEN` ;
