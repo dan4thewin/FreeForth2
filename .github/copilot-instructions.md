@@ -134,6 +134,30 @@ cumulative compile-time stack corruption.
 **Fixed in commit `8d17367`.** ELSE works correctly. The IF...;THEN
 workarounds throughout ff64.boot are no longer necessary.
 
+### The pick/2over compile-time stack leak (exp 104)
+
+`_pick_detect` had three bugs: (1) comparison residuals leaked onto
+the compile-time stack, (2) the 6A-literal path emitted i386-specific
+code, (3) BB-path detection didn't mask SWAPbit (BA vs BB). The fix
+was two separate handlers (`_pick_bb` and `_pick_6a`) matching the
+i386 architecture exactly, found by disassembling i386 `pick` with
+`see`.
+
+### The BEGIN/CASE/BREAK/END crash (exp 105)
+
+Two bugs: (1) END emitted a backward E9 jump, but per Lavarenne's
+docs END only resolves forward refs — backward jumps come exclusively
+from AGAIN/UNTIL/REPEAT. (2) BEGIN didn't set up mrk or cstack for
+BREAK/END. Fixed by unifying all flow control around a shared `_begin`
+helper with mrk + cstack, and removing END's backward jump.
+
+### Other resolved issues (exp 104)
+
+- **++/--**: Not broken — tests used wrong syntax. Requires `@` suffix
+  (e.g., `foo@ ++` not `foo ++`).
+- **within**: Not broken — needs `0<> IF` pattern, not bare `IF`.
+  `within` returns FLAGS, and `IF` requires a compile-time condition.
+
 ## Completion checklist
 
 Every task must end with:
@@ -146,15 +170,14 @@ Every task must end with:
 3. Update `exp/GUIDE.md` — if new concepts or architecture introduced
 4. Add novel user-facing words to `ff64.help`
 5. `git commit` with descriptive message
-6. `git push` (scan `/tmp/ssh-*/agent.*` for live SSH agent socket
-   if `$SSH_AUTH_SOCK` is stale)
+6. `git push` (use `source ~/.bash_ssh` for SSH agent)
 
 Do not mark the task complete until all steps are done.
 
 ## Build and test
 
 - `make all` builds both `ff` (32-bit) and `ff64` (64-bit)
-- `make -C exp test` runs all experiments (currently 35, all PASS).
+- `make -C exp test` runs all experiments (currently 48, all PASS).
    The test runner exits nonzero if any experiment fails — never
    commit with failing tests.
 - `./ff64 -f ff64.boot` loads the standard library (via ff64.boot.min

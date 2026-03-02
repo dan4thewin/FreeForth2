@@ -1997,12 +1997,18 @@ experiments, all passing.
 
 ---
 
-## Part 25: Structured Loops — START/ENTER/BREAK/END (Exp 044)
+## Part 25: Structured Loops — START/ENTER/BREAK/END (Exp 044, 105)
 
 FreeForth provides a second loop family alongside BEGIN/WHILE/REPEAT:
-the **START/ENTER/BREAK/END** structured loop. Where BEGIN loops test
-at the top or bottom, START loops provide arbitrary exit points via
-BREAK and optional first-entry skip via ENTER.
+the **START/ENTER** structured loop, and the **BEGIN/CASE/BREAK/END**
+multi-way dispatch. Understanding which openers pair with which closers
+is essential:
+
+- **BEGIN** pairs with everything: WHILE/REPEAT, UNTIL, AGAIN,
+  CASE/BREAK/END
+- **START** pairs with ENTER + looping closers (AGAIN, REPEAT)
+- **END** only resolves forward refs — it does NOT emit a backward jump
+- Backward jumps come exclusively from AGAIN, UNTIL, and REPEAT
 
 ### The i386 Design
 
@@ -2011,66 +2017,80 @@ On i386, all loop constructs share the `mrk` variable (2 cells):
 - `mrk[0]`: backward target address (with SC bits packed in low 2 bits)
 - `mrk[4]`: linked list of forward jumps (WHILE/BREAK chain)
 
-START saves old mrk, records the body start. ENTER patches START's
-forward SHORT jump (`$EB`) to skip to the test. BREAK compiles a
-forward SHORT jump and links its offset into mrk[4]. END walks the
+BREAK compiles `$EB` (short jmp) + links into mrk[4]. END walks the
 chain resolving all forward jumps, then restores mrk. Critically,
-i386 END does NOT compile the backward jump — that's done by UNTIL
-(= TILL + END) or REPEAT (= backward jmp + END).
+**i386 END does NOT compile the backward jump** — that's done by UNTIL
+(= TILL + END), REPEAT (= backward jmp + END), or AGAIN.
 
-### The x86-64 Design
-
-Our port differs in three ways:
-
-**1. NEAR jumps instead of SHORT.** x86-64 code uses 4-byte relative
-offsets (`$E9`) instead of 1-byte (`$EB`). This is necessary because
-x86-64 code is larger (REX prefixes, 64-bit immediates).
-
-**2. Stack-based break tracking instead of linked list.** The i386
-linked list stores 1-byte relative offsets between break addresses in
-the compiled code. On x86-64, storing 32-bit relative offsets between
-64-bit addresses causes sign-extension mismatches — the sentinel value
-never compares to zero. Instead, we push break addresses directly onto
-FreeForth's compilation data stack:
-
+The canonical multi-way dispatch pattern from Lavarenne's docs:
 ```
-START: push old-mrk, push 0 (sentinel), compile E9 forward, save body addr
-BREAK: compile E9 forward, push rel32-addr, resolve preceding IF
-END:   compile E9 backward, pop-and-resolve until 0 sentinel, restore mrk
+BEGIN v  1 CASE action1 BREAK  2 CASE action2 BREAK  default END
 ```
 
-**3. END includes the backward jump.** On i386, END only resolves
-forward jumps. On x86-64, END compiles the backward E9 to the body
-start. This means our `START...IF BREAK...END` is equivalent to i386's
-`START...IF BREAK...REPEAT` or `START...ENTER...UNTIL`.
+### The x86-64 Design (exp 044 → 105 evolution)
 
-### Code Structure
+The port went through two phases. The original implementation (exp 044)
+incorrectly had END emit a backward E9 jump, treating all loops as
+looping constructs. This worked for START/BREAK/END but made
+BEGIN/CASE/BREAK/END infinite-loop.
+
+**Exp 105 corrected this.** The final design uses a compile-time stack
+(cstack) for break addresses and a shared `_begin` helper:
+
+**1. Shared opener: `_begin`** — saves old mrk (2 cells) to cstack,
+pushes a 0 break-sentinel, stores `here` in mrk[0].
+
+**2. Loop openers push a flag onto the data stack:**
+- `BEGIN`: pushes 0 (no rdrop needed)
+- `START`: pushes 0, emits forward E9, updates mrk to after the E9
+- `RTIMES`: pushes -1 (rdrop needed) + JS fixup address
+
+**3. Loop closers use mrk for backward jumps and cstack for breaks:**
+- `AGAIN`: backward E9 to mrk, resolve breaks, restore mrk, drop flag
+- `UNTIL`: conditional backward to mrk, resolve breaks, restore mrk
+- `REPEAT`: backward E9, resolve WHILE, resolve breaks, conditional
+  rdrop based on flag (-1 means TIMES loop needs rdrop)
+- `END`: resolve breaks ONLY (no backward jump!), drop flag
+
+**4. BREAK pushes to cstack, not mrk chain:**
+```forth
+: BREAK` >S0 $E9 c, 0 d, here 4- >cs _then ;
+```
+Compiles forward E9, pushes fixup to cstack, resolves preceding IF.
+
+**5. `_resolve_breaks` recursively pops cstack until 0 sentinel:**
+```forth
+:. _resolve_breaks cs> 0; _then _resolve_breaks ;
+```
+
+### Why cstack instead of linked list?
+
+The i386 linked list stores 1-byte relative offsets between break
+addresses in the compiled code — elegant for SHORT jumps. On x86-64,
+we use NEAR jumps (4-byte rel32), and storing offsets between 64-bit
+addresses via the compiled code creates sign-extension issues. The
+cstack approach is cleaner: break addresses go on a separate stack,
+not tangled into the generated code.
+
+### The patterns
 
 ```forth
-variable mrk 0 mrk 8 + !
-: START` mrk 2@ >S0 0 $E9 c, 0 d, here mrk ! ;
-: ENTER` >S0 mrk @ 4 - _then ;
-: BREAK` >S0 $E9 c, 0 d, here 4 - swap _then ;
-: END`   >S0 $E9 c, mrk @ here 4 + - d,
-         BEGIN 0- 0<> WHILE _then REPEAT drop mrk 2! ;
+\ Multi-way dispatch (no loop — END resolves, no backward jump):
+: sign BEGIN 0-
+  0< IF ."negative" BREAK
+  0= IF ."null"     BREAK
+       ."positive"
+  END drop ;
+
+\ Loop with early exit (AGAIN provides the backward jump):
+: countdown 5 BEGIN 1- dup . space 0- 0= IF BREAK AGAIN drop cr ;
+
+\ START skips body on first entry (ENTER patches the forward jmp):
+: repl START eval ENTER ok WHILE REPEAT ;
+
+\ Counted loop (TIMES...REPEAT, flag=-1 triggers rdrop):
+: hex .#s TIMES dup r 4* >> $F & .digit REPEAT drop ;
 ```
-
-**START** saves old mrk with `mrk 2@` (pushes 2 cells), then pushes 0
-as a sentinel. Compiles a forward E9 (initially jumping to the next
-instruction — a no-op unless ENTER patches it). Stores `here` (the
-body start) in `mrk[0]`.
-
-**ENTER** patches START's E9 to jump to here. `mrk @ 4 -` gives the
-address of START's rel32 field; `_then` patches it.
-
-**BREAK** compiles a forward E9, pushes the rel32 address (`here 4 -`),
-then swaps it under the IF address and calls `_then` to resolve IF.
-Stack effect: `( if-addr -- break-addr )`.
-
-**END** compiles backward E9 to `mrk[0]`. Then loops: test TOS for
-nonzero (a break address), call `_then` to resolve it, repeat until
-hitting the 0 sentinel. The `drop` removes the sentinel, and `mrk 2!`
-restores the saved mrk.
 
 ### GDB Marker Technique
 
@@ -4308,9 +4328,11 @@ comparisons needs explicit cleanup (`2drop`, `nip`, `drop`).
 `rdrop` inside `TIMES/LOOP` dropped the loop counter, not the expected
 values.  Fixed to `depth +r` (the locals word adjusts rsp directly).
 
-**Known broken words (skipped in tests):**
-- `++`/`--` — peephole `>mov` optimization produces wrong results
-- `within` — FLAGS-based conditional chain clobbers flags
-- `2over`/`pick` — pick peephole corrupts the stack
-- Vector `!^`/`n^` — requires actual XTs which `'` doesn't provide
-  for non-vector words
+**All previously broken words are now fixed (exp 097–105):**
+- `++`/`--` — not broken; tests used wrong syntax (need `@` suffix)
+- `within` — not broken; needs `0<> IF` pattern (FLAGS-based)
+- `2over`/`pick` — fixed: `_pick_detect` comparison leak + i386 code
+  in x86-64 path + SWAPbit masking
+- Vector `!^`/`n^` — fixed: implemented as backtick macros (exp 097)
+- `BEGIN/CASE/BREAK/END` — fixed: END no longer emits backward jump,
+  unified flow control via shared `_begin` + mrk + cstack (exp 105)
