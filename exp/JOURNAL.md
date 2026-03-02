@@ -8278,3 +8278,72 @@ All 178 regression tests + all experiment tests pass.
 tab alignment instead of ANSI escape artifacts.
 
 ---
+
+## Experiment 104: Fix pick/2over, ++/--, within
+
+**Date:** 2026-03-02
+**Commit:** `b9fb1a6`
+
+### Goal
+
+Fix the four remaining known bugs: pick/2over, ++/--, within, and
+BEGIN→CASE→BREAK→END.
+
+### Findings
+
+**++/-- (not broken):** The tests used `foo ++` but the docs say
+"must be preceded by a fetch literal (foo@)". With `foo@ ++`, the
+`>mov` peephole correctly rewrites `mov rbx,[rip+disp]` into
+`inc/dec QWORD [rip+disp]`, removing the 17-byte DUP1+mov sequence.
+
+**within (not broken):** `within` returns FLAGS (nzTRUE/zFALSE), not
+a stack boolean. The test used `within IF` but `IF` requires a
+compile-time condition. The correct pattern is `within 0<> IF` — `0<>`
+tells IF to use `jnz`, and `within`'s FLAGS are still live.
+
+**pick/2over (three bugs):**
+
+DG's `./out` diagnostic was the key: defining `: t 2 pick ;` changed
+the stack from 3 to 6 — three items leaked at COMPILE TIME.
+
+Bug 1: `_pick_detect` line 332 used `here 5- c@ $BB =` — the `=`
+comparison doesn't consume operands. Two residuals leaked, plus the
+`d@` result = 3 items. Fix: use subtraction (`$BA- 0= drop`) instead
+of binary comparison.
+
+Bug 2: x86-64 `lit\`` emits `6A xx 5B` (same 3-byte push/pop as i386)
+but the old code's handler (line 334) emitted i386-specific `mov`
+instructions. The `swap\` $48 c, $DA89 w, s09` was meant for i386's
+register model, not x86-64's.
+
+Bug 3: `_lit_compile` (used for literals in `:` definitions) emits
+`BB imm32` (5-byte, 32-bit path), while `lit\`` emits `6A xx 5B`
+(3-byte, byte path). The old code only handled one or the other.
+
+The fix: two separate handlers, matching the i386 architecture:
+
+- **BB path** (`_pick_bb`): `_lit_compile` emits 10-byte DUP1 + BB/BA
+  imm32. SWAPbit unchanged. Remove 5-byte literal, emit raw
+  `49 8B 5F offset` (no SWAPbit adjustment needed).
+
+- **6A path** (`_pick_6a`): `lit\`` emits 7-byte DUP + 6A xx 5B/5A.
+  SWAPbit toggled by DUP. Remove 3-byte literal, emit
+  `$5F8B, s08` (SWAPbit-aware register select).
+
+Both paths handle N=0 (dup) via `nipdup\``, N=1 (over) by returning
+with just the DUP, and N≥2 via `mov rbx/rdx,[r15+8*(N-1)]`.
+
+### Key insight
+
+Understanding that `1-` (which compiles to `dec rbx`) sets ZF and SF
+allows `0=` and `0<` to read those FLAGS directly — matching the i386
+pattern exactly. The i386 `pick` relies on this chain:
+`c@ 1- 0= IF ... 0< IF ...` where each condition reads FLAGS from `1-`.
+
+### Result
+
+185 regression tests pass (was 178). Seven previously-skipped tests
+enabled: ++ increment, -- decrement, within (4 cases), 2over.
+Only BEGIN→CASE→BREAK→END remains as a known bug.
+
+---
