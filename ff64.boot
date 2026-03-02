@@ -328,13 +328,21 @@ variable mrk 0 mrk 8+ !
 : nzTRUE 1 0- drop ;
 
 ( Indexed stack access — pick` peephole detects preceding literal )
-:. _pick_detect
-  here 5- c@ $BB = IF here 4- d@ -5 allot ;THEN
-  here 3- c@ $6A- here 1- c@ $FE& $5A- | 0<> IF !"not_preceded_by_constant" ;THEN
-  here 2- c@ -3 allot swap` $48 c, $DA89 w, s09 ;
-: pick` _pick_detect
-  dup 0- 0= IF drop ;THEN
+( _lit_compile emits 10-byte DUP1 + BB/BA imm32. SWAPbit unchanged. )
+( lit` emits 7-byte DUP + 6Axx5B/5A. SWAPbit toggled by DUP. )
+( pick` removes the literal, keeps the DUP, emits the pick instruction. )
+:. _pick_bb ( -- ) ( BB path: full DUP1, SB unchanged )
+  here 4- d@ -5 allot
+  dup 0- 0= drop IF drop ;THEN
   1- 3 << $49 c, $8B c, $5F c, c, ;
+:. _pick_6a ( -- ) ( 6A path: 7-byte DUP, SB toggled )
+  -3 allot here 1+ c@ 1- 0= IF drop ;THEN
+  0< IF drop nipdup` ;THEN
+  3 << $49 c, $5F8B, s08 c, ;
+: pick`
+  here 5- c@ $FE& $BA- 0= drop IF _pick_bb ;THEN
+  here 3- c@ $6A- here 1- c@ $FE& $5A- | 0<> IF !"pick:_need_constant" ;THEN
+  drop _pick_6a ;
 : 2over` 3 lit` pick` 3 lit` pick` ;
 
 ( Header layout constants )

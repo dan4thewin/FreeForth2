@@ -3,7 +3,7 @@
 \ Run: ./ff64 ': prompt ;' -f test/test64.ff
 
 needs test.ff
-178 >plan
+185 >plan
 
 \ ============================================================
 \ Stack operations (from exp 023, 028, 091)
@@ -516,33 +516,32 @@ t{ 65 _tplace1 c! 66 _tplace1 1 + c! 67 _tplace1 2 + c!
 \ Peephole: ++ -- (from exp 061)
 \ ============================================================
 
-\ ++ and -- are peephole macros — currently broken, skipped
-\ testing ++ increment
-\ variable _tvinc
-\ t{ 10 _tvinc ! _tvinc ++ _tvinc @ -> 11 }t
+\ ++ and -- are peephole macros — must follow fetch-suffix (foo@)
+testing ++ increment
+variable _tvinc
+t{ 10 _tvinc ! _tvinc@ ++ _tvinc @ -> 11 }t
 
-\ testing -- decrement
-\ t{ 10 _tvinc ! _tvinc -- _tvinc @ -> 9 }t
+testing -- decrement
+t{ 10 _tvinc ! _tvinc@ -- _tvinc @ -> 9 }t
 
 \ ============================================================
 \ Miscellaneous (from exp 059)
 \ ============================================================
 
-\ within is broken for out-of-range cases — skip for now
-\ testing within
-\ : _twith within IF 1 ;THEN 0 ;
-\ t{ 5 3 8 _twith -> 1 }t
-\ t{ 2 3 8 _twith -> 0 }t
-\ t{ 3 3 8 _twith -> 1 }t
-\ t{ 8 3 8 _twith -> 0 }t
+\ within returns FLAGS (nzTRUE/zFALSE) — use 0<> IF to branch
+testing within
+: _twith within 0<> IF 1 ;THEN 0 ;
+t{ 5 3 8 _twith -> 1 }t
+t{ 2 3 8 _twith -> 0 }t
+t{ 3 3 8 _twith -> 1 }t
+t{ 8 3 8 _twith -> 0 }t
 
 testing s>d
 t{ 5 s>d -> 5 0 }t
 t{ -1 s>d -> -1 -1 }t
 
-\ 2over (uses pick) is currently broken — skip
-\ testing 2over
-\ t{ 1 2 3 4 2over -> 1 2 3 4 1 2 }t
+testing 2over
+t{ 1 2 3 4 2over -> 1 2 3 4 1 2 }t
 
 testing depth in word
 : _tdep depth ;
