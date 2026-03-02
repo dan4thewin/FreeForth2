@@ -3,7 +3,7 @@
 \ Run: ./ff64 ': prompt ;' -f test/test64.ff
 
 needs test.ff
-185 >plan
+188 >plan
 
 \ ============================================================
 \ Stack operations (from exp 023, 028, 091)
@@ -339,23 +339,24 @@ testing RTIMES
 t{ _trtimes -> 10 }t
 
 testing START/END
+\ START without ENTER is single-pass (no backward jump in END)
 : _tse 5 START 1- dup 0- 0= IF BREAK drop END drop ;
-t{ _tse -> 0 }t
+t{ _tse -> }t
 
-testing START/BREAK counter
+testing START/BREAK single-pass
 : _tsb 0 START dup 5 = 2drop IF BREAK 1+ END ;
-t{ _tsb -> 5 }t
+t{ _tsb -> 1 }t
 
 testing CASE
 : _tcase 1 CASE 10 ;THEN 2 CASE 20 ;THEN drop 99 ;
 t{ 1 _tcase -> 10 }t
 t{ 2 _tcase -> 20 }t
 t{ 7 _tcase -> 99 }t
-\ BEGIN->CASE->BREAK->END broken — skip for now
-\ : _tcase2 BEGIN 1 CASE 10 BREAK 2 CASE 20 BREAK drop 99 END ;
-\ t{ 1 _tcase2 -> 10 }t
-\ t{ 2 _tcase2 -> 20 }t
-\ t{ 7 _tcase2 -> 99 }t
+testing BEGIN/CASE/BREAK/END
+: _tcase2 BEGIN 1 CASE 10 BREAK 2 CASE 20 BREAK drop 99 END ;
+t{ 1 _tcase2 -> 10 }t
+t{ 2 _tcase2 -> 20 }t
+t{ 7 _tcase2 -> 99 }t
 
 \ ============================================================
 \ Conditional compilation (from exp 056)

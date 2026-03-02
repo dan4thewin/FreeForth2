@@ -280,41 +280,47 @@ $77 : u>`  lit _?2 ;
 \ reverse` pops return address and calls it (turns call into jmp)
 : reverse` $D1FF59, ,3 ;
 
-( Advanced loop infrastructure: START/ENTER/BREAK/END )
-\ Structured loop with optional first-entry skip.
-\
+( Advanced loop infrastructure: mrk, cstack, START/ENTER/BREAK/END )
 \ mrk is a 2-cell compiler variable:
-\   cell 0: loop body address (backward jump target for END)
-\   cell 1: SC state at loop start
-\ START/END/BREAK use a separate compile-time stack (cstack) for
-\ saved mrk values and break addresses, keeping the data stack clean.
-\ This is critical for the _exec pattern where START _eval ENTER
-\ has no matching END — an unterminated START must not pollute
-\ the data stack.
+\   cell 0: loop body address (backward jump target for AGAIN/UNTIL etc.)
+\   cell 1: reserved
+\ All loop openers (BEGIN, START, TIMES/RTIMES) save old mrk to cstack,
+\ push a 0 break-sentinel, and set mrk[0] = loop body address.
+\ All loop closers resolve breaks from cstack and restore mrk.
+\
+\ Data stack layout from loop openers:
+\   BEGIN:  ( -- 0 )     flag=0 means no rdrop needed
+\   RTIMES: ( -- -1 js ) flag=-1 triggers rdrop in REPEAT; js=fixup
+\
+\ END does NOT emit a backward jump — it only resolves forward refs
+\ (WHILE/BREAK). Use AGAIN/UNTIL/REPEAT for backward jumps.
+\ Pattern: BEGIN ... CASE ... BREAK ... END (multi-way dispatch)
 \
 \ >cs ( x -- ) pushes to compile-time stack
 \ cs> ( -- x ) pops from compile-time stack
-\
-\ START ( -- ) opens a structured loop. Saves old mrk (2 cells) and
-\   a 0 break-sentinel onto the compile-time stack. Compiles a forward
-\   E9 jmp (patched by ENTER if used). Stores loop body addr in mrk[0].
-\
-\ ENTER ( -- ) resolves START's forward jmp to target here.
-\
-\ BREAK ( -- ) compiles a forward E9 out of the loop. Pushes the
-\   rel32 address onto the compile-time stack. Resolves preceding IF.
-\
-\ END ( -- ) closes the loop: compiles backward E9 to mrk[0].
-\   Pops and resolves break addresses from compile-time stack
-\   until it hits the 0 sentinel. Restores mrk.
 variable mrk 0 mrk 8+ !
 : align` $90909090, here negate 3& allot ;
-: START` mrk 2@ >cs >cs 0 >cs $E9 c, 0 d, here mrk! ;
+:. _begin mrk 2@ >cs >cs 0 >cs here mrk! ;
+: START` _begin 0 $E9 c, 0 d, here mrk! ;
 : ENTER` >S0 mrk@ 4- _then ;
 : TILL` >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
 : BREAK` >S0 $E9 c, 0 d, here 4- >cs _then ;
 :. _resolve_breaks cs> 0; _then _resolve_breaks ;
-: END` >S0 $E9 c, mrk@ here 4+ - d, _resolve_breaks cs> cs> mrk 2! ;
+:. _end_cs _resolve_breaks cs> cs> mrk 2! ;
+: END` >S0 _end_cs drop ;
+
+\ Redefine BEGIN et al. with mrk+cstack support for BREAK/END compat.
+\ Earlier definitions (used by type/fill) remain compiled as-is.
+:. _jmpback_mrk >S0 $E9 c, mrk@ here 4+ - d, ;
+:. _cjmpback_mrk >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
+: BEGIN` >S0 _begin 0 ;
+: AGAIN` _jmpback_mrk _end_cs drop ;
+: UNTIL` _cjmpback_mrk _end_cs drop ;
+: WHILE` IF` ;
+: REPEAT` _jmpback_mrk THEN` _end_cs 0- 0<> drop IF _emit_rdrop THEN ;
+: TIMES` >r`
+: RTIMES` >S0 _begin -1 $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
+: LOOP` >S0 _jmpback_mrk THEN` _end_cs drop rdrop` ;
 
 ( Dotted conditionals: for stack-boolean values instead of FLAGS )
 : cond.` 0-` drop` 0<>` ;
