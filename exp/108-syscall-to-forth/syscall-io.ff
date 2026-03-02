@@ -1,0 +1,22 @@
+( Test that read/openr/openw/close work as Forth wrappers )
+
+( Write a temp file, read it back, verify contents )
+: test-write-read
+  "test-108-tmp" openw
+  dup 0- 0< IF ."openw_failed" 0 exit THEN
+  >r
+  "hello" r write drop
+  r> close drop
+
+  "test-108-tmp" openr
+  dup 0- 0< IF ."openr_failed" 0 exit THEN
+  >r
+  pad $100 r read
+  r> close drop
+
+  ( should have read 5 bytes )
+  5 = IF ."ok" ELSE ."FAIL" THEN
+;
+
+test-write-read cr
+; t bye

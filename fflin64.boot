@@ -1,6 +1,7 @@
 ( fflin64.boot — FreeForth2 x86-64 Linux-specific boot source )
 ( Modeled after Christophe Lavarenne's fflin.boot for i386. )
 ( This file is compiled after ff64.boot; it provides: )
+(   - Syscall-based I/O [read, openr, openw, close] )
 (   - Dynamic library interface [libc, dlsetup, libc., libc_] )
 (   - File loading [needed, needexec, needs`] )
 (   - Command-line processing [doargv, -f`] )
@@ -9,6 +10,14 @@
 (   - Boot sequence [ossetup, _boot] )
 
 1 constant [os]`
+
+( Syscall-based I/O — replaces assembly WORD64 entries )
+( x86-64 syscall: read=0, write=1, open=2, close=3 )
+( Stack keeps Forth-natural ( addr # ) buffer pair; fd on top )
+: read  ( addr # fd -- n ) >r swap r> 3 0 syscall ;
+: openr ( addr # -- fd ) zt $1A4  0 rot 3 2 syscall ;
+: openw ( addr # -- fd ) zt $1A4 $241 rot 3 2 syscall ;
+: close ( fd -- n )  1 3 syscall ;
 
 ( Dynamic library interface — fails gracefully in static builds )
 variable libc

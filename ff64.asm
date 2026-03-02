@@ -1855,27 +1855,6 @@ _write_word:
         pop rax
         ret
 
-;; read ( addr count fd -- nread )
-_read_word:
-        push rax
-        push rdi
-        push rsi
-        push rcx
-        xor eax, eax            ; sys_read
-        mov rdi, rbx            ; fd = TOS
-        mov rcx, rdx            ; save count = NOS
-        mov rsi, [r15]          ; addr = third
-        mov rdx, rcx            ; count for syscall
-        syscall
-        mov rbx, rax            ; TOS = bytes read
-        mov rdx, [r15+8]       ; NOS = item below third
-        add r15, 16             ; pop third + old NOS
-        pop rcx
-        pop rsi
-        pop rdi
-        pop rax
-        ret
-
 ;; accept ( addr count -- nread ) read from stdin, one line at a time
 ;; Reads byte-by-byte until newline, EOF, or count reached.
 _accept:
@@ -1924,72 +1903,6 @@ _accept:
         pop rsi
         pop rcx
         jmp .done
-
-;; openr ( addr len -- fd ) open file read-only, fd<0 on error
-_openr:
-        push rsi
-        push rdi
-        push rcx
-        ;; Null-terminate filename in-place (save byte, write NUL, syscall, restore)
-        lea rcx, [rdx + rbx]    ; rcx = addr + len (end of string)
-        movzx esi, byte [rcx]   ; save byte after string
-        mov byte [rcx], 0       ; NUL-terminate
-        push rsi                ; save original byte on stack
-        push rcx                ; save end-of-string pointer
-        ;; sys_open(filename, O_RDONLY, 0)
-        mov rdi, rdx            ; arg1 = filename addr (before rdx clobbered)
-        xor esi, esi            ; arg2 = O_RDONLY
-        xor edx, edx            ; arg3 = mode (unused)
-        mov rax, 2              ; sys_open
-        syscall
-        ;; Restore the overwritten byte
-        pop rcx                 ; end-of-string pointer
-        pop rsi                 ; original byte value
-        mov byte [rcx], sil     ; restore byte
-        pop rcx
-        pop rdi
-        pop rsi
-        mov rbx, rax            ; TOS = fd (or negative errno)
-        mov rdx, [r15]
-        add r15, 8              ; pop addr
-        ret
-
-;; openw ( addr len -- fd ) open file write-only, create/truncate, mode 0644
-_openw:
-        push rsi
-        push rdi
-        push rcx
-        lea rcx, [rdx + rbx]    ; rcx = addr + len (end of string)
-        movzx esi, byte [rcx]   ; save byte after string
-        mov byte [rcx], 0       ; NUL-terminate
-        push rsi                ; save original byte
-        push rcx                ; save end-of-string pointer
-        ;; sys_open(filename, O_WRONLY|O_CREAT|O_TRUNC, 0644)
-        mov rdi, rdx            ; arg1 = filename addr
-        mov esi, 0x241          ; arg2 = O_WRONLY|O_CREAT|O_TRUNC
-        mov edx, 0x1A4          ; arg3 = 0644
-        mov rax, 2              ; sys_open
-        syscall
-        pop rcx
-        pop rsi
-        mov byte [rcx], sil     ; restore byte
-        pop rcx
-        pop rdi
-        pop rsi
-        mov rbx, rax            ; TOS = fd (or negative errno)
-        mov rdx, [r15]
-        add r15, 8              ; pop addr
-        ret
-
-;; close ( fd -- result ) close file descriptor
-_close:
-        push rdi
-        mov rax, 3              ; sys_close
-        mov rdi, rbx            ; fd = TOS
-        syscall
-        mov rbx, rax            ; TOS = result
-        pop rdi
-        ret
 
 ;; syscall ( args... #args syscall# -- ior )
 ;; Generic Linux syscall dispatcher. Same Forth interface as i386 fflinio.asm.
@@ -2471,11 +2384,7 @@ WORD64 "catch", _catch, 0, 5
 WORD64 "throw", _throw, 0, 5
 WORD64 "find", _find_forth, 0, 4
 WORD64 "write", _write_word, 0, 5
-WORD64 "read", _read_word, 0, 4
 WORD64 "accept", _accept, 0, 6
-WORD64 "openr", _openr, 0, 5
-WORD64 "openw", _openw, 0, 5
-WORD64 "close", _close, 0, 5
 WORD64 "syscall", _syscall, 0, 7
 WORD64 "loadfile", _loadfile, 0, 8
 WORD64 "#lib", _dllib, 0, 4
