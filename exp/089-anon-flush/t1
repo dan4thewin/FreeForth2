@@ -1,0 +1,5 @@
+: foo ."foo" ;
+foo
+variable ffpath pvt 248 allot
+:. bar ."bar" ;
+bar

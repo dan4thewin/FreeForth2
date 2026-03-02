@@ -28,7 +28,7 @@ test:
 		"echo ': foo .\"foo\" ;' > /tmp/t089.ff; echo 'foo' >> /tmp/t089.ff; echo 'variable dummy89' >> /tmp/t089.ff; echo ': bar .\"bar\" ;' >> /tmp/t089.ff; echo 'bar' >> /tmp/t089.ff; timeout $(TIMEOUT) $(FF) -f /tmp/t089.ff bye" \
 		"foobar"; \
 	run "t1 matches i386" \
-		"timeout $(TIMEOUT) $(FF) -f ../../t1 bye" \
+		"timeout $(TIMEOUT) $(FF) -f t1 bye" \
 		"foobar"; \
 	run "segv still works" \
 		"printf '0@ . cr\n0 exit\n' | timeout $(TIMEOUT) $(FF)" \
