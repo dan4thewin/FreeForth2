@@ -60,7 +60,8 @@ EXPERIMENTS = 023-forthmacros64 \
               091-remove-inline-words \
               092-remove-comparisons \
               093-remove-dead-runtime \
-              095-locals-and-test
+              095-locals-and-test \
+              099-see64-improvements
 
 test:
 	@fail=0; for d in $(EXPERIMENTS); do \

@@ -10,6 +10,8 @@
 
 variable xt pvt
 variable _fh pvt
+variable _best_off pvt
+variable _best_hdr pvt
 :. sz-		2dup h.sz+ c@ - drop ;
 :. nm-		3dup h.nm+ swap $- drop ;
 :. hdr-		sz- 0= IF nm- ;THEN ;
@@ -20,10 +22,19 @@ variable _fh pvt
 		BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
 		  hdr- 0= IF nip nip @ xt@ over- ;THEN dup@ xt! h.next
 		REPEAT !"not_found" ;
-: findh		H@
+:. _fh_try
+  dup h.ct+ c@ dup $20& drop 0<> IF drop ;THEN
+  1 = 2drop 0= IF ;THEN
+  2dup @ < 2drop IF ;THEN
+  over over @ - _best_off@ u< 2drop IF
+    dup _best_hdr! over over @ - _best_off!
+  THEN ;
+: findh		-1 _best_off! 0 _best_hdr! H@
 		BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
-		  2dup @ >= 2drop IF dup _fh! swap over @ - ;THEN h.next
-		REPEAT !"not_found" ;
+		  _fh_try h.next
+		REPEAT 2drop
+		_best_hdr@ 0- 0= drop IF !"not_found" ;THEN
+		_best_hdr@ _best_off@ ;
 : findnm	findh swap h.sz+ c@+ type 0; ."+" .x ;
 
 create buf pvt 160 allot
@@ -128,14 +139,16 @@ create op pvt 256 8* allot ;
 .A? ' 256 TIMES dup op r 8* + ! REPEAT drop ;
 $1 :. callop	xx dup c@ 8* op+ @ execute ;
 $2 :. rexskip	xx dup c@ $F0& $40- 0<>; drop .B $F& rex! ;
+:. _atx		$1B emit '[' emit '4' emit '1' emit 'G' emit ;
 $3 :. oneop	xx .A 0 rex! rexskip 0 buf! callop
-		buf c@+ type cr ;
+		_atx buf c@+ type cr ;
 $4 : see.	xx 0 unknown!
-		BEGIN dup oneop ( old new stop )
-		  >r nip r> ( new stop )
-		  0- 0<> IF drop ;THEN drop
+		BEGIN dup oneop
+		  >r nip r>
+		  0- 0<> IF 2drop
+		  unknown@ 0; ."unknown bytes: " . cr ;THEN
+		  drop
 		AGAIN ;
-		unknown@ 0; ."unknown bytes: " . cr ;
 
 \ Helpers for opcode definitions
 :. jba		dup xa $20 ca

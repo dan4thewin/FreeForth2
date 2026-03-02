@@ -7921,3 +7921,86 @@ Removed `ua` (unused) and `"pno.ff" needed`.
 **Running total:** 178 permanent tests + 552 experiment tests, all passing.
 
 ---
+
+## Experiment 099: see64 Improvements — Stack Leak, Column Alignment, Symbol Resolution
+
+**Goal:** Fix three issues with `see64.ff` identified during broad testing:
+(1) `see` leaves items on the stack (depth ≠ 0), (2) disassembly output
+has no column alignment (hex bytes run into mnemonics), and (3) symbol
+resolution returns wrong/distant names instead of the closest matching word.
+
+### Stack Leak Fix
+
+The `see.` loop ended with `IF drop ;THEN drop AGAIN ;` — the `drop`
+after `IF` only removed one of the two values on the stack (the
+`new_addr` return and the stop flag). The orphan `unknown@` code after
+the first `;` was unreachable. Fix: restructured to
+`IF 2drop unknown@ 0; ." unknown bytes: " . cr ;THEN drop AGAIN ;` —
+drops both values, moves unknown reporting inside the word, and exits
+cleanly.
+
+### Column Alignment
+
+The i386 `see.ff` uses `40 atx` (from `console.ff`) to position the
+cursor at column 40 before printing the mnemonic. Loading `console.ff`
+from `see64.ff` would pollute the dictionary with color constants
+(`white`=7, `cyan`=6, etc.) whose small constant values would be matched
+by `findh` as "closest" headers for any code address. Instead, defined a
+local `_atx` word that emits the ANSI escape `\e[41G` using individual
+`emit` calls — no dictionary pollution.
+
+### Symbol Resolution (findh rewrite)
+
+The original `findh` walked the header chain and returned the first
+header whose XT was ≤ the target address. This gave wrong results because
+**dictionary headers are NOT sorted by XT value**. For example, `>S0`
+(XT $4030B9) appears before `cr` (XT $40314D) in the header chain walk,
+so `findh` returned `>S0+94` instead of the correct `cr`.
+
+Fix: rewrote `findh` with a best-match algorithm. Two pvt variables
+`_best_off` and `_best_hdr` track the closest match. A `_fh_try` helper
+word evaluates each header:
+- Skip if hidden (`$20 &`)
+- Skip if constant (`ct == 1` — XT stores the constant value, not code)
+- Skip if XT > target address
+- Compare `target - XT` with `_best_off`; update if closer (using `u<`
+  since `_best_off` starts at -1 = max unsigned)
+
+This walks ALL headers and returns the one with the smallest offset,
+regardless of header chain ordering.
+
+### Key Discovery: Condition System Internals
+
+Debugging the nested IF/THEN structures in `_fh_try` required
+understanding FreeForth's condition/flow-control system deeply:
+- `=`, `<`, etc. store SHORT jump opcodes ($74=JE, $75=JNE, etc.) in `?#`
+- `cond` (called by IF) reads `?#`, XORs with 1 to INVERT, clears `?#`
+- `IF` emits `$0F` + `(inverted + $10)` as near conditional jump that SKIPS body
+- So `= IF body THEN` → body runs when equal (condition inverted to skip over)
+- `THEN` in source resolves correctly as `THEN\`` backtick macro
+- Writing `THEN\`` explicitly in source causes SEGV (double-backtick lookup)
+
+### Test Results
+
+Tested `see` on 16+ words: dump, emit, ., type, cr, words, .x, .hdrs,
+max, h.next, h.name, findxt, needed, loadfile. All colon definitions
+produce depth=0. Backtick macros (dup, drop, swap, etc.) correctly
+report "not found" (they are inline macros with no compiled body).
+
+Created experiment 099 with 6 automated tests:
+- 5 stack-depth checks (see dump/./words/max/h.next all leave depth 0)
+- 1 symbol resolution check (findnm of cr's XT resolves to "cr")
+
+- 178 regression tests PASS
+- All experiment tests PASS (including new exp 099)
+
+### Files Changed
+
+- `lib/see64.ff` — three major improvements: stack leak fix, `_atx`
+  column alignment, best-match `findh` with `_fh_try`/`_best_off`/`_best_hdr`
+- `exp/099-see64-improvements/Makefile` — new test (6 tests)
+- `exp/Makefile` — added 099-see64-improvements to EXPERIMENTS list
+
+**Running total:** 178 permanent tests + 558 experiment tests, all passing.
+
+---
