@@ -452,7 +452,7 @@ variable base
 : .l 8 .#s ;
 
 ( Dictionary inspector )
-: .hdr+ dup .x\ .":_" dup @ .x space dup h.ct+ c@ .x space dup h.sz+ c@ . dup h.name ;
+: .hdr+ dup .x\ .":_" dup @ .x dup h.ct+ c@ .x dup h.sz+ c@ .x h.name ;
 : .hdrs H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE .hdr+ cr h.next REPEAT drop ;
 : .hdr .hdr+ cr drop ;
 
