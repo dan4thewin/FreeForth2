@@ -3,7 +3,7 @@ FF=$(ROOT)/ff64
 
 .PHONY: test
 test: test-base-features test-lib-features test-see-features \
-      test-needed-guard test-ffhide-off test-ffhide-default test-v-shows
+      test-needed-guard test-v-shows
 	@echo "=== All exp/087-features tests PASSED ==="
 
 # Base features from boot

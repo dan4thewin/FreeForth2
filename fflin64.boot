@@ -10,7 +10,7 @@
 
 1 constant [os]`
 
-( Dynamic library interface )
+( Dynamic library interface — fails gracefully in static builds )
 variable libc
 :. dlsetup libc@ 0<>; drop "libc.so.6" #lib libc! ;
 dlsetup
@@ -20,12 +20,13 @@ dlsetup
 ( SEGV handler — recoverable via throw, replaces assembly early-boot handler )
 ( x86-64 struct sigaction: handler[8] sa_mask[128] sa_flags[4] pad[4] restorer[8] = 152 bytes )
 ( codebuf is BSS-zeroed, so allot gives us a zeroed struct — no fill needed )
+( Requires libc for sigaction — in static build, assembly SEGV handler remains )
 create SEGVact pvt 152 allot
 :. SEGVhndlr !"SEGV caught" ;
 SEGVhndlr ' SEGVact !
 $40000000 SEGVact 136+ !
 :. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
-SEGVthrow ;
+libc@ 0- 0<> drop IF SEGVthrow THEN ;
 
 ( FFPATH — search path for needed/openlib )
 ( Default: lib/64:lib:. — overridable via FFPATH env var )
@@ -101,10 +102,8 @@ variable mainxt pvt
 ( doargv — evaluate command line arguments as FreeForth words )
 :. doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap eval. ;
 
-( _postboot — doargv + FFHIDE check + hidepvt; nop'd for turnkey )
-:. _ffhide "getenv" libc@ #fun 1 swap #call
-  0- 0; c@ $30- drop 0= IF hide off THEN ;
-:^ _postboot doargv "FFHIDE" zt _ffhide _hidepvt ;
+( _postboot — doargv + hidepvt; nop'd for turnkey )
+:^ _postboot doargv _hidepvt ;
 
 ( -f` must come after _postboot — it references _postboot for vector nop )
 :. _f_main mainxt ! _main ' _top !^ _postboot n^ ;

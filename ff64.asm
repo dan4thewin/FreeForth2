@@ -9,13 +9,13 @@
 ;;;   - Dedicated data stack pointer (r15) instead of xchg eax,esp trick
 ;;;   - Command-line -f <file> support for loading boot files
 
-format elf64
-section '.flat' writeable executable
-public _start
+OSFORMAT
 
+if defined ffdl
 extrn dlopen
 extrn dlsym
 extrn dlerror
+end if
 
 h.ct = 8
 h.sz = 9
@@ -2244,6 +2244,8 @@ _loadfile:
 ;; Callee-saved (preserved across C calls): rbx,rbp,r12,r13,r14,r15.
 ;; Stack must be 16-byte aligned before call instruction.
 
+if defined ffdl
+
 saveSP  dq 0                    ; saved return stack across C calls
 dl_errbuf rb 256                ; buffer for dlerror() counted strings
 
@@ -2346,6 +2348,36 @@ dc_call:
         add r15, 8              ; pop it from memory stack
         mov rbx, rax            ; TOS = C function result
         ret
+
+else
+
+;; Static build — FFI stubs return 0 (not available)
+;; #lib returns 0 instead of throwing, so dlsetup stores 0 in libc
+;; and all libc-dependent guards see 0 and skip gracefully.
+
+_dllib:
+        ;; ( addr len -- 0 ) return null handle
+        mov rdx, [r15]
+        add r15, 8
+        xor ebx, ebx
+        ret
+
+_dlfun:
+        ;; ( addr len libh -- 0 ) return null function
+        mov rdx, [r15+8]
+        add r15, 16
+        xor ebx, ebx
+        ret
+
+_dlcall:
+        ;; ( argN...arg1 N funh -- 0 ) pop args, return 0
+        lea r15, [r15 + rdx*8]
+        mov rdx, [r15]
+        add r15, 8
+        xor ebx, ebx
+        ret
+
+end if
 
 ;; =====================================================================
 ;; Header generation macros

@@ -2,7 +2,7 @@ SHELL=/bin/bash
 LD=ld -m elf_i386 -lc --dynamic-linker=/lib/ld-linux.so.2 -s
 LD64=ld -m elf_x86_64 -lc -ldl --dynamic-linker=/lib64/ld-linux-x86-64.so.2
 
-all: ff ff64
+all: ff ff64 ff64s
 
 ff.o: fflin.asm ff.asm fflinio.asm ff.boot fflin.boot
 	fasm $< $@
@@ -13,11 +13,15 @@ ff: ff.o
 ff64.boot.min: ff64.boot fflin64.boot
 	grep -h '^[: _$$A-Za-z0-9]' $^ > $@
 
-ff64.o: ff64.asm ff64.boot.min
+ff64.o: fflin64.asm ff64.asm ff64.boot.min
 	fasm $< $@
 
 ff64: ff64.o
 	$(LD64) -o $@ $<
+
+ff64s: fflin64s.asm ff64.asm ff64.boot.min
+	fasm $< $@
+	chmod +x $@
 
 cmpl dict: ff
 	./ff -f mkimage.ff
@@ -38,7 +42,7 @@ fftk64: fftk64.o
 	$(LD64) -o $@ $<
 
 clean:
-	rm -f ff ff64 fftk fftk64 *.o ff64.boot.min cmpl64 cmpl64.cfg
+	rm -f ff ff64 ff64s fftk fftk64 *.o ff64.boot.min cmpl64 cmpl64.cfg
 
 test1:
 	@set -o pipefail; \
