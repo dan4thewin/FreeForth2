@@ -8045,3 +8045,89 @@ the closest header.
 - `ff64.asm` — reordered WORD64 entries by ascending code address
 
 ---
+
+## Experiment 101: nexth Bug Fix, constant\` $20 Flag, findh Simplification
+
+### Goal
+
+Three interconnected fixes to make see64's symbol resolution work correctly
+with a simple first-match algorithm (matching the i386 see.ff pattern):
+
+1. Fix `nexth` — it had an inverted loop condition (UNTIL vs WHILE)
+2. Fix `constant\`` — it was missing the `$20` ct flag that marks constants
+   as invisible to header-chain walks
+3. Simplify `findh` — replace the complex best-match algorithm with the
+   i386's clean first-match pattern
+
+### Background
+
+Experiment 100 fixed WORD64 ordering so headers walk in decreasing XT order.
+This enabled simplifying findh from a 13-line best-match algorithm (with
+`_fh_try`, `_best_off`, `_best_hdr` variables) to the i386's 3-line
+first-match: walk the chain, stop at the first header whose XT is ≤ the
+target address.
+
+But two bugs blocked this:
+
+**The nexth UNTIL bug.** The ff64 `nexth` used `skip? 0<> UNTIL` to skip
+hidden headers (ct & $20). This is backwards. In FreeForth's FLAGS-based
+conditionals, `0<>` stores JNE in `?#`. `UNTIL` inverts the condition
+(JNE→JE) and emits a backward jump — so it loops when ZF=1 (the AND
+result is zero, meaning NOT hidden). This means nexth was skipping visible
+headers and stopping at hidden ones. The fix: change `UNTIL` to
+`WHILE REPEAT`, which exits when ZF=1 (stops at non-hidden headers).
+The reference was lib/dis.ff's `~nexth` which uses the correct
+`WHILE REPEAT` pattern.
+
+**The constant\` $20 bug.** The i386's `constant\`` uses `create\` _alias`,
+where `_alias` does `H@ ! $20 H@ ct|! anon:\``. This gives constants
+ct=$21 (1 from create + $20 from _alias). The $20 bit makes `skip?`
+return nonzero, so `nexth` skips constants during header walks.
+
+The ff64 `constant\`` was `: constant\` :\` 1 H@ ct|! H@ ! anon:\` ;` —
+setting ct=1 without the $20 flag. Constants like `[os]\`` (value=1,
+defined in fflin64.boot) were visible to nexth. When findh walked the
+chain looking for a code address near `cr`, it would match `[os]\`` first
+(because its "XT" of 1 is less than any code address).
+
+The fix couldn't simply call `_alias` because `constant\`` (line 195) is
+defined before `_alias` (line 368) in ff64.boot. Instead, we inlined the
+$20 logic: `: constant\` create\` H@ ! $20 H@ ct|! anon:\` ;`
+
+### Actions
+
+1. Changed `nexth` in lib/see64.ff: `UNTIL` → `WHILE REPEAT`
+2. Changed `constant\`` in ff64.boot: inlined `_alias` logic with $20 flag
+3. Simplified `findh` in lib/see64.ff: removed `_fh_try`, `_best_off`,
+   `_best_hdr` variables; replaced with i386-style first-match
+4. Removed ~15 lines of complex best-match code
+
+### Key Insight — FLAGS Conditional Inversion
+
+The nexth bug illustrates a subtle aspect of FreeForth's FLAGS-based
+conditionals. `UNTIL` and `WHILE` both read the same `?#` value and
+both invert the condition — but they emit jumps in opposite directions:
+
+- `WHILE`: forward jump (exit loop when condition is false)
+- `UNTIL`: backward jump (loop back when condition is false)
+
+So `0<> WHILE` means "while nonzero, continue" (exit on zero), while
+`0<> UNTIL` means "until nonzero" (loop on zero, exit on nonzero).
+For skipping hidden headers ($20 & result nonzero), we want to CONTINUE
+when nonzero (keep walking) and EXIT when zero (found a visible header).
+That's `WHILE`, not `UNTIL`.
+
+### Verification
+
+- 178 regression tests pass (test/test64.ff)
+- All experiment tests pass (make -C exp test), including all 6 exp/099
+  tests — notably "findnm resolves cr" which was failing before the
+  constant\` fix
+
+### Files Changed
+
+- `lib/see64.ff` — nexth UNTIL→WHILE fix, findh simplified to first-match,
+  removed _best_off/_best_hdr/_fh_try
+- `ff64.boot` — constant\` now sets $20 flag (ct=$21)
+
+---

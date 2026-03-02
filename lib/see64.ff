@@ -10,31 +10,19 @@
 
 variable xt pvt
 variable _fh pvt
-variable _best_off pvt
-variable _best_hdr pvt
 :. sz-		2dup h.sz+ c@ - drop ;
 :. nm-		3dup h.nm+ swap $- drop ;
 :. hdr-		sz- 0= IF nm- ;THEN ;
 :. skip?	dup h.ct+ c@ $20& drop ;
 :. stop?	dup h.sz+ c@ 0<>; !"not_found" ;
-:. nexth	BEGIN h.sz+ c@+ + 1+ dup h.sz+ c@ 0- 0= drop IF ;THEN skip? 0<> UNTIL ;
+:. nexth	BEGIN h.sz+ c@+ + 1+ dup h.sz+ c@ 0- 0= drop IF ;THEN skip? 0<> WHILE REPEAT ;
 : findxt	here xt! H@
 		BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
 		  hdr- 0= IF nip nip @ xt@ over- ;THEN dup@ xt! h.next
 		REPEAT !"not_found" ;
-:. _fh_try
-  dup h.ct+ c@ dup $20& drop 0<> IF drop ;THEN
-  1 = 2drop 0= IF ;THEN
-  2dup @ < 2drop IF ;THEN
-  over over @ - _best_off@ u< 2drop IF
-    dup _best_hdr! over over @ - _best_off!
-  THEN ;
-: findh		-1 _best_off! 0 _best_hdr! H@
-		BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
-		  _fh_try h.next
-		REPEAT 2drop
-		_best_hdr@ 0- 0= drop IF !"not_found" ;THEN
-		_best_hdr@ _best_off@ ;
+: findh		H@ stop?
+		BEGIN 2dup @ < 2drop WHILE nexth stop? REPEAT
+		dup _fh! swap over @ - ;
 : findnm	findh swap h.sz+ c@+ type 0; ."+" .x ;
 
 create buf pvt 160 allot

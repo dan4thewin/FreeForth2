@@ -192,7 +192,7 @@
 ( Dictionary defining words )
 : create` :` 1 H@ ct|! anon:` ;
 : variable` create` 0 , anon:` ;
-: constant` :` 1 H@ ct|! H@ ! anon:` ;
+: constant` create` H@ ! $20 H@ ct|! anon:` ;
 
 ( FLAGS-based conditionals — ported from ff.boot )
 \ 0- emits test TOS,TOS (48 85 DB) with SWAPbit via s09
