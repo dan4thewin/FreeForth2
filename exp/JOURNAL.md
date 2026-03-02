@@ -8409,3 +8409,166 @@ as-is. The redefinitions only affect words compiled after line ~313.
 All experiment tests pass. No known bugs remain.
 
 ---
+
+## Experiment 106: Minimal Static ELF64 via FASM
+
+### Goal
+
+Prove that FASM can produce a standalone ELF64 binary with no dynamic
+linker, no libc, no ld -- just `format ELF64 executable 3` and raw
+syscalls.
+
+### Context
+
+DG observed that ff64's dynamic linking exists solely for three FFI
+functions (dlopen, dlsym, dlerror). Everything else already uses raw
+syscalls. He asked to explore providing all OS interaction via syscalls
+and eliminating the linker dependency entirely.
+
+The question: can FASM produce a complete, runnable ELF64 binary without
+any linker? This experiment answers that.
+
+### Actions
+
+1. Wrote `exp/106-static-elf64/hello.asm` -- a minimal hello-world
+   using `format ELF64 executable 3` (the `3` sets page alignment).
+2. Direct sys_write + sys_exit syscalls, no library calls.
+3. Built with `fasm hello.asm hello && chmod +x hello`.
+
+### Result
+
+243-byte standalone binary. No dynamic section (`readelf -d` confirms).
+Runs correctly on x86-64 Linux. FASM handles ELF headers, program
+headers, and entry point -- no linker required.
+
+This proves the approach is viable for ff64s.
+
+---
+
+## Experiment 107: fflin64.asm Wrapper + Static ff64s
+
+### Goal
+
+Create a shared-include architecture so both the dynamic binary (ff64)
+and the static binary (ff64s) compile from the same ff64.asm source,
+differing only in a wrapper flag.
+
+### Context
+
+Christophe Lavarenne's i386 FreeForth already had this pattern:
+fflin.asm defines OS-specific macros and `include "ff.asm"`. We mirror
+this exactly for x86-64.
+
+### Architecture
+
+```
+fflin64.asm (dynamic wrapper):
+  macro OSFORMAT {
+    ffdl=1
+    if defined ffdl; format elf64 ...
+    else; format ELF64 executable 3 ...
+  }
+  include "ff64.asm"
+
+fflin64s.asm (static wrapper):
+  Same but with ffdl=1 commented out
+```
+
+ff64.asm modifications:
+- Calls `OSFORMAT` at top (replaces hardcoded `format elf64`)
+- Wraps `extrn dlopen/dlsym/dlerror` in `if defined ffdl`
+- FFI code has return-0 stubs in `else` branch
+
+### Debugging: FFI stubs must return 0, not throw
+
+Initial approach had stubs call `_throw` -- this failed because
+`throw_nocatch` uses sys_write which clobbers rdx (NOS), leaving
+garbage in the `libc` variable. Fix: stubs return 0 silently.
+
+### SEGV handler: kernel vs glibc sigaction struct
+
+Kernel's `struct kernel_sigaction` (32 bytes) differs from glibc's
+(152 bytes). The Forth SEGV handler uses glibc layout; assembly
+early-boot handler covers the static build.
+
+### Result
+
+- ff64: 376KB dynamic, ff64s: 87KB static (no dynamic section)
+- Both pass 188 regression tests + all experiment tests
+
+---
+
+## Experiment 108: Migrate Syscall Words from Assembly to Forth
+
+### Goal
+
+Move `read`, `openr`, `openw`, and `close` from assembly WORD64 entries
+to thin Forth definitions in fflin64.boot.
+
+### What moved
+
+```forth
+: read  ( addr # fd -- n ) >r swap r> 3 0 syscall ;
+: openr ( addr # -- fd ) zt $1A4  0 rot 3 2 syscall ;
+: openw ( addr # -- fd ) zt $1A4 $241 rot 3 2 syscall ;
+: close ( fd -- n )  1 3 syscall ;
+```
+
+These match the i386 patterns from ff.help exactly (substituting x86-64
+syscall numbers).
+
+### What stayed in assembly
+
+- `exit`, `write`, `accept` -- used by ff64.boot (before fflin64.boot)
+- `syscall` -- generic dispatcher (register manipulation)
+- `loadfile` -- manipulates compiler internals
+
+### Debugging: `r` not `r@`
+
+FreeForth's word for peeking the return stack is `r`, not `r@`.
+Standard Forth uses `r@`; FreeForth doesn't define it.
+
+### Result
+
+91 lines of assembly removed, 9 lines of Forth added.
+WORD64 count: 66 -> 62. Both binaries pass all tests.
+
+---
+
+## Experiment 109: Syscall Word Library
+
+### Goal
+
+Add ~30 syscall wrappers as thin Forth definitions, giving ff64/ff64s
+access to common OS services without any libc dependency.
+
+### Words added
+
+**File I/O:** lseek, fstat, stat, access, dup2, fcntl2, pipe, ioctl3
+**Memory:** mmap, munmap, mprotect, brk + flag constants
+  (PROT_READ, PROT_WRITE, PROT_EXEC, MAP_SHARED, MAP_PRIVATE,
+  MAP_ANONYMOUS)
+**Process:** getpid, fork, execve, wait4, exit_group
+**Dir/FS:** getcwd, chdir, mkdir, rmdir, unlink, rename
+**Misc:** uname, gettimeofday, getrandom
+
+### Convention
+
+`( argN ... arg2 arg1 N sysnum syscall )` -- arg1 on TOS.
+
+### Debugging: FreeForth conditional patterns
+
+Tests initially used `0 = IF` (standard Forth) which caused SEGVs.
+FreeForth `=` sets FLAGS but does NOT consume stack items. Correct:
+```
+val 0- 0= drop IF ...     ( zero check )
+val N - 0- 0= drop IF ... ( equality )
+```
+The `drop` preserves FLAGS -- a deliberate FreeForth design choice.
+
+### Result
+
+30 new words, 12 tests passing on both ff64 and ff64s.
+188 regression + all experiment tests pass on both targets.
+
+---

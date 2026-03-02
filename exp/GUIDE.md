@@ -4336,3 +4336,106 @@ values.  Fixed to `depth +r` (the locals word adjusts rsp directly).
 - Vector `!^`/`n^` — fixed: implemented as backtick macros (exp 097)
 - `BEGIN/CASE/BREAK/END` — fixed: END no longer emits backward jump,
   unified flow control via shared `_begin` + mrk + cstack (exp 105)
+
+---
+
+## Part 14: Static Binary and Syscall Architecture
+
+### The Problem: Why Dynamic Linking?
+
+FreeForth2's ff64 binary is dynamically linked -- but only because of
+three functions: `dlopen`, `dlsym`, and `dlerror`.  These power the
+FFI (Foreign Function Interface) words `#lib`, `#fun`, and `#call`,
+which let Forth code call into shared libraries at runtime.
+
+Everything else -- file I/O, process control, memory management, the
+REPL, the compiler -- already uses raw Linux syscalls via the `syscall`
+word.  The dynamic linker adds startup overhead and a libc dependency
+for just three functions.
+
+### The Solution: Two Build Targets
+
+Following Lavarenne's fflin.asm pattern, ff64 now supports two builds
+from the **same assembly source**:
+
+| Target | File | Format | Linker | FFI | Size |
+|--------|------|--------|--------|-----|------|
+| ff64   | fflin64.asm  | elf64 (object) | ld | Yes (dlopen) | ~377KB |
+| ff64s  | fflin64s.asm | ELF64 executable 3 | None | Stubs (return 0) | ~89KB |
+
+Both wrappers `include "ff64.asm"` -- they differ only in a single flag:
+
+```fasm
+; fflin64.asm (dynamic)        ; fflin64s.asm (static)
+ffdl=1                         ; ffdl=1  <-- commented out
+macro OSFORMAT {               ; macro OSFORMAT {
+  if defined ffdl              ;   if defined ffdl
+    format elf64               ;     ...
+    ...                        ;   else
+  else                         ;     format ELF64 executable 3
+    format ELF64 executable 3  ;     entry _start
+    entry _start               ;   end if
+  end if                       ; }
+}                              ; include "ff64.asm"
+include "ff64.asm"
+```
+
+In ff64.asm, `extrn dlopen/dlsym/dlerror` and the FFI implementation
+are wrapped in `if defined ffdl`.  The `else` branch provides stubs
+that return 0 silently -- `dlsetup` stores 0 in `libc`, and all
+libc-dependent guards (`libc@ 0- 0<> drop IF`) see 0 and skip.
+
+### Syscall Word Migration (exp 108)
+
+Four words migrated from assembly WORD64 entries to Forth in
+fflin64.boot:
+
+```forth
+: read  ( addr # fd -- n ) >r swap r> 3 0 syscall ;
+: openr ( addr # -- fd ) zt $1A4  0 rot 3 2 syscall ;
+: openw ( addr # -- fd ) zt $1A4 $241 rot 3 2 syscall ;
+: close ( fd -- n )  1 3 syscall ;
+```
+
+These match the i386 patterns from ff.help exactly.  The `>r swap r>`
+in `read` reorders from Forth-natural `( addr # fd )` to the kernel's
+`(rdi=fd, rsi=addr, rdx=count)`.
+
+Three words **must** stay in assembly: `exit`, `write`, and `accept`
+are used by ff64.boot which compiles before fflin64.boot.  The generic
+`syscall` dispatcher and `loadfile` also stay in assembly.
+
+### Syscall Word Library (exp 109)
+
+fflin64.boot now provides ~30 additional syscall wrappers:
+
+```
+File I/O:  lseek fstat stat access dup2 fcntl2 pipe ioctl3
+Memory:    mmap munmap mprotect brk  + PROT_*/MAP_* constants
+Process:   getpid fork execve wait4 exit_group
+Dir/FS:    getcwd chdir mkdir rmdir unlink rename
+Misc:      uname gettimeofday getrandom
+```
+
+All follow the convention: `( argN ... arg2 arg1 N sysnum syscall )`.
+Arg1 (first C parameter) is on TOS.  For example, `getcwd(buf, size)`
+becomes `size buf getcwd` -- the buffer address on top, closest to the
+syscall dispatcher.
+
+### OS/Architecture Separation (updated)
+
+```
+ff64.asm + ff64.boot      Architecture-specific (x86-64)
+                           Compiler, macros, stack ops, flow control
+                           SWAPbit, REPL, data stack, backtick words
+
+fflin64.boot               OS-specific (Linux)
+                           Syscall wrappers, FFI, file loading,
+                           SEGV handler, command-line, boot sequence
+
+fflin64.asm / fflin64s.asm Build wrappers (dynamic / static)
+                           OSFORMAT macro, ffdl flag, include ff64.asm
+```
+
+Future ports: ARM64 would replace ff64.asm/ff64.boot but reuse
+fflin64.boot.  macOS would replace fflin64.boot but reuse ff64.boot.

@@ -451,3 +451,101 @@ H:M:S ( -- n ) time literal (×60 accumulation): 1:0:0 = 3600, 24:0:0 = 86400
 
 D_H:M:S ( -- n ) day-hour-minute-second: 1_0:0:0 = 86400
   Underscore multiplies accumulated value by 24 (day→hours).
+
+=== Syscall Word Library (fflin64.boot) ===
+
+All syscall wrappers use: ( argN...arg2 arg1 N sysnum syscall )
+Arg1 (first C parameter) on TOS.  See fflin64.boot for definitions.
+
+--- File I/O ---
+
+read ( addr # fd -- n ) read from file descriptor
+  Uses >r swap r> to reorder from Forth-natural buffer pair.
+
+openr ( addr # -- fd ) open file read-only
+  Uses zt for NUL-termination. fd<0 on error.
+
+openw ( addr # -- fd ) open/create/truncate file, write-only, mode 0644
+  Uses zt for NUL-termination. fd<0 on error.
+
+close ( fd -- n ) close file descriptor
+
+lseek ( offset whence fd -- pos ) reposition file offset
+  whence: 0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END
+
+fstat ( buf fd -- ior ) get file status by fd
+  buf must be >= 144 bytes (struct stat).
+
+stat ( buf addr -- ior ) get file status by NUL-terminated path
+
+access ( mode addr -- ior ) check file permissions
+  addr must be NUL-terminated. mode: 0=F_OK, 1=X, 2=W, 4=R.
+
+dup2 ( newfd oldfd -- fd ) duplicate file descriptor
+
+fcntl2 ( arg cmd fd -- ior ) file control
+
+pipe ( pipefd -- ior ) create pipe
+  pipefd points to 8-byte buffer receiving 2 ints (read,write fds).
+
+ioctl3 ( arg req fd -- ior ) device control
+
+--- Memory Management ---
+
+PROT_READ   ( -- 1 ) mmap/mprotect read permission
+PROT_WRITE  ( -- 2 ) mmap/mprotect write permission
+PROT_EXEC   ( -- 4 ) mmap/mprotect execute permission
+MAP_SHARED  ( -- 1 ) mmap shared mapping
+MAP_PRIVATE ( -- 2 ) mmap private copy-on-write
+MAP_ANONYMOUS ( -- $20 ) mmap not backed by file
+
+mmap ( off fd flags prot len addr -- ptr ) map memory
+  Example: 0 -1 MAP_PRIVATE MAP_ANONYMOUS | PROT_READ PROT_WRITE | $1000 0 mmap
+
+munmap ( len addr -- ior ) unmap memory
+
+mprotect ( prot len addr -- ior ) set memory protection
+
+brk ( addr -- newbrk ) change data segment size
+  0 brk returns current break.
+
+--- Process Control ---
+
+getpid ( -- pid ) get process ID
+
+fork ( -- pid ) create child process
+  Returns 0 in child, child pid in parent, negative on error.
+
+execve ( envp argv filename -- ior ) execute program
+  All pointers must be NUL-terminated.
+
+wait4 ( rusage options status pid -- pid ) wait for process
+  pid=-1 for any child. options: 1=WNOHANG.
+
+exit_group ( status -- ) exit all threads
+
+--- Directory / Filesystem ---
+
+getcwd ( size buf -- len ) get current working directory
+  Returns length including NUL on success.
+
+chdir ( addr -- ior ) change directory (NUL-terminated path)
+
+mkdir ( mode addr -- ior ) create directory (NUL-terminated path)
+
+rmdir ( addr -- ior ) remove directory (NUL-terminated path)
+
+unlink ( addr -- ior ) delete file (NUL-terminated path)
+
+rename ( newpath oldpath -- ior ) rename file (both NUL-terminated)
+
+--- Miscellaneous ---
+
+uname ( buf -- ior ) get system information
+  buf must be >= 390 bytes (struct utsname).
+
+gettimeofday ( tz tv -- ior ) get time
+  tv points to 16-byte struct (sec + usec). tz usually 0.
+
+getrandom ( flags len buf -- n ) get random bytes
+  flags: 0=blocking, 1=GRND_NONBLOCK, 2=GRND_RANDOM.
