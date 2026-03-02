@@ -1,7 +1,7 @@
 ( fflin64.boot — FreeForth2 x86-64 Linux-specific boot source )
 ( Modeled after Christophe Lavarenne's fflin.boot for i386. )
 ( This file is compiled after ff64.boot; it provides: )
-(   - Syscall-based I/O [read, openr, openw, close] )
+(   - Syscall word library [file I/O, memory, process, directory] )
 (   - Dynamic library interface [libc, dlsetup, libc., libc_] )
 (   - File loading [needed, needexec, needs`] )
 (   - Command-line processing [doargv, -f`] )
@@ -18,6 +18,54 @@
 : openr ( addr # -- fd ) zt $1A4  0 rot 3 2 syscall ;
 : openw ( addr # -- fd ) zt $1A4 $241 rot 3 2 syscall ;
 : close ( fd -- n )  1 3 syscall ;
+
+( Syscall word library — thin Forth wrappers over generic syscall )
+( See ff64.help for full documentation. Reference: musl libc. )
+( Convention: ( argN...arg2 arg1 N sysnum syscall ) )
+(   arg1=closest to TOS → rdi, arg2 → rsi, arg3 → rdx, etc. )
+
+( File I/O )
+: lseek   ( offset whence fd -- pos )  >r swap r> 3 8 syscall ;
+: fstat   ( buf fd -- ior )  2 5 syscall ;
+: stat    ( buf addr -- ior )  2 4 syscall ;
+: access  ( mode addr -- ior )  2 21 syscall ;
+: dup2    ( newfd oldfd -- fd )  2 33 syscall ;
+: fcntl2  ( arg cmd fd -- ior )  3 72 syscall ;
+: pipe    ( pipefd[2] -- ior )  1 22 syscall ;
+: ioctl3  ( arg req fd -- ior )  3 16 syscall ;
+
+( Memory management )
+$1  constant PROT_READ
+$2  constant PROT_WRITE
+$4  constant PROT_EXEC
+$1  constant MAP_SHARED
+$2  constant MAP_PRIVATE
+$20 constant MAP_ANONYMOUS
+: mmap    ( off fd flags prot len addr -- ptr )  6 9 syscall ;
+: munmap  ( len addr -- ior )  2 11 syscall ;
+: mprotect ( prot len addr -- ior )  3 10 syscall ;
+: brk     ( addr -- newbrk )  1 12 syscall ;
+
+( Process control )
+: getpid  ( -- pid )  0 39 syscall ;
+: fork    ( -- pid )  0 57 syscall ;
+: execve  ( envp argv filename -- ior )  3 59 syscall ;
+: wait4   ( rusage options status pid -- pid )  4 61 syscall ;
+: kill    ( sig pid -- ior )  2 62 syscall ;
+: exit_group ( status -- )  1 231 syscall ;
+
+( Directory / filesystem )
+: getcwd  ( size buf -- addr )  2 79 syscall ;
+: chdir   ( addr -- ior )  1 80 syscall ;
+: mkdir   ( mode addr -- ior )  2 83 syscall ;
+: rmdir   ( addr -- ior )  1 84 syscall ;
+: unlink  ( addr -- ior )  1 87 syscall ;
+: rename  ( newpath oldpath -- ior )  2 82 syscall ;
+
+( Miscellaneous )
+: uname        ( buf -- ior )  1 63 syscall ;
+: gettimeofday ( tz tv -- ior )  2 96 syscall ;
+: getrandom    ( flags len buf -- n )  3 318 syscall ;
 
 ( Dynamic library interface — fails gracefully in static builds )
 variable libc

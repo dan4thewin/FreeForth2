@@ -1,0 +1,65 @@
+( Test syscall word library -- runs on both ff64 and ff64s )
+( FreeForth comparisons set FLAGS only, don't consume stack. )
+( Pattern: val 0- 0= drop IF ... for zero-check )
+
+variable _ok  variable _fail
+: ok 1 _ok +! ;
+: ng 1 _fail +! ;
+
+( --- getpid --- )
+: test-getpid getpid 0- 0> drop IF ok ELSE ng THEN ;
+
+( --- brk --- )
+: test-brk 0 brk 0- 0> drop IF ok ELSE ng THEN ;
+
+( --- lseek/write/openw/close --- )
+: test-lseek
+  "test109tmp" openw
+  dup 0- 0< drop IF drop ng ng ng ;THEN
+  >r "abcde" r write drop
+  0 0 r lseek 0- 0= drop IF ok ELSE ng THEN
+  0 2 r lseek 5 - 0- 0= drop IF ok ELSE ng THEN
+  r> close drop ;
+
+( --- getcwd: size buf -- len --- )
+: test-getcwd $100 pad getcwd 0- 0> drop IF ok ELSE ng THEN ;
+
+( --- fstat on stdin: buf fd -- ior --- )
+: test-fstat here $200 + 0 fstat 0- 0= drop IF ok ELSE ng THEN ;
+
+( --- pipe + close --- )
+: test-pipe
+  here $200 + dup pipe 0- 0= drop IF
+    dup @ close drop 4 + @ close drop ok
+  ELSE drop ng THEN ;
+
+( --- getrandom: flags len buf -- n --- )
+: test-getrandom 0 8 pad getrandom 8 - 0- 0= drop IF ok ELSE ng THEN ;
+
+( --- mmap/munmap --- )
+: test-mmap
+  0 -1 MAP_PRIVATE MAP_ANONYMOUS | PROT_READ PROT_WRITE | $1000 0 mmap
+  dup -1 - 0- 0<> drop IF
+    dup $42 swap c!
+    dup c@ $42 - 0- 0= drop IF ok ELSE ng THEN
+    $1000 swap munmap 0- 0= drop IF ok ELSE ng THEN
+  ELSE drop ng ng THEN ;
+
+( --- uname --- )
+: test-uname here $400 + uname 0- 0= drop IF ok ELSE ng THEN ;
+
+( --- dup2: newfd oldfd -- fd --- )
+: test-dup2
+  here $200 + dup pipe 0- 0= drop IF
+    dup @ $100 swap dup2 0- 0> drop IF
+      $100 close drop ok
+    ELSE ng THEN
+    dup @ close drop 4 + @ close drop
+  ELSE drop ng THEN ;
+
+( --- run all --- )
+test-getpid test-brk test-lseek test-getcwd test-fstat
+test-pipe test-getrandom test-mmap test-uname test-dup2
+_ok @ . ."passed,_" _fail @ . ."failed" cr
+_fail @ 0- 0= drop IF ."ok" ELSE ."FAIL" THEN cr
+; bye
