@@ -10,6 +10,9 @@
 
 variable xt pvt
 variable _fh pvt
+variable _tty pvt
+create _tiob pvt 64 allot
+_tiob $5401 1 3 16 syscall 0- 0< IF 0 ELSE 1 THEN _tty ! drop ;
 :. sz-		2dup h.sz+ c@ - drop ;
 :. nm-		3dup h.nm+ swap $- drop ;
 :. hdr-		sz- 0= IF nm- ;THEN ;
@@ -127,7 +130,7 @@ create op pvt 256 8* allot ;
 .A? ' 256 TIMES dup op r 8* + ! REPEAT drop ;
 $1 :. callop	xx dup c@ 8* op+ @ execute ;
 $2 :. rexskip	xx dup c@ $F0& $40- 0<>; drop .B $F& rex! ;
-:. _atx		$1B emit '[' emit '4' emit '1' emit 'G' emit ;
+:. _atx		_tty @ 0- 0<> drop IF $1B emit '[' emit '4' emit '1' emit 'G' emit ;THEN 9 emit ;
 $3 :. oneop	xx .A 0 rex! rexskip 0 buf! callop
 		_atx buf c@+ type cr ;
 $4 : see.	xx 0 unknown!
@@ -214,9 +217,9 @@ $7e :. jle	2b 'j' ca 'l' ca 'e' ca sp4 j_ ;op
 $7f :. jg	2b 'j' ca 'g' ca sp5 j_ ;op
 
 \ --- Group 1: immediate arithmetic ---
-$80 :. 80	3b ext 80exta r8 ,a xa 0 ;op
-$81 :. 81	2b ext 80exta r64 ,a .le dup d@ xa 4+ 0 ;op
-$83 :. 83	2b ext 80exta r64 ,a dup cs@ dup .b xa 1+ 0 ;op
+$80 :. 80	3b ext 80exta 7& r8 ,a xa 0 ;op
+$81 :. 81	2b ext 80exta 7& r64 ,a .le dup d@ xa 4+ 0 ;op
+$83 :. 83	2b ext 80exta 7& r64 ,a dup cs@ dup .b xa 1+ 0 ;op
 
 \ --- 0F 8x: long conditional jumps (sub-handlers for op0f table) ---
 \ Sub-handler receives (addr+1) where 0F byte already printed by 0f handler.
@@ -313,11 +316,11 @@ $bd :. movBPi	1b 0 m3 rexW? 0<> IF 5 3 regs64 reg ,a _movi64 ;THEN 5 3 regs32 re
 
 \ --- Shift/Rotate --- (mne3: 10=shl 11=shr 12=sar)
 :. _shl_nm 4 CASE 10 ;THEN 5 CASE 11 ;THEN 7 CASE 12 ;THEN 2drop ??? 0 rdrop ;
-$c1 :. shl	3b ext _shl_nm m3 r64 ,a xa 0 ;op
+$c1 :. shl	3b ext _shl_nm m3 7& r64 ,a xa 0 ;op
 :. _shl1_nm 4 CASE 10 ;THEN 7 CASE 12 ;THEN 2drop ??? 0 rdrop ;
-$d1 :. shl1	2b ext _shl1_nm m3 r64 ,1 0 ;op
+$d1 :. shl1	2b ext _shl1_nm m3 7& r64 ,1 0 ;op
 :. _shcl_nm 4 CASE 10 ;THEN 5 CASE 11 ;THEN 2drop ??? 0 rdrop ;
-$d3 :. sh_cl	2b ext _shcl_nm m3 r64 ,cl 0 ;op
+$d3 :. sh_cl	2b ext _shcl_nm m3 7& r64 ,cl 0 ;op
 
 \ --- Ret --- (mne3: 4=ret)
 $c3 :. ret	1b 4 m3. -1 ;op
