@@ -36,7 +36,7 @@ $103 :. ca		xx buf appendc ;
 :. sp5 sp4 $20 ca ;
 
 \ Hex append — iterative nibble output to buf (replaces pictured number output)
-:. xdigit	$F& $30+ dup $39 > 2drop IF 7 + THEN ca ;
+:. xdigit	$F& $30+ dup $39 > 2drop IF $27 + THEN ca ;
 :. _xlen	0 swap BEGIN swap 1+ swap 4 >> 0- 0= UNTIL drop ;
 $102 :. xa	xx 0- 0< IF '-' ca negate THEN
 		0- 0= IF '0' ca drop ;THEN
@@ -139,7 +139,7 @@ $4 : see.	xx 0 unknown!
 		AGAIN ;
 
 \ Helpers for opcode definitions
-:. jba		dup xa $20 ca
+:. jba		'$' ca dup xa $20 ca
 		findh swap h.sz+ c@+ ba 0; '+' ca xa ;
 :. se		dup $80& 0; drop -128 | ;
 
