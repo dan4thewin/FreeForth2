@@ -2379,42 +2379,68 @@ macro GENWORDS64 {
 ; Comparisons moved to ff64.boot — Forth-defined matching ff.boot pattern
 
 ;; Runtime words (ct=0) — still called via compiled CALL instruction
-WORD64 "cr", _cr, 0, 2
+;; WORD64 entries ordered by ascending code address (XT) so the header
+;; chain walks in decreasing XT order — required for first-match findh.
 
-; ., d,, w,, c,, ,, allot, /, +!, d!, c!, !, cmove, >r, r> removed:
-; shadowed by backtick macros or Forth defs in ff64.boot
+;; Constants (ct=1) — XT stores value, not code address; order irrelevant
 WORD64 "SC", SC, 1, 2
 WORD64 "?#", cond_jmp, 1, 2
 WORD64 "callmark", callmark, 1, 8
-WORD64 "call,", _call_comma, 0, 5
-WORD64 "dcall,", _dcall_comma, 0, 6
 WORD64 "anon", anon, 1, 4
 WORD64 "H", H, 1, 1
 WORD64 "ff_argc", ff_argc, 1, 7
 WORD64 "ff_argv", ff_argv, 1, 7
 WORD64 "_bootxt", bootxt, 1, 7
-WORD64 "depth", _depth, 0, 5
-WORD64 "DS0", _DS0, 0, 3
 WORD64 "segvsetup", _install_segv, 1, 9
-; /, +!, d!, c!, ! removed — shadowed by backtick macros
-WORD64 "d@", _dfetch, 0, 2
-WORD64 "emit", _emit, 0, 4
+WORD64 ">in", tin, 1, 3
+WORD64 "tp", tp, 1, 2
+WORD64 "tib", inbuf, 1, 3
+WORD64 "helpbuf", helpbuf, 1, 7
+WORD64 "xfp", xfp, 1, 3
+
+;; Code words — ascending XT order
+WORD64 ">S0", _rst, 0, 3
+WORD64 "cr", _cr, 0, 2
+WORD64 "zlen", _zlen, 0, 4
+WORD64 "cmove>", _cmove_up, 0, 6
+WORD64 "fill", _fill, 0, 4
 WORD64 "erase", _erase, 0, 5
 WORD64 "$-", _strcmp, 0, 2
-WORD64 "fill", _fill, 0, 4
-; cmove removed — shadowed by cmove` backtick macro
-WORD64 "cmove>", _cmove_up, 0, 6
-WORD64 "zlen", _zlen, 0, 4
-; >r, r> removed — shadowed by backtick macros (runtime also broken)
+WORD64 "emit", _emit, 0, 4
+WORD64 "d@", _dfetch, 0, 2
+WORD64 "depth", _depth, 0, 5
+WORD64 "DS0", _DS0, 0, 3
+WORD64 "call,", _call_comma, 0, 5
+WORD64 "dcall,", _dcall_comma, 0, 6
+WORD64 "anon:`", _anon_colon, 0, 6
+WORD64 ">cs", _cs_push, 0, 3
+WORD64 "cs>", _cs_pop, 0, 3
+WORD64 "s1", _s1_word, 0, 2
+WORD64 "s01", _s01_word, 0, 3
+WORD64 "s08", _s08_word, 0, 3
+WORD64 "s09", _s09_word, 0, 3
+WORD64 ",1", _comma1, 0, 2
+WORD64 ",2", _comma2, 0, 2
+WORD64 ",3", _comma3, 0, 2
+WORD64 ",4", _comma4, 0, 2
+WORD64 "lit`", _lit, 0, 4
+WORD64 "swap`", _swap_inline, 0, 5
+WORD64 "(", _paren, 2, 1
+WORD64 "\", _backslash, 2, 1
 WORD64 "parse", _parse, 0, 5
 WORD64 "lnparse", _lnparse, 0, 7
 WORD64 "wsparse", _wsparse_forth, 0, 7
 WORD64 "header", _header_forth, 0, 6
 WORD64 "exit", _exit_word, 0, 4
+WORD64 ":`", _colon, 0, 2
+WORD64 ";`", _semi, 0, 2
+WORD64 "compiler", _compiler, 0, 8
 WORD64 "catch", _catch, 0, 5
 WORD64 "throw", _throw, 0, 5
+WORD64 "find", _find_forth, 0, 4
 WORD64 "write", _write_word, 0, 5
 WORD64 "read", _read_word, 0, 4
+WORD64 "accept", _accept, 0, 6
 WORD64 "openr", _openr, 0, 5
 WORD64 "openw", _openw, 0, 5
 WORD64 "close", _close, 0, 5
@@ -2423,37 +2449,6 @@ WORD64 "loadfile", _loadfile, 0, 8
 WORD64 "#lib", _dllib, 0, 4
 WORD64 "#fun", _dlfun, 0, 4
 WORD64 "#call", _dlcall, 0, 5
-WORD64 "find", _find_forth, 0, 4
-WORD64 "accept", _accept, 0, 6
-WORD64 "compiler", _compiler, 0, 8
-
-;; Data words (ct=1) — push address/value
-WORD64 ">in", tin, 1, 3
-WORD64 "tp", tp, 1, 2
-WORD64 "tib", inbuf, 1, 3
-WORD64 "helpbuf", helpbuf, 1, 7
-WORD64 "xfp", xfp, 1, 3
-
-;; Compile-time words (ct=1)
-WORD64 "swap`", _swap_inline, 0, 5
-WORD64 "lit`", _lit, 0, 4
-WORD64 ">S0", _rst, 0, 3
-WORD64 "s09", _s09_word, 0, 3
-WORD64 "s08", _s08_word, 0, 3
-WORD64 "s01", _s01_word, 0, 3
-WORD64 "s1", _s1_word, 0, 2
-WORD64 ",4", _comma4, 0, 2
-WORD64 ",3", _comma3, 0, 2
-WORD64 ",2", _comma2, 0, 2
-WORD64 ",1", _comma1, 0, 2
-; (IF/THEN/ELSE/BEGIN/AGAIN/UNTIL/WHILE/REPEAT now in ff64.boot)
-WORD64 "anon:`", _anon_colon, 0, 6
-WORD64 ">cs", _cs_push, 0, 3
-WORD64 "cs>", _cs_pop, 0, 3
-WORD64 ";`", _semi, 0, 2
-WORD64 ":`", _colon, 0, 2
-WORD64 "\", _backslash, 2, 1
-WORD64 "(", _paren, 2, 1
 
 ;; =====================================================================
 ;; Entry point

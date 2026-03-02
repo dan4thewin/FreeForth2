@@ -8004,3 +8004,44 @@ Created experiment 099 with 6 automated tests:
 **Running total:** 178 permanent tests + 558 experiment tests, all passing.
 
 ---
+
+## Experiment 100: WORD64 XT Ordering Fix
+
+**Goal:** Fix the ordering of WORD64 entries in ff64.asm so the header
+chain walks in decreasing XT order, matching the i386 behavior.
+
+### Problem
+
+The `findh` symbol resolver in see64.ff needed a best-match algorithm
+(walking ALL headers) because the header chain wasn't XT-sorted. For
+example, `>S0` (_rst, code line 81) was defined near the end of the
+WORD64 list (asm line 2440), while `cr` (_cr, code line 138) was at the
+top (asm line 2382). Since the WORD64 macro builds the chain in reverse
+order (last entry = newest = H@), the walk encountered `>S0` before `cr`
+despite `>S0` having a lower XT.
+
+### Root Cause
+
+The WORD64 entries were organized by functional category (runtime words,
+data words, compile-time words) rather than by code address order. The
+i386 version didn't have this problem because its WORD macro entries
+happened to be in code-address order.
+
+### Fix
+
+Reordered all WORD64 entries: constants (ct=1) grouped first (their
+order doesn't matter — findh filters them), then all code words (ct=0
+and ct=2) in ascending code-address order. This ensures the header
+chain walks from highest XT to lowest XT, so first-match `>=` returns
+the closest header.
+
+### Test Results
+
+- 178 regression tests PASS
+- All experiment tests PASS (including exp 099 findnm resolution)
+
+### Files Changed
+
+- `ff64.asm` — reordered WORD64 entries by ascending code address
+
+---
