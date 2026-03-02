@@ -8347,3 +8347,65 @@ enabled: ++ increment, -- decrement, within (4 cases), 2over.
 Only BEGIN→CASE→BREAK→END remains as a known bug.
 
 ---
+
+## Experiment 105: Fix BEGIN/CASE/BREAK/END
+
+**Date:** 2026-03-02
+**Commit:** `b93e673`
+
+### Goal
+
+Fix the last known bug: BEGIN→CASE→BREAK→END caused SEGV during
+compilation.
+
+### Root cause
+
+Two bugs in ff64 flow control:
+
+1. **END emitted a backward E9 jump.** Per Lavarenne's docs and i386
+   implementation, END does NOT jump backward — it only resolves
+   forward references (WHILE/BREAK). Backward jumps come exclusively
+   from AGAIN, UNTIL, and REPEAT. The pattern
+   `BEGIN v 1 CASE action1 BREAK 2 CASE action2 BREAK default END`
+   is multi-way dispatch, not a loop.
+
+2. **BEGIN didn't set up mrk or cstack.** The ff64 BREAK pushes fixup
+   addresses to the compile-time stack (cstack), and END pops them.
+   But BEGIN didn't save/restore mrk or push a 0 sentinel, so END
+   found garbage on the cstack → SEGV.
+
+### Key insight from DG
+
+> "START only goes with looping, e.g., AGAIN or REPEAT... BEGIN can
+> go with CASE and END"
+
+This corrected a fundamental misunderstanding. START pairs with ENTER
+and looping closers. BEGIN pairs with everything: WHILE/REPEAT, UNTIL,
+AGAIN, CASE/BREAK/END. The experiment tests (044, 050) had encoded
+the wrong assumption — they used START/BREAK/END for loops.
+
+### Fix
+
+Unified all flow control around mrk + cstack:
+
+- **`_begin`** — shared opener: saves old mrk (2 cells) to cstack,
+  pushes 0 break-sentinel, stores `here` in mrk.
+- **`START`** — calls `_begin`, pushes 0 flag, emits forward E9,
+  updates mrk to after the E9 (loop body start).
+- **`BEGIN`** — calls `_begin`, pushes 0 flag (no rdrop needed).
+- **`RTIMES`** — calls `_begin`, pushes -1 flag + JS fixup.
+- **`AGAIN`/`UNTIL`** — backward jmp via mrk, resolve breaks, restore.
+- **`REPEAT`** — backward jmp, resolve WHILE, resolve breaks,
+  conditional rdrop based on flag (-1 = TIMES loop needs rdrop).
+- **`LOOP`** — backward jmp, resolve JS fixup, resolve breaks, rdrop.
+- **`END`** — resolve breaks only (no backward jump!), drop flag.
+
+The early-boot definitions (used by `type`, `fill`) remain compiled
+as-is. The redefinitions only affect words compiled after line ~313.
+
+### Result
+
+188 regression tests pass (was 185 before this + exp 104).
+All experiment tests pass. No known bugs remain.
+
+---
