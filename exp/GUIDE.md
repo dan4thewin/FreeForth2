@@ -4439,3 +4439,51 @@ fflin64.asm / fflin64s.asm Build wrappers (dynamic / static)
 
 Future ports: ARM64 would replace ff64.asm/ff64.boot but reuse
 fflin64.boot.  macOS would replace fflin64.boot but reuse ff64.boot.
+
+### Perl-Parity Expansion (exp 110)
+
+DG observed that Perl provides a rich set of OS builtins (man perlfunc)
+and directed a comparison.  Of ~76 Perl syscall builtins, ff64 covered
+32 (42%) after exp 109.  The expansion strategy:
+
+**Boot words (fflin64.boot):** Universal words that any program might
+use — process control, filesystem metadata, time, locking.  22 new
+words added:
+
+```
+Process:    getppid alarm setpgid getpgrp getpriority setpriority
+Filesystem: lstat truncate flock link symlink readlink fchmod fchown
+            chroot umask getdents64
+Time:       time times nanosleep
+Compound:   tell (lseek wrapper), wait (wait4 wrapper)
+```
+
+**Loadable library (lib/64/net.ff):** Domain-specific networking words.
+DG's directive: "networking goes in a library, not boot."
+
+```
+Syscalls:     socket connect bind listen accept4 shutdown
+              sendto recvfrom socketpair setsockopt getsockopt
+              getsockname getpeername pselect6
+Convenience:  send recv (sendto/recvfrom with NULL address args)
+Byte-order:   htons (16-bit network byte swap)
+Constants:    AF_UNIX AF_INET AF_INET6 SOCK_STREAM SOCK_DGRAM
+              SOL_SOCKET INADDR_LOOPBACK etc.
+```
+
+**Key discovery — inline strings are NUL-terminated:**
+
+DG spotted a note in ff.ff: "literal strings are already
+zero-terminated."  Confirmed in ff64.asm line 1291: the string compiler
+explicitly writes `mov byte [rbp], 0` after every inline string.  This
+means `zt` is unnecessary for inline string literals — it exists for
+dynamically-constructed strings in buffers.  The `openr`/`openw`
+definitions use `zt drop` but could use plain `drop`.
+
+**The `place` gotcha:** FreeForth's `place ( @src # @dst -- @dst )` is
+raw memcpy.  It does NOT store a count prefix like standard Forth's
+PLACE.  It returns `@dst`, not `@dst+len`.  Code that does
+`"str" buf place 0 swap c!` writes NUL at buf[0], not at buf[len].
+Correct: `"str" buf place N + 0 swap c!` with known length N.
+
+After this experiment, 52 of 76 Perl syscall builtins are covered (68%).

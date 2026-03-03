@@ -549,3 +549,111 @@ gettimeofday ( tz tv -- ior ) get time
 
 getrandom ( flags len buf -- n ) get random bytes
   flags: 0=blocking, 1=GRND_NONBLOCK, 2=GRND_RANDOM.
+
+--- Tier 1+2 syscall words (exp 110) ---
+
+lstat ( buf path -- ior ) like stat but doesn't follow symlinks
+  path must be NUL-terminated. buf >= 144 bytes (struct stat).
+
+nanosleep ( rem req -- ior ) sleep with nanosecond precision
+  req points to 16-byte struct: 8-byte seconds + 8-byte nanoseconds.
+  rem receives remaining time if interrupted (or use 0).
+
+alarm ( seconds -- prev ) set signal alarm timer
+  Returns seconds remaining from previous alarm. 0 cancels alarm.
+
+getppid ( -- pid ) get parent process ID
+
+truncate ( len fd -- ior ) truncate open file to length
+  fd is an open file descriptor.
+
+flock ( op fd -- ior ) advisory file locking
+  op: 1=LOCK_SH, 2=LOCK_EX, 4=LOCK_UN, 8=LOCK_NB (combine with |).
+
+link ( new old -- ior ) create hard link
+  Both paths must be NUL-terminated.
+
+symlink ( new old -- ior ) create symbolic link
+  Both paths must be NUL-terminated.
+
+readlink ( len buf path -- n ) read symbolic link target
+  Returns number of bytes placed in buf, or negative errno.
+
+fchmod ( mode fd -- ior ) change file mode via fd
+  mode: e.g. $1C0 = rwx------.
+
+fchown ( gid uid fd -- ior ) change file owner/group via fd
+
+umask ( mask -- prev ) set file creation mask
+  Returns previous mask. mask: e.g. $1FF = rwxrwxrwx.
+
+getdents64 ( count buf fd -- n ) read directory entries
+  Raw syscall — returns packed dirent64 structs in buf.
+
+time ( tloc -- time ) get time in seconds since epoch
+  tloc: address to store result, or 0 for return value only.
+
+times ( buf -- ticks ) get process times
+  buf points to 32-byte struct tms. Returns clock ticks.
+
+setpgid ( pgid pid -- ior ) set process group ID
+
+getpgrp ( -- pgid ) get process group ID of calling process
+
+getpriority ( who which -- prio ) get scheduling priority
+  which: 0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER.
+
+setpriority ( prio who which -- ior ) set scheduling priority
+
+chroot ( path -- ior ) change root directory
+  path must be NUL-terminated. Requires privilege.
+
+tell ( fd -- offset ) get current file position
+  Convenience: 1 0 fd lseek (SEEK_CUR with offset 0).
+
+wait ( -- pid ) wait for any child process
+  Convenience: wait4(-1, buf, 0, 0). Returns child pid or -errno.
+
+--- Networking library (lib/64/net.ff) ---
+
+Load with: needs net.ff
+
+socket ( proto type domain -- fd ) create socket
+  e.g. 0 SOCK_STREAM AF_INET socket
+
+connect ( addrlen addr fd -- ior ) connect to address
+
+bind ( addrlen addr fd -- ior ) bind socket to address
+
+listen ( backlog fd -- ior ) listen for connections
+
+accept4 ( flags addrlen addr fd -- newfd ) accept connection
+  flags: 0 or SOCK_NONBLOCK|SOCK_CLOEXEC.
+
+shutdown ( how fd -- ior ) shutdown socket
+  how: SHUT_RD(0), SHUT_WR(1), SHUT_RDWR(2).
+
+sendto ( tolen to flags len buf fd -- n ) send data
+recvfrom ( fromlen from flags len buf fd -- n ) receive data
+send ( flags len buf fd -- n ) send without address
+recv ( flags len buf fd -- n ) receive without address
+
+socketpair ( sv proto type domain -- ior ) create socket pair
+  sv points to 2-cell buffer for returned fds.
+
+setsockopt ( optlen optval optname level fd -- ior ) set socket option
+getsockopt ( optlen optval optname level fd -- ior ) get socket option
+getsockname ( addrlen addr fd -- ior ) get local address
+getpeername ( addrlen addr fd -- ior ) get remote address
+
+pselect6 ( sigmask timeout exceptfds writefds readfds nfds -- n )
+  Synchronous I/O multiplexing.
+
+htons ( n -- n ) byte-swap 16-bit value for network byte order
+
+Constants: AF_UNIX(1) AF_INET(2) AF_INET6(10)
+  SOCK_STREAM(1) SOCK_DGRAM(2) SOCK_RAW(3)
+  SOL_SOCKET(1) SO_REUSEADDR(2) SO_KEEPALIVE(9)
+  IPPROTO_IP(0) IPPROTO_TCP(6) IPPROTO_UDP(17)
+  INADDR_ANY(0) INADDR_LOOPBACK($100007F)
+  SHUT_RD(0) SHUT_WR(1) SHUT_RDWR(2)

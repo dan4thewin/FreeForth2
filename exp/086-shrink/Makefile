@@ -22,8 +22,8 @@ test-pno-load:
 test-pno-see:
 	@cd $(ROOT) && printf '"see64.ff" needed ;\nsee cr\nbye\n' | ./ff64 2>&1 | grep -q 'push' && echo "PASS $@" || (echo "FAIL $@"; exit 1)
 
-# Binary is smaller than 378000 (baseline with syscall word library in boot)
+# Binary is smaller than 380000 (baseline with Perl-parity syscall words in boot)
 test-size:
 	@SIZE=$$(stat -c%s $(FF)); \
-	if [ "$$SIZE" -lt 378000 ]; then echo "PASS $@ ($$SIZE < 378000, saved $$((378000 - $$SIZE)) bytes)"; \
-	else echo "FAIL $@ ($$SIZE = $$SIZE, expected < 378000)"; exit 1; fi
+	if [ "$$SIZE" -lt 380000 ]; then echo "PASS $@ ($$SIZE < 380000, saved $$((380000 - $$SIZE)) bytes)"; \
+	else echo "FAIL $@ ($$SIZE = $$SIZE, expected < 380000)"; exit 1; fi

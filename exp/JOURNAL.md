@@ -8572,3 +8572,106 @@ The `drop` preserves FLAGS -- a deliberate FreeForth design choice.
 188 regression + all experiment tests pass on both targets.
 
 ---
+
+## Experiment 110: Perl-Parity Syscall Expansion
+
+### Goal
+
+Compare ff64's OS interaction coverage against Perl's builtins
+(perlfunc) and close the gap. Target: every syscall-based Perl builtin
+that makes sense for a Forth system.
+
+### Analysis
+
+Perl provides ~76 syscall-related builtins across categories: file I/O,
+directory, process, time, socket, and system. Before this experiment,
+ff64 covered 32 of these (42%). The gap was mostly in filesystem
+metadata, process control, and networking.
+
+DG's directive: networking words go in a separate loadable library
+(`lib/64/net.ff`), not in boot code. Boot carries the universally-needed
+words; networking is domain-specific.
+
+### Tier 1: One-liner syscall wrappers (fflin64.boot)
+
+Added 18 new words, each a single `N sysnum syscall` call:
+
+**Process:** getppid, alarm, setpgid, getpgrp, getpriority, setpriority
+**Filesystem:** lstat, truncate, flock, link, symlink, readlink,
+  fchmod, fchown, chroot
+**Time:** time, times, nanosleep
+**Misc:** umask, getdents64
+
+### Tier 2: Compound words (fflin64.boot)
+
+**tell** `( fd -- offset )` — current file position via `lseek(fd,0,1)`.
+**wait** `( -- pid )` — wait for any child via `wait4(-1,buf,0,0)`.
+
+Both are thin convenience wrappers around existing syscalls, following
+Lavarenne's pattern of building useful words from primitives.
+
+### Networking library: lib/64/net.ff
+
+Created a complete BSD socket API as a loadable library:
+
+**14 syscall wrappers:** socket, connect, sendto, recvfrom, shutdown,
+  bind, listen, getsockname, getpeername, socketpair, setsockopt,
+  getsockopt, pselect6, accept4
+
+**Convenience wrappers:** send, recv (sendto/recvfrom with NULL address)
+
+**Byte-order:** htons (16-bit byte swap for network byte order)
+
+**Constants:** AF_UNIX, AF_INET, AF_INET6, SOCK_STREAM, SOCK_DGRAM,
+  SOCK_RAW, SOL_SOCKET, SO_REUSEADDR, SO_KEEPALIVE, IPPROTO_IP/TCP/UDP,
+  INADDR_ANY, INADDR_LOOPBACK, SHUT_RD/WR/RDWR
+
+### Bugs encountered and fixed
+
+**1. `place` is not standard Forth's `place`.**
+FreeForth's `place ( @src # @dst -- @dst )` is raw memcpy — it does NOT
+store a count prefix. Initial test code did `"str" buf place 0 swap c!`
+expecting to NUL-terminate after the string, but `place` returns `@dst`,
+so `0 swap c!` wrote NUL at buf[0], corrupting the first character.
+Fix: `"str" buf place N + 0 swap c!` where N is the known string length.
+
+**2. Inline strings are already NUL-terminated.**
+DG noticed a note in ff.ff: "literal strings are already zero-terminated."
+Confirmed in ff64.asm (line 1291): the string compiler writes a 0 byte
+after every inline string. This means `zt` is unnecessary for inline
+strings — it only matters for dynamically-constructed strings in buffers.
+
+**3. socketpair arg order.**
+Initial definition `( proto type domain sv -- ior )` mapped sv→rdi
+(arg1), but Linux socketpair() expects domain as arg1 and sv as arg4.
+Fixed to `( sv proto type domain -- ior )`.
+
+**4. send/recv convenience wrappers.**
+Initial wrappers pushed 3 args to return stack, but sendto() takes 6
+args. The flags argument ended up in the addrlen register (r9) instead
+of the flags register (r10). Fixed by pushing all 4 user args to rstack
+before inserting the two zero padding args.
+
+### Tests
+
+**exp/110-perl-parity/syscalls.ff** — 11 tests covering Tier 1+2 words:
+getppid, time, alarm, umask, lstat, link, truncate, tell, flock,
+nanosleep, fchmod. All pass on both ff64 and ff64s.
+
+**exp/110-perl-parity/net.ff** — 5 tests: socket creation, socketpair,
+htons byte-swap, bind+listen on loopback. All pass on both targets.
+
+### Coverage after this experiment
+
+~52 of 76 Perl syscall builtins now covered (68%), up from 42%.
+Remaining gaps are mostly in directory iteration (opendir/readdir need
+struct parsing), file tests (-X operators need stat wrapper), and
+DNS resolution (needs file parsing or stub resolver).
+
+### Result
+
+22 new boot words + 14 socket library words + constants.
+Binary grew from 377224 to 378952 bytes (+1728, ~0.5%).
+All 192+ regression tests pass on both ff64 and ff64s.
+
+---

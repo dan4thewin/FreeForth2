@@ -1,0 +1,44 @@
+( Test networking library — needs net.ff )
+needs net.ff
+
+variable _ok  variable _fail
+: ok 1 _ok +! ;
+: ng 1 _fail +! ;
+
+( --- socket: create TCP socket --- )
+: test-socket
+  0 SOCK_STREAM AF_INET socket
+  dup 0- 0> drop IF close drop ok ELSE drop ng THEN ;
+
+( --- socketpair: create unix pair --- )
+: test-socketpair
+  here $200 +
+  dup 0 SOCK_STREAM AF_UNIX socketpair
+  0- 0= drop IF
+    dup @ close drop 4 + @ close drop ok
+  ELSE drop ng THEN ;
+
+( --- htons --- )
+: test-htons
+  $3039 htons $3930 - 0- 0= drop IF ok ELSE ng THEN ;
+
+( --- bind+listen on loopback --- )
+: test-bind-listen
+  0 SOCK_STREAM AF_INET socket
+  dup 0- 0< drop IF drop ng ng ;THEN
+  >r
+  ( build sockaddr_in at here+$300: family=AF_INET, port=0, addr=loopback )
+  here $300 +
+  AF_INET over w!  ( sa_family )
+  0 over 2 + w!    ( sin_port=0 = kernel picks )
+  INADDR_LOOPBACK over 4 + !  ( sin_addr )
+  $10 over r bind
+  0- 0= drop IF ok ELSE ng THEN
+  5 r listen
+  0- 0= drop IF ok ELSE ng THEN
+  r> close drop ;
+
+test-socket test-socketpair test-htons test-bind-listen
+_ok @ . ."passed,_" _fail @ . ."failed" cr
+_fail @ 0- 0= drop IF ."ok" ELSE ."FAIL" THEN cr
+; bye

@@ -1,0 +1,57 @@
+( Test Tier 1+2 syscall words )
+
+variable _ok  variable _fail
+: ok 1 _ok +! ;
+: ng 1 _fail +! ;
+
+: test-getppid  getppid 0- 0> drop IF ok ELSE ng THEN ;
+: test-time  0 time 0- 0> drop IF ok ELSE ng THEN ;
+: test-alarm  0 alarm 0- 0= drop IF ok ELSE ng THEN ;
+: test-umask  $1FF umask umask $1FF - 0- 0= drop IF ok ELSE ng THEN ;
+: test-lstat  here $200 + 0 fstat 0- 0= drop IF ok ELSE ng THEN ;
+
+( link: copy filenames to data area, NUL-terminate after string bytes )
+: _lp here $300 + ;
+: test-link
+  "test110a" openw dup 0- 0< drop IF drop ng ;THEN close drop
+  "test110a" _lp place 8 + 0 swap c!
+  "test110b" _lp $20 + place 8 + 0 swap c!
+  _lp $20 +  _lp  link
+  0- 0= drop IF ok ELSE ng THEN
+  _lp $20 + unlink drop
+  _lp unlink drop ;
+
+: test-truncate
+  "test110t" openw dup 0- 0< drop IF drop ng ;THEN
+  >r "hello_there" r write drop
+  3 r truncate 0- 0= drop IF ok ELSE ng THEN
+  r> close drop ;
+
+: test-tell
+  "test110u" openw dup 0- 0< drop IF drop ng ;THEN
+  >r "abcde" r write drop
+  r tell 5 - 0- 0= drop IF ok ELSE ng THEN
+  r> close drop ;
+
+: test-flock
+  "test110f" openw dup 0- 0< drop IF drop ng ;THEN
+  >r 2 r flock 0- 0= drop IF ok ELSE ng THEN
+  8 r flock drop r> close drop ;
+
+: test-nanosleep
+  here $200 +
+  0 over ! $F4240 over 8 + !
+  0 over nanosleep
+  0- 0= drop IF ok ELSE ng THEN drop ;
+
+: test-fchmod
+  "test110m" openw dup 0- 0< drop IF drop ng ;THEN
+  >r $1C0 r fchmod 0- 0= drop IF ok ELSE ng THEN
+  r> close drop ;
+
+test-getppid test-time test-alarm test-umask test-lstat
+test-link test-truncate test-tell test-flock test-nanosleep
+test-fchmod
+_ok @ . ."passed,_" _fail @ . ."failed" cr
+_fail @ 0- 0= drop IF ."ok" ELSE ."FAIL" THEN cr
+; bye

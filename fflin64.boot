@@ -61,6 +61,36 @@ $20 constant MAP_ANONYMOUS
 : rmdir   ( addr -- ior )  1 84 syscall ;
 : unlink  ( addr -- ior )  1 87 syscall ;
 : rename  ( newpath oldpath -- ior )  2 82 syscall ;
+: link    ( new old -- ior )  2 86 syscall ;
+: symlink ( new old -- ior )  2 88 syscall ;
+: readlink ( size buf addr -- n )  3 89 syscall ;
+: chroot  ( addr -- ior )  1 161 syscall ;
+
+( File metadata )
+: lstat      ( buf addr -- ior )  2 6 syscall ;
+: fchmod     ( mode fd -- ior )  2 91 syscall ;
+: fchown     ( gid uid fd -- ior )  3 93 syscall ;
+: truncate   ( len fd -- ior )  2 77 syscall ;
+: flock      ( op fd -- ior )  2 73 syscall ;
+: umask      ( mask -- prev )  1 95 syscall ;
+: getdents64 ( count buf fd -- n )  3 217 syscall ;
+
+( Time )
+: time      ( tloc -- sec )  1 201 syscall ;
+: alarm     ( seconds -- prev )  1 37 syscall ;
+: nanosleep ( rem req -- ior )  2 35 syscall ;
+: times     ( buf -- ior )  1 100 syscall ;
+
+( Process extras )
+: getppid     ( -- pid )  0 110 syscall ;
+: setpgid     ( pgid pid -- ior )  2 109 syscall ;
+: getpgrp     ( pid -- pgid )  1 111 syscall ;
+: getpriority ( who which -- pri )  2 140 syscall ;
+: setpriority ( pri who which -- ior )  3 141 syscall ;
+
+( Compound words )
+: tell  ( fd -- pos ) 0 1 rot lseek ;
+: wait  ( status -- pid ) 0 0 rot -1 wait4 ;
 
 ( Miscellaneous )
 : uname        ( buf -- ior )  1 63 syscall ;
