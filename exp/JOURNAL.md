@@ -8675,3 +8675,72 @@ Binary grew from 377224 to 378952 bytes (+1728, ~0.5%).
 All 192+ regression tests pass on both ff64 and ff64s.
 
 ---
+
+## Experiment 112: File Test Words via stat/lstat
+
+### Goal
+
+Provide short, useful Perl-style file test words (like `-d`, `-f`, `-r`)
+that work from stat/lstat calls, but with better names.
+
+### Design
+
+All test words use subtraction to set ZF: `dup $F000 & $4000 -`.  The
+result is dropped inside the word — only the original mode remains on the
+stack.  The caller just writes `0= IF`.
+
+This works because:
+1. Subtraction sets ZF at runtime
+2. `drop` preserves FLAGS (it compiles `mov` + `lea`, neither modifies flags)
+3. `RET` preserves FLAGS (CALL/RET don't modify RFLAGS)
+4. `0=` emits **no runtime code** — it only stores `$74` (JE) in `cond_jmp`
+5. `IF` reads `cond_jmp` and emits the conditional jump
+
+So CPU FLAGS from the subtraction inside `is-dir` survive through `drop`,
+through `RET`, all the way to the caller's `IF`.  The caller pattern is
+simply:
+
+```forth
+"path" fmode is-dir 0= IF ."directory" THEN drop
+"path" dir? 0= IF ."yes" THEN
+```
+
+This discovery corrects an earlier assumption that "FLAGS can't cross
+word boundaries."  The CPU flags can — what can't cross is the
+compile-time `cond_jmp` variable, which the caller's `0=` trivially
+re-establishes.
+
+### Words added (lib/64/stat.ff)
+
+**Shared buffer and accessors:**
+- `_stbuf` — 144-byte stat buffer (private variable)
+- `?stat` / `?lstat` — fill buffer from NUL-terminated path
+- `st@` `sz@` `mt@` `nl@` — read mode, size, mtime, nlink from buffer
+
+**Stat+extract (take addr+len from inline strings):**
+- `fmode` — stat path, return st_mode (or -1)
+- `fsize` — stat path, return st_size (or -1)
+- `flmode` — lstat path, return st_mode (or -1)
+
+**Type tests (keep mode, set ZF, drop diff):**
+- `is-reg` `is-dir` `is-link` `is-fifo` `is-sock` `is-blk` `is-chr`
+- Stack: `( mode -- mode )` — caller: `is-dir 0= IF`
+
+**Permission tests (keep mode, set ZF, drop diff):**
+- `can-r` `can-w` `can-x` — test owner permission bit
+- Stack: `( mode -- mode )` — caller: `can-r 0= IF`
+
+**One-shot convenience (consume addr+len, set ZF):**
+- `file?` `dir?` `link?`
+- Stack: `( addr len -- )` — caller: `dir? 0= IF`
+
+### Struct stat offsets (x86-64)
+
+st_mode=24(4B) st_uid=28(4B) st_gid=32(4B) st_size=48(8B)
+st_nlink=16(8B) st_atime=72(8B) st_mtime=88(8B) st_ctime=104(8B)
+
+### Result
+
+18 new words in lib/64/stat.ff.  14 tests passing on both ff64 and ff64s.
+
+---

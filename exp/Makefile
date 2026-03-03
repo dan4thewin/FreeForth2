@@ -61,7 +61,9 @@ EXPERIMENTS = 023-forthmacros64 \
               092-remove-comparisons \
               093-remove-dead-runtime \
               095-locals-and-test \
-              099-see64-improvements
+              099-see64-improvements \
+              110-perl-parity \
+              112-file-tests
 
 test:
 	@fail=0; for d in $(EXPERIMENTS); do \

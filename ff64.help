@@ -314,3 +314,54 @@ Constants: AF_UNIX(1) AF_INET(2) AF_INET6(10)
   IPPROTO_IP(0) IPPROTO_TCP(6) IPPROTO_UDP(17)
   INADDR_ANY(0) INADDR_LOOPBACK($100007F)
   SHUT_RD(0) SHUT_WR(1) SHUT_RDWR(2)
+
+\ === File test library (lib/64/stat.ff) ===
+\ Load with: needs stat.ff
+\ Subtraction sets ZF; drop and RET preserve it.
+\ 0= just stores cond_jmp — no runtime code.
+\ Caller pattern: TEST 0= IF ... THEN drop
+
+?stat ( addr -- ior ) stat a NUL-terminated path into shared buffer
+?lstat ( addr -- ior ) lstat into shared buffer (doesn't follow symlinks)
+st@ ( -- mode ) read st_mode from shared buffer
+sz@ ( -- size ) read st_size from shared buffer
+mt@ ( -- time ) read st_mtime from shared buffer
+nl@ ( -- nlink ) read st_nlink from shared buffer
+  see also: ?stat ?lstat st@ sz@ mt@ nl@
+
+fmode ( addr len -- mode|-1 ) stat path, return st_mode
+fsize ( addr len -- size|-1 ) stat path, return st_size
+flmode ( addr len -- mode|-1 ) lstat path, return st_mode
+  Inline strings work directly: "path" fmode
+  see also: fmode fsize flmode
+
+is-reg  ( mode -- mode ) test for regular file (sets ZF)
+is-dir  ( mode -- mode ) test for directory (sets ZF)
+is-link ( mode -- mode ) test for symbolic link (sets ZF)
+is-fifo ( mode -- mode ) test for named pipe (sets ZF)
+is-sock ( mode -- mode ) test for socket (sets ZF)
+is-blk  ( mode -- mode ) test for block device (sets ZF)
+is-chr  ( mode -- mode ) test for character device (sets ZF)
+  Chainable: "f" fmode is-reg 0= IF ... THEN drop
+  see also: is-reg is-dir is-link is-fifo is-sock is-blk is-chr
+
+can-r ( mode -- mode ) test owner-read permission (sets ZF)
+can-w ( mode -- mode ) test owner-write permission (sets ZF)
+can-x ( mode -- mode ) test owner-execute permission (sets ZF)
+  see also: can-r can-w can-x is-reg
+
+file? ( addr len -- ) is path a regular file? (sets ZF)
+dir?  ( addr len -- ) is path a directory? (sets ZF)
+link? ( addr len -- ) is path a symbolic link? (sets ZF)
+  "path" dir? 0= IF ."yes" THEN
+  see also: file? dir? link? fmode fsize
+
+st.mode ( -- 24 ) offset of st_mode in struct stat
+st.size ( -- 48 ) offset of st_size in struct stat
+st.nlink ( -- 16 ) offset of st_nlink
+st.uid  ( -- 28 ) offset of st_uid
+st.gid  ( -- 32 ) offset of st_gid
+st.atime ( -- 72 ) offset of st_atime
+st.mtime ( -- 88 ) offset of st_mtime
+st.ctime ( -- 104 ) offset of st_ctime
+  see also: st.mode st.size st.nlink stat fstat lstat

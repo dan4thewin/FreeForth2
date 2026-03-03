@@ -58,6 +58,14 @@ This is a defining attribute of FreeForth (and FreeForth2):
   source of faulty assumptions."
 - Dotted comparisons (`=.`, `<.`, etc.) and `IF.`/`WHILE.`/`UNTIL.`
   are legitimate words but belong in Forth (ff64.boot), not assembly.
+- **FLAGS cross word boundaries.** `0=`/`0<>`/`0<`/`0>` emit NO
+  runtime code — they only store a Jcc opcode in `cond_jmp`. It is
+  `0-` (emitting `or reg,reg`) or binary comparisons (`=`, `<`, etc.)
+  that set CPU FLAGS at runtime. Since `CALL`/`RET` don't modify
+  RFLAGS, and `drop` is flags-preserving (`mov`+`lea`), a word can
+  set FLAGS internally (via subtraction, test, etc.) and the caller
+  just writes `0= IF`. What can't cross is `cond_jmp` (compile-time
+  state), which the caller's `0=` trivially re-establishes.
 
 ## Debugging generated code
 

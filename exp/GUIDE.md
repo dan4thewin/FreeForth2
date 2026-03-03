@@ -566,6 +566,16 @@ boolean values**. Instead:
 3. `IF`/`UNTIL`/`WHILE` read `cond_jmp`, invert the condition (XOR 1),
    and emit a long conditional jump. No test, no DROP.
 
+**Key insight: `0=`, `0<>`, `0<`, `0>` etc. emit NO runtime code.**
+They only store a Jcc opcode in `cond_jmp` — it is `0-` (which emits
+`or reg,reg`) or a binary comparison (`=`, `<`, etc., which emits
+`cmp rdx,rbx`) that sets CPU FLAGS at runtime. This means CPU FLAGS
+survive across word boundaries: `CALL`/`RET` don't modify RFLAGS, and
+`drop` uses `mov`+`lea` (also flags-preserving). A word can set FLAGS
+internally (e.g., via subtraction), and the caller can simply write
+`0= IF` — the `0=` just tells `IF` which jump opcode to use, without
+clobbering the surviving flags.
+
 This eliminates the setcc+movzx+neg+DROP sequence (~16 bytes) and
 preserves the data stack, enabling the elegant FreeForth idioms:
 

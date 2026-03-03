@@ -1,0 +1,73 @@
+( stat.ff — file tests via stat/lstat )
+( Load with: needs stat.ff )
+" stat" features append
+
+( --- shared stat buffer, 144 bytes --- )
+variable _stbuf pvt 136 allot
+
+( --- struct stat field offsets [x86-64] --- )
+24 constant st.mode
+48 constant st.size
+16 constant st.nlink
+28 constant st.uid
+32 constant st.gid
+72 constant st.atime
+88 constant st.mtime
+104 constant st.ctime
+
+( --- fill shared buffer from a NUL-terminated path --- )
+: ?stat  ( addr -- ior ) _stbuf swap stat ;
+: ?lstat ( addr -- ior ) _stbuf swap lstat ;
+
+( --- read fields from shared buffer [call ?stat first] --- )
+: st@ ( -- mode )  _stbuf st.mode + w@ ;
+: sz@ ( -- size )  _stbuf st.size + @ ;
+: mt@ ( -- time )  _stbuf st.mtime + @ ;
+: nl@ ( -- nlink ) _stbuf st.nlink + @ ;
+
+( --- stat+extract: take addr+len, return field --- )
+( Returns -1 on stat failure.  Inline strings work directly: )
+(   "path" fmode .                                            )
+: fmode ( addr len -- mode|-1 )
+  drop ?stat 0- 0< drop IF -1 ;THEN st@ ;
+: fsize ( addr len -- size|-1 )
+  drop ?stat 0- 0< drop IF -1 ;THEN sz@ ;
+: flmode ( addr len -- mode|-1 )
+  drop ?lstat 0- 0< drop IF -1 ;THEN st@ ;
+
+( === Type tests ===                                    )
+( Subtraction sets ZF; drop preserves it; RET preserves )
+( it; 0= just stores cond_jmp [no runtime code].        )
+( Caller pattern: TYPE 0= IF ... THEN drop              )
+(                                                       )
+( Chained:                                              )
+(   "path" fmode is-dir 0= IF ."dir" THEN              )
+(                is-reg 0= IF ."file" THEN              )
+(                drop                                   )
+
+: is-reg  ( mode -- mode ) dup $F000 & $8000 - drop ;
+: is-dir  ( mode -- mode ) dup $F000 & $4000 - drop ;
+: is-link ( mode -- mode ) dup $F000 & $A000 - drop ;
+: is-fifo ( mode -- mode ) dup $F000 & $1000 - drop ;
+: is-sock ( mode -- mode ) dup $F000 & $C000 - drop ;
+: is-blk  ( mode -- mode ) dup $F000 & $6000 - drop ;
+: is-chr  ( mode -- mode ) dup $F000 & $2000 - drop ;
+
+( === Permission tests ===                              )
+( Same mechanism — subtraction sets ZF, drop preserves. )
+( Caller pattern: PERM 0= IF ... THEN drop              )
+(                                                       )
+(   "path" fmode can-r 0= IF ."readable" THEN drop     )
+
+: can-r ( mode -- mode ) dup $100 & $100 - drop ;
+: can-w ( mode -- mode ) dup  $80 &  $80 - drop ;
+: can-x ( mode -- mode ) dup  $40 &  $40 - drop ;
+
+( === One-shot convenience ===                          )
+( Take addr+len [inline strings work directly].         )
+( Subtraction sets ZF; nothing left on stack.           )
+(   "path" dir? 0= IF ."yes" THEN                      )
+
+: file? ( addr len -- ) fmode $F000 & $8000 - drop drop ;
+: dir?  ( addr len -- ) fmode $F000 & $4000 - drop drop ;
+: link? ( addr len -- ) flmode $F000 & $A000 - drop drop ;

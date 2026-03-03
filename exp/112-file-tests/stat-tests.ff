@@ -1,0 +1,39 @@
+( Test stat.ff file test words )
+needs stat.ff
+
+variable _ok  variable _fail
+: ok 1 _ok +! ;
+: ng 1 _fail +! ;
+
+( --- fmode / fsize --- )
+: test-fmode  "." fmode 0- 0> drop IF ok ELSE ng THEN ;
+: test-fsize  "ff64.asm" fsize 0- 0> drop IF ok ELSE ng THEN ;
+: test-noent  "nosuchfile" fmode -1 - 0- 0= drop IF ok ELSE ng THEN ;
+
+( --- type tests: subtraction sets ZF, 0= just sets cond_jmp --- )
+: test-is-dir  "." fmode is-dir 0= IF ok ELSE ng THEN drop ;
+: test-is-reg  "ff64.asm" fmode is-reg 0= IF ok ELSE ng THEN drop ;
+: test-not-dir "ff64.asm" fmode is-dir 0<> IF ok ELSE ng THEN drop ;
+
+( --- permission tests: same mechanism --- )
+: test-can-r  "ff64.asm" fmode can-r 0= IF ok ELSE ng THEN drop ;
+: test-can-w  "ff64.asm" fmode can-w 0= IF ok ELSE ng THEN drop ;
+
+( --- one-shot convenience: nothing left on stack --- )
+: test-dir?   "." dir? 0= IF ok ELSE ng THEN ;
+: test-file?  "ff64.asm" file? 0= IF ok ELSE ng THEN ;
+: test-not-file? "." file? 0<> IF ok ELSE ng THEN ;
+
+( --- field accessors after ?stat --- )
+: test-st@  "." drop ?stat drop st@ 0- 0> drop IF ok ELSE ng THEN ;
+: test-sz@  "ff64.asm" drop ?stat drop sz@ 0- 0> drop IF ok ELSE ng THEN ;
+: test-mt@  "ff64.asm" drop ?stat drop mt@ 0- 0> drop IF ok ELSE ng THEN ;
+
+test-fmode test-fsize test-noent
+test-is-dir test-is-reg test-not-dir
+test-can-r test-can-w
+test-dir? test-file? test-not-file?
+test-st@ test-sz@ test-mt@
+_ok @ . ."passed,_" _fail @ . ."failed" cr
+_fail @ 0- 0= drop IF ."ok" ELSE ."FAIL" THEN cr
+; bye
