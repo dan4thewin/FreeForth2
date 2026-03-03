@@ -3,7 +3,7 @@
 \ Run: ./ff64 ': prompt ;' -f test/test64.ff
 
 needs test.ff
-188 >plan
+189 >plan
 
 \ ============================================================
 \ Stack operations (from exp 023, 028, 091)
@@ -457,9 +457,14 @@ testing vector !^ redirect
 _tvrd ;
 t{ _tvec -> 30 }t
 
-testing vector n^ reset
+testing vector n^ nullify
 : _tvrst _tvec n^ ;
 _tvrst ;
+t{ 99 _tvec -> 99 }t
+
+testing vector ^^ reset to default
+: _tvdflt _tvec ^^ ;
+_tvdflt ;
 t{ _tvec -> 20 }t
 
 \ ============================================================

@@ -199,7 +199,7 @@ variable mainxt pvt
 : -f` ;` wsparse needed "main" find 0- 0<> drop IF drop ;THEN _f_main ;
 
 ( quit — reset _top to default, then call it )
-: quit _top ' ^^ _top ;
+: quit _top ^^ _top ;
 
 ( Register base features — _feat` appends space-separated names )
 :. _feat` ;` $20 features appendc wsparse features append ;

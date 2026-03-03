@@ -369,11 +369,14 @@ variable mrk 0 mrk 8+ !
 : :^` :` $68, ,1 here 4+ 1+ d, $C3, ,1 ;
 :. -c here dup 4- d@ + -5 allot 0 callmark! ;
 : -call callmark@ here = 2drop IF -c ELSE drop THEN ;
-: @^ ( xt -- target ) 1+ d@ ;
+:. _nop ;
+H@ @ constant _nop pvt
+: nop` $90 c, ;
+: @^` -call 1+ lit` $1B8B, s09 ;
 : !^` -call 1+ lit` d!` ;
-: ^^  ( xt -- ) dup 6+ swap 1+ d! ;
-: n^` -call dup 6+ swap 1+ d! ;
-: x^  ( xt -- ) 6+ >r ;
+: ^^` -call dup 6 + lit` 1+ lit` d!` ;
+: n^` -call _nop swap 1+ d! ;
+: x^` -call 6+ lit` >r` ;
 : '` -call lit` ;
 ( ?` converts preceding call to conditional jump )
 :. _?` ?# c@ 0 ?# c! dup 0- 0= drop IF drop $75 THEN
@@ -540,9 +543,6 @@ variable features 100 allot
 : appendc tuck c@+ + tuck c! 0 over 1+ c! over- swap c! ;
 : -v` ."\ features:" features c@+ type cr ;
 : zt over+ 0 swap c! ;
-
-( nop — do-nothing word, used as placeholder )
-:. nop ;
 
 ( 2swap` — inline version of 2swap )
 : 2swap` rot` >r` rot` r>` ;

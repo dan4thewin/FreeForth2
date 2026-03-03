@@ -47,15 +47,21 @@ h.next ( hdr -- hdr' ) advance to the next dictionary header
   Creates a word with a push/ret preamble: 68 <target32> C3.
   The body follows at xt+6.  The push operand can be rewritten
   by !^ n^ ^^ to redirect or disable the vector.
-!^ ( new-target xt -- ) set vector target
-  Writes new-target into the vector's push operand at xt+1.
-@^ ( xt -- target ) read current vector target
-n^ ( xt -- ) nop a vector (make it do nothing)
-  Sets target to xt+5 (the ret instruction): push xt+5; ret.
-x^ ( xt -- ) execute a vector's body directly
-  Pushes xt+6 onto the return stack, skipping the push/ret.
-^^ ( xt -- ) reset vector to its default body
-  Writes xt+6 (body start) into the push operand.
+!^` ( val vec !^ -- ) compile: set vector target from TOS
+  Backtick macro.  Uncalls preceding word to get xt, compiles
+  code that stores TOS into the vector's push operand at xt+1.
+@^` ( vec @^ -- val ) compile: read current vector target
+  Backtick macro.  Uncalls preceding word, compiles inline d@
+  that reads the 32-bit push operand at xt+1.
+n^` ( vec n^ -- ) compile: nop a vector (make it do nothing)
+  Backtick macro.  Uncalls preceding word, stores _nop's xt
+  into the push operand so the vector does nothing when called.
+x^` ( vec x^ -- ) compile: execute a vector's body directly
+  Backtick macro.  Uncalls preceding word, compiles code that
+  pushes xt+6 onto the return stack, skipping the push/ret.
+^^` ( vec ^^ -- ) compile: reset vector to its default body
+  Backtick macro.  Uncalls preceding word, compiles code that
+  writes xt+6 (body start) into the push operand.
   see also: :^ !^ @^ n^ x^ ^^
 
 \ === Peephole optimizers ===
@@ -112,8 +118,8 @@ pad ( -- addr ) scratch buffer: here + 256
   Temporary workspace safe from ongoing compilation at here.
   Address changes whenever here changes — don't hold across defs.
 
-nop ( -- ) do nothing
-  Empty word; used as placeholder for vector targets.
+nop` ( -- ) compile a NOP (0x90) machine instruction
+  : nop` $90 c, ;
 
 quit ( -- ) reset _top to default and restart the REPL
 

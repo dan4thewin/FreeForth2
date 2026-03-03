@@ -8880,3 +8880,83 @@ Binary: 378952 → 378640 = **312 bytes saved total**.
 Assembly WORD64 entries: 62 → 55.
 
 ---
+
+## Experiment 114: Vector ops → backtick macros, nop emits 0x90
+
+**Date:** 2026-03-03
+**Branch:** static-elf64
+
+### Goal
+
+Convert all six vector manipulation words (@^, !^, ^^, n^, x^, ') to
+backtick macros matching i386 FreeForth semantics, and make `nop` emit
+a real x86 NOP instruction (0x90) instead of being a callable no-op.
+
+### Background
+
+In i386 FreeForth, all vector ops are backtick macros that use `-call`
+to uncall the preceding word and operate on its xt at compile time.
+The ff64 port initially implemented @^, ^^, and x^ as runtime words
+taking an xt from the stack — requiring `vec ' @^` instead of the
+correct `vec @^`.  The test/vector1.ff suite (ported from i386) exposed
+this: only 4 of 13 tests passed initially.
+
+### Key challenge: 64-bit addresses in macro code
+
+The i386 `^^` emits a single `mov dword [xt+1], xt+6` instruction
+(`C7 05 addr32 imm32`) — one x86-32 instruction that writes the
+default body address back into the vector's jump target.  In x86-64,
+absolute 32-bit addresses don't work (the dictionary lives above 4GB).
+
+**Solution:** Use `lit`` and `d!`` to emit portable stack-based code:
+
+```
+: ^^` -call dup 6 + lit` 1+ lit` d!` ;
+```
+
+At user compile time (^^'s runtime): `-call` gets xt, then `dup 6 +`
+computes the default body address (xt+6), `lit`` emits a push of that
+value, `1+` computes the target slot address (xt+1), `lit`` emits a
+push of that, and `d!`` emits a 32-bit store.  The user's compiled code
+thus contains: `push(xt+6), push(xt+1), d!` — resetting the vector.
+
+### nop as 0x90
+
+`nop` was `: nop ;` (a callable word whose body is just `ret`).  DG
+requested it emit a real x86 NOP.  Split into:
+
+- `:. _nop ;` — private callable no-op (used by `n^` for its target xt)
+- `H@ @ constant _nop pvt` — captures _nop's xt as a constant
+- `: nop` $90 c, ;` — backtick macro that emits 0x90
+
+### n^ and the _nop constant trick
+
+`n^` needs to store nop's xt into the vector's jump target.  Inside a
+backtick macro body, getting another word's xt requires a constant
+(ct=$21), which the compiler compiles as a literal push.  So `_nop`
+inside n^'s body compiles a `push nop-xt` that executes at n^'s runtime:
+
+```
+: n^` -call _nop swap 1+ d! ;
+```
+
+### Changes
+
+- **ff64.boot**: @^ → macro (`-call 1+ lit` $1B8B, s09`), ^^ → macro
+  (`-call dup 6 + lit` 1+ lit` d!``), x^ → macro (`-call 6+ lit` >r``),
+  n^ → uses `_nop` constant.  Added `nop`` emitting 0x90.
+- **fflin64.boot**: `quit` changed from `_top ' ^^ _top` to
+  `_top ^^ _top` (^^ is now a macro using -call).
+- **exp/041-vectors64/Makefile**: Updated @^ and x^ tests to use
+  macro syntax (no preceding `'`).
+- **test/test64.ff**: Fixed n^ test (expects nop, not default body),
+  added ^^ reset-to-default test.  189 tests, all PASS.
+- **test/vector1.ff**: 13/13 PASS (was 4/13 before).
+
+### Results
+
+- test64.ff: 189/189 PASS
+- vector1.ff: 13/13 PASS
+- exp tests: all previously-passing tests still pass
+
+---

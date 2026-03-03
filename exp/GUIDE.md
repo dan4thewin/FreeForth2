@@ -2298,7 +2298,7 @@ by `_semi` in the assembly.
 is non-zero. Used for conditional compilation patterns where a name
 might resolve to zero (indicating "not available").
 
-### Runtime Vector Operations
+### Vector Operations — All Macros
 
 With `-call` and `'` working, the full vector lifecycle is:
 
@@ -2306,20 +2306,22 @@ With `-call` and `'` working, the full vector lifecycle is:
 :^ greet ." hello" cr ;     \ define vector with default body
 greet                        \ → "hello"
 : hi ." hi" cr ;
-hi ' greet ' !^              \ redirect greet to hi
+hi ' greet !^                \ redirect greet to hi
 greet                        \ → "hi"
-greet ' x^                   \ call original body → "hello"
-greet ' n^                   \ disable vector (returns immediately)
+greet x^                     \ call original body → "hello"
+greet n^                     \ disable vector (nop)
 greet                        \ → (nothing)
+greet ^^                     \ reset to default
+greet                        \ → "hello"
 ```
 
 ### Vector ops: i386 vs x86-64
 
-The vector manipulation words reveal a fundamental difference between the
-two architectures.  In i386, all vector ops are backtick macros.  In
-x86-64, two must be runtime words.
+All six vector manipulation words are backtick macros in both
+architectures.  Each uses `-call` to uncall the preceding word and
+operate on its xt at compile time.
 
-**`!^` (set vector target) — macro on both:**
+**`!^` (set vector target):**
 
 | i386 | `-call $1D89, s08 1+ , drop`` |
 |------|------|
@@ -2330,65 +2332,72 @@ time.  i386 emits `mov [xt+1], reg` directly (one instruction, reg from
 SWAPbit).  ff64 pushes `xt+1` as a literal, then compiles an inline `d!`
 — the value comes from TOS at runtime.
 
-**`n^` (nop a vector) — macro on both:**
-
-| i386 | `-call nop ' lit` SKIP !^`` |
-|------|------|
-| ff64 | `-call dup 6+ swap 1+ d!` |
-
-Both operate entirely at compile time.  `-call` recovers the xt, then the
-body address (`xt+6`) is stored at `xt+1` — making the push/ret jump to
-the body (i.e., the default behavior, as if the vector were never
-redirected).  ff64's version does the `d!` at compile time on the
-compile-time stack, not at runtime.
-
-**`^^` (reset vector to default) — macro in i386, runtime in ff64:**
-
-| i386 | `-call $05C7, ,2 dup 1+ , 6+ ,` |
-|------|------|
-| ff64 | `dup 6+ swap 1+ d!` |
-
-i386 emits `mov dword [xt+1], xt+6` — a single x86-32 instruction with
-both an absolute address and an immediate.  x86-64 has no `mov [abs64],
-imm32` encoding, so `^^` must be a runtime colon word that receives the
-xt from `'` on the data stack.
-
-This matters because `^^` is called at runtime by `quit`:
-```forth
-: quit _top ' ^^ _top ;
-```
-The `'` compiles `_top`'s xt as a runtime literal.  In i386, `^^` then
-compiles an inline constant store (no call overhead).  In ff64, it's a
-function call that does three stack operations + a `d!` + return.
-
-**`x^` (execute vector body) — macro in i386, runtime in ff64:**
-
-| i386 | `-call 6+ dcall,` |
-|------|------|
-| ff64 | `6+ >r` |
-
-i386 emits a direct `call xt+6` to the body.  In ff64, `x^` is a runtime
-word that adds 6 to the xt and pushes to the return stack (`>r`), so
-`ret` jumps there.  Making it a macro would require `lit` >r`` but `lit``
-uses `push imm32` which sign-extends — this works for addresses below 2GB
-(the static binary) but fails in the dynamic build where code maps above
-4GB.
-
-**`@^` (fetch vector target) — macro in i386, runtime in ff64:**
+**`@^` (fetch vector target):**
 
 | i386 | `-call over` $1D8B, s08 1+ ,` |
 |------|------|
-| ff64 | `1+ d@` |
+| ff64 | `-call 1+ lit` $1B8B, s09` |
 
-i386 emits `mov reg, [xt+1]`.  ff64 keeps it as a runtime word because
-there's no `d@`` backtick macro yet (needs `mov ebx, [rbx]` without
-REX.W).  A `d@`` macro is straightforward to add — `$1B8B, s09` — which
-would make `@^`` trivial: `-call 1+ lit` d@``.
+i386 emits `mov reg, [xt+1]`.  ff64 inlines a 32-bit fetch: `$1B8B`
+encodes `mov ebx, [rbx]` (without REX.W prefix, so zero-extends to 64
+bits), with `s09` applying the SWAPbit.  This is effectively an inline
+`d@` — reading the 32-bit relative jump target.
 
-**Summary:** i386 can encode absolute 32-bit addresses as immediates in
-instructions, making all vector ops zero-overhead macros.  x86-64's
-64-bit address space means `^^`, `x^`, and `@^` pay call overhead.
-The gap is small — these words are rarely called in hot paths.
+**`^^` (reset vector to default):**
+
+| i386 | `-call $05C7, ,2 dup 1+ , 6+ ,` |
+|------|------|
+| ff64 | `-call dup 6 + lit` 1+ lit` d!`` |
+
+i386 emits `mov dword [xt+1], xt+6` — a single x86-32 instruction with
+both an absolute address and an immediate.  x86-64 can't use that
+encoding (addresses exceed 32 bits), so it uses `lit`/d!`` to emit
+stack-based code: at user runtime, pushes `xt+6` (default body addr) and
+`xt+1` (target slot), then stores with `d!`.
+
+This matters because `^^` is used by `quit`:
+```forth
+: quit _top ^^ _top ;
+```
+The `-call` in `^^` uncalls `_top` to get its xt, then emits code to
+reset `_top`'s jump target to its default body.
+
+**`n^` (nop a vector):**
+
+| i386 | `-call nop ' lit` SKIP !^`` |
+|------|------|
+| ff64 | `-call _nop swap 1+ d!` |
+
+i386 gets nop's xt via `nop '` inside the macro body and stores it
+at `xt+1`.  ff64 can't use `nop '` (the `'` executes at n^'s
+definition time, not at macro expansion time).  Instead, a private
+constant `_nop` (ct=$21) holds nop's xt — the compiler pushes it as a
+literal when n^ executes.  The store (`swap 1+ d!`) happens at compile
+time on the compile-time stack.
+
+**`x^` (execute vector body):**
+
+| i386 | `-call 6+ dcall,` |
+|------|------|
+| ff64 | `-call 6+ lit` >r`` |
+
+i386 emits a direct `call xt+6` to the body.  ff64 pushes `xt+6` as a
+literal, then compiles `>r` — the return address trick.  When the user
+code reaches this point, `>r` pushes the body address onto the return
+stack; the subsequent `ret` jumps there.
+
+**`'` (compile-time tick):**
+
+| i386 | `-call lit`` |
+|------|------|
+| ff64 | `-call lit`` |
+
+Identical.  `-call` recovers the xt, `lit`` compiles it as a literal.
+
+**Summary:** All vector ops are now zero-overhead macros in both
+architectures.  The x86-64 versions use `lit`/d!`` where i386 uses
+absolute-address MOV encodings, adding a few bytes of generated code
+but no function-call overhead.
 
 **Running total:** ~225 words/macros ported. 234 tests across 46
 experiments, all passing.
