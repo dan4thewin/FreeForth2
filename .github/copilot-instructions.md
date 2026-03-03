@@ -44,6 +44,17 @@ This is a core design principle from DG and from Lavarenne's original work:
 - Lavarenne's choice to implement `dup` as `under` `nipdup` contains a
   deep revelation about this philosophy.
 
+## Porting principle: semantics, not encodings
+
+When porting backtick macros from i386, **port the compile-time
+semantics, not the x86 instruction encoding.**  A backtick macro's job
+is to resolve things at compile time and emit whatever runtime code
+achieves the effect.  If the i386 version emits a single `mov [abs32],
+imm32` and x86-64 has no equivalent, the answer is *not* "make it a
+runtime word" — it's "emit different instructions (`lit`/`d!``) that
+achieve the same compile-time resolution."  FreeForth's `lit`` and the
+backtick store/fetch macros are the portable building blocks.
+
 ## FLAGS-based conditionals
 
 FreeForth uses CPU FLAGS rather than stack booleans for conditionals.
