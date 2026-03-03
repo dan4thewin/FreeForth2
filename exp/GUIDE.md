@@ -2315,89 +2315,184 @@ greet ^^                     \ reset to default
 greet                        \ → "hello"
 ```
 
-### Vector ops: i386 vs x86-64
+### Vector ops: i386 vs x86-64 — a lesson in porting philosophy
 
 All six vector manipulation words are backtick macros in both
-architectures.  Each uses `-call` to uncall the preceding word and
-operate on its xt at compile time.
+architectures.  This was not obvious during the port — an early version
+made `^^`, `x^`, and `@^` into runtime words, reasoning that x86-64's
+64-bit address space precluded the single-instruction encodings that
+i386 uses.  That reasoning was wrong, and the path to correcting it
+reveals something important about how FreeForth's compiler works.
+
+#### The trap: instruction-level thinking
+
+The i386 `^^` emits one machine instruction:
+
+```
+: ^^` -call $05C7, ,2 dup 1+ , 6+ , ;   \ mov dword [xt+1], xt+6
+```
+
+This `mov dword [abs32], imm32` packs both the destination address and
+the value into a single x86-32 instruction.  On x86-64, there is no
+equivalent — `mov [abs64], imm32` doesn't exist, because instruction
+operands can't hold 64-bit absolute addresses.
+
+The initial conclusion was: "no single instruction → can't be a macro →
+must be a runtime word."  This led to `^^` taking an xt from the stack:
+
+```forth
+: ^^ dup 6+ swap 1+ d! ;         \ WRONG: runtime word, needs vec ' ^^
+```
+
+This broke the `-call` contract.  Users had to write `vec ' ^^` instead
+of `vec ^^`, and `quit` needed `_top ' ^^ _top` — a departure from
+i386 syntax.  The vector1.ff test suite (ported from i386) exposed the
+problem: only 4 of 13 tests passed.
+
+#### The insight: macros emit *code*, not *instructions*
+
+A backtick macro's job is to resolve things at compile time and emit
+whatever runtime code achieves the effect.  It doesn't have to emit the
+*same instruction* as i386.  FreeForth's own `lit`` and `d!`` macros
+are the building blocks:
+
+```forth
+: ^^` -call dup 6 + lit` 1+ lit` d!` ;
+```
+
+At macro expansion time (when the user writes `vec ^^`):
+1. `-call` uncalls `vec`, recovering its xt onto the compile-time stack
+2. `dup 6 +` computes the default body address (xt+6)
+3. `lit`` emits a push of that address into the user's code
+4. `1+` computes the target slot address (xt+1)
+5. `lit`` emits a push of that address into the user's code
+6. `d!`` emits an inline 32-bit store
+
+The user's compiled code contains three operations — push, push, store
+— where i386 had one.  But the *macro* still resolves everything at
+compile time.  There is no function call, no dictionary lookup, no stack
+gymnastics at runtime beyond the generated push/push/store sequence.
+
+This is the same pattern `!^` already used successfully.  The mistake
+was thinking `^^` was fundamentally different because its i386 version
+used a different x86 encoding.
+
+#### The six vector ops compared
 
 **`!^` (set vector target):**
 
-| i386 | `-call $1D89, s08 1+ , drop`` |
-|------|------|
-| ff64 | `-call 1+ lit` d!`` |
+```
+i386:  -call $1D89, s08 1+ , drop`      \ mov [xt+1], reg
+ff64:  -call 1+ lit` d!`                 \ push(xt+1), d!(TOS)
+```
 
-Both consume the preceding `call` via `-call` to get the xt at compile
-time.  i386 emits `mov [xt+1], reg` directly (one instruction, reg from
-SWAPbit).  ff64 pushes `xt+1` as a literal, then compiles an inline `d!`
-— the value comes from TOS at runtime.
+Both get the xt via `-call`.  i386 emits `mov [xt+1], reg` — one
+instruction that reads the value from whichever register SWAPbit
+selects.  ff64 pushes `xt+1` as a literal, then compiles an inline
+`d!` that takes the value from TOS at runtime.  Same effect: the
+value on the data stack gets written to the vector's jump target.
 
 **`@^` (fetch vector target):**
 
-| i386 | `-call over` $1D8B, s08 1+ ,` |
-|------|------|
-| ff64 | `-call 1+ lit` $1B8B, s09` |
+```
+i386:  -call over` $1D8B, s08 1+ ,      \ mov reg, [xt+1]
+ff64:  -call 1+ lit` $1B8B, s09          \ push(xt+1), mov ebx,[rbx]
+```
 
-i386 emits `mov reg, [xt+1]`.  ff64 inlines a 32-bit fetch: `$1B8B`
-encodes `mov ebx, [rbx]` (without REX.W prefix, so zero-extends to 64
-bits), with `s09` applying the SWAPbit.  This is effectively an inline
-`d@` — reading the 32-bit relative jump target.
+i386 emits `mov reg, [xt+1]` to load the 32-bit target address into
+a register.  ff64 pushes `xt+1` as a literal, then inlines the bytes
+for `mov ebx, [rbx]` — a 32-bit fetch without the REX.W prefix, so
+the result is zero-extended to 64 bits.  The `$1B8B` encoding *is*
+the `d@` operation; there's no need for a named `d@`` macro to exist
+in the dictionary — you can always inline the bytes directly.
 
 **`^^` (reset vector to default):**
 
-| i386 | `-call $05C7, ,2 dup 1+ , 6+ ,` |
-|------|------|
-| ff64 | `-call dup 6 + lit` 1+ lit` d!`` |
+```
+i386:  -call $05C7, ,2 dup 1+ , 6+ ,    \ mov dword [xt+1], xt+6
+ff64:  -call dup 6 + lit` 1+ lit` d!`    \ push(xt+6), push(xt+1), d!
+```
 
-i386 emits `mov dword [xt+1], xt+6` — a single x86-32 instruction with
-both an absolute address and an immediate.  x86-64 can't use that
-encoding (addresses exceed 32 bits), so it uses `lit`/d!`` to emit
-stack-based code: at user runtime, pushes `xt+6` (default body addr) and
-`xt+1` (target slot), then stores with `d!`.
+The i386 version is the most elegant — one instruction that writes a
+constant to a constant address, both computed at compile time.  The
+ff64 version generates three operations but achieves the same compile-
+time resolution.  Both `xt+6` and `xt+1` are known when `^^` runs
+(which is the user's compile time), so `lit`` bakes them into the
+generated code as immediates.
 
-This matters because `^^` is used by `quit`:
+This is used by `quit`:
 ```forth
 : quit _top ^^ _top ;
 ```
-The `-call` in `^^` uncalls `_top` to get its xt, then emits code to
-reset `_top`'s jump target to its default body.
+`^^` uncalls `_top` and emits code to reset its jump target.  In i386
+that's one MOV instruction.  In ff64 it's push/push/d!.  Either way,
+`quit` compiles to inline code with no function call to `^^` itself.
 
 **`n^` (nop a vector):**
 
-| i386 | `-call nop ' lit` SKIP !^`` |
-|------|------|
-| ff64 | `-call _nop swap 1+ d!` |
+```
+i386:  -call nop ' lit` SKIP !^`        \ stores nop's xt at [xt+1]
+ff64:  -call _nop swap 1+ d!            \ stores _nop's xt at [xt+1]
+```
 
-i386 gets nop's xt via `nop '` inside the macro body and stores it
-at `xt+1`.  ff64 can't use `nop '` (the `'` executes at n^'s
-definition time, not at macro expansion time).  Instead, a private
-constant `_nop` (ct=$21) holds nop's xt — the compiler pushes it as a
-literal when n^ executes.  The store (`swap 1+ d!`) happens at compile
-time on the compile-time stack.
+Both store nop's xt into the vector's jump target so that calling the
+vector does nothing.  The challenge in ff64 is getting nop's xt inside
+a backtick macro body.  In i386, `nop '` works because `'` is itself
+a macro that uncalls the preceding `nop` — but in ff64, `'` inside a
+backtick definition would execute at n^'s *definition* time, not at
+macro expansion time.
+
+The solution: a private constant.  `:. _nop ;` defines a callable
+no-op, and `H@ @ constant _nop pvt` captures its xt.  Constants have
+ct=$21, so when the compiler encounters `_nop` inside n^'s body, it
+pushes the value as a literal.  The `swap 1+ d!` then runs on the
+compile-time stack, writing nop's xt into the vector's target slot.
+
+Note that n^'s `d!` executes at *compile time* — it modifies the
+vector directly, unlike `^^` which emits runtime code.  This is
+correct: `n^` always writes the same value (nop's xt), so there's no
+need to defer the store to runtime.
 
 **`x^` (execute vector body):**
 
-| i386 | `-call 6+ dcall,` |
-|------|------|
-| ff64 | `-call 6+ lit` >r`` |
+```
+i386:  -call 6+ dcall,                  \ call xt+6
+ff64:  -call 6+ lit` >r`                \ push(xt+6), >r → ret jumps there
+```
 
-i386 emits a direct `call xt+6` to the body.  ff64 pushes `xt+6` as a
-literal, then compiles `>r` — the return address trick.  When the user
-code reaches this point, `>r` pushes the body address onto the return
-stack; the subsequent `ret` jumps there.
+i386 emits a direct `call` to the body at `xt+6`.  ff64 can't easily
+emit a 64-bit call (there's no `call abs64` encoding), so it uses the
+return-stack trick: `lit`` pushes `xt+6`, `>r`` moves it to the return
+stack, and the next `ret` jumps there.  The effect is a tail-call to
+the body — same as i386's `call` but without the return address push
+(so it's actually a jump, not a call).
 
 **`'` (compile-time tick):**
 
-| i386 | `-call lit`` |
-|------|------|
-| ff64 | `-call lit`` |
+```
+i386:  -call lit`
+ff64:  -call lit`
+```
 
-Identical.  `-call` recovers the xt, `lit`` compiles it as a literal.
+Identical on both architectures.  `-call` recovers the xt, `lit``
+compiles it as a runtime literal.
 
-**Summary:** All vector ops are now zero-overhead macros in both
-architectures.  The x86-64 versions use `lit`/d!`` where i386 uses
-absolute-address MOV encodings, adding a few bytes of generated code
-but no function-call overhead.
+#### What the port teaches
+
+The vector ops illustrate a general porting principle: **port the
+semantics, not the encoding.**  Every i386 vector macro resolves
+addresses at compile time — that's the invariant.  The specific x86
+instructions it emits are implementation details.  When those
+instructions don't exist on x86-64, the answer isn't "make it a
+runtime word" — it's "emit different instructions that achieve the
+same compile-time resolution."
+
+FreeForth's `lit`` and the backtick store/fetch macros (`d!``, `d@``,
+`>r``) are the portable building blocks.  They abstract over the
+instruction encoding, letting macros compose without knowing whether
+the target is 32 or 64 bits.  The i386 versions bypass these
+abstractions for efficiency (emitting raw MOV bytes), but the
+abstractions are always available as a fallback.
 
 **Running total:** ~225 words/macros ported. 234 tests across 46
 experiments, all passing.
