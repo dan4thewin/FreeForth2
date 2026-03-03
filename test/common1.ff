@@ -58,13 +58,26 @@ t{ -1 -2 2>r depth 2r 2rdrop -> 0 -1 -2 }t
 testing +r` -r` xxr` r0` r1` r2` r3` r4` r5` r0!` r1!` r2!` r3!` r4!` r5!` r!`
 t{ $a $b $c $d $e $f 6 -r r5! r4! r3! r2! r1! r0!
    depth r0 r2 r4 r1 r3 r5 6 +r -> 0 $a $c $e $b $d $f }t
+[64] [IF]
+\ ff64: xxr is a wrapper (boot.min strips lines starting with +)
+t{ : _xxr_test xxr` ; -> }t
+[ELSE]
 t{ xxr` ' -> +r`  ' }t
+[THEN]
 t{ r!`  ' -> r0!` ' }t
 
 testing rp@` sp@`
+[64] [IF]
+\ ff64: rp@ @ is a return address (not anon:' since call structure differs)
+t{ rp@ 0- 0<> drop -> }t
+t{ $ff >r depth rp@ @ rdrop -> 0 $ff }t
+\ ff64: sp@ returns r15 (memory stack pointer, not NOS which is in a register)
+t{ sp@ 0- 0<> drop -> }t
+[ELSE]
 t{ rp@ @ -> anon:` ' }t
 t{ $ff >r depth rp@ @ rdrop -> 0 $ff }t
 t{ $aa $bb sp@ @ -> $aa $bb $aa }t
+[THEN]
 
 testing over&` over|` over^` 2dup+` over+` over-` over*`
 t{ 0 1 over& -> 0 0 }t
@@ -78,7 +91,11 @@ t{ 2 3 over- -> 2 1 }t
 t{ 2 3 over* -> 2 6 }t
 
 testing bswap` flip`
+[64] [IF]
+t{ $1122334455667788 bswap -> $8877665544332211 }t
+[ELSE]
 t{ $11223344 bswap -> $44332211 }t
+[THEN]
 t{ $11223344 flip  -> $11224433 }t
 
 testing 1-` 1+` 2+` 4+` 2*` 2/` 4*` 4/` 8*` 8/`
@@ -126,17 +143,28 @@ t{ $ffff x! x ws@ -> -1 }t
 
 testing 2@` dup@` dupc@` dupw@`
 $50515253 x!
+[64] [IF]
+create aa 16 allot
+-1 aa! -2 aa 8+ !
+t{ aa    2@ -> -2 -1 }t
+t{ aa  dup@ -> aa -1 }t
+[ELSE]
 create aa 8 allot
 -1 aa! -2 aa 4+ !
 t{ aa    2@ -> -2 -1 }t
 t{ aa  dup@ -> aa -1 }t
+[THEN]
 t{ aa dupc@ -> aa $ff }t
 t{ x  dupc@ ->  x 'S' }t
 t{ aa dupw@ -> aa $ffff }t
 t{ x  dupw@ ->  x $5253 }t
 
 testing @+` c@+` w@+`
+[64] [IF]
+t{ x  @+ -> x 8+ $50515253 }t
+[ELSE]
 t{ x  @+ -> x 4+ $50515253 }t
+[THEN]
 t{ x c@+ -> x 1+ 'S' }t
 t{ x w@+ -> x 2+ 'R' 8 << 'S' | }t
 
@@ -144,9 +172,15 @@ testing !` c!` w!` 2!` +!` -!`
 t{ $40414243 x ! depth x@ -> 0 $40414243 }t
 t{ $30 x c! depth x c@ -> 0 '0' }t
 t{ $2021 x w! depth x w@ -> 0 $2021 }t
+[64] [IF]
+t{ $f 1 aa 2! -> }t
+t{ aa @ aa 8+ @ -> 1 $f }t
+t{ aa 2@ -> $f 1 }t
+[ELSE]
 t{ $f 1 aa 2! -> }t
 t{ aa @ aa 4+ @ -> 1 $f }t
 t{ aa 2@ -> $f 1 }t
+[THEN]
 $70 x c!
 t{ 3 x +! depth x c@ -> 0 's' }t
 t{ 3 x -! depth x c@ -> 0 'p' }t

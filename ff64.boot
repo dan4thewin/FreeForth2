@@ -427,8 +427,10 @@ H@ @ constant _nop pvt
 \ shl rbx,3(48 C1 E3 03); sub rsp,rbx(48 29 DC)
 : -r` $48, ,1 $E3C1, s01 $03, ,1 $48, ,1 $DC29, s08 drop` ;
 : r0` r` ;
-: r!` r0!` ;
+r0!` ' alias r!`
 : xxr` +r` ;
+: rp@` over` $48, ,1 $E389, s01 ;
+: sp@` over` $4C, ,1 $FB89, s01 ;
 
 ( Bracket state switching )
 : [` anon@ SC c@ anon:` ;
@@ -616,5 +618,7 @@ AGAIN
 : [THEN]` THEN ;
 1 constant [1]`
 0 constant [0]`
+8 constant cell`
+cell 4 - constant [64]`
 
 ( OS-specific definitions continue in fflin64.boot )

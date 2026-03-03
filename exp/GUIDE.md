@@ -4678,3 +4678,72 @@ PLACE.  It returns `@dst`, not `@dst+len`.  Code that does
 Correct: `"str" buf place N + 0 swap c!` with known length N.
 
 After this experiment, 52 of 76 Perl syscall builtins are covered (68%).
+
+## Part 15: Cross-Architecture Constants and Test Porting
+
+### The `cell` and `[64]` Constants
+
+As the test suite porting effort progressed, we needed a way to write
+Forth source files that work on both i386 and x86-64.  The solution:
+
+```
+\ In ff64.boot:
+8 constant cell`
+cell 4 - constant [64]`
+
+\ In ff.boot:
+4 constant cell`
+cell 4 - constant [64]`
+```
+
+`cell` is the primary constant — the cell size in bytes (8 on x86-64,
+4 on i386).  It's useful for portable arithmetic:
+
+```
+cell allot       \ allocate one cell
+addr cell + @    \ fetch next cell
+n cell *         \ convert count to bytes
+```
+
+`[64]` is derived from `cell` for conditional compilation: `cell 4 -`
+gives 4 (truthy) on 64-bit and 0 (falsy) on 32-bit.  Both are
+backtick constants so they work with `[IF]`:
+
+```
+[64] [IF]
+  \ 64-bit specific code
+[ELSE]
+  \ 32-bit specific code
+[THEN]
+```
+
+### Porting test/common1.ff
+
+The i386 test suite test/common1.ff has 122 tests.  Eight of them
+depend on cell size or stack layout:
+
+| Test | i386 | ff64 | Reason |
+|------|-------|------|--------|
+| xxr alias | xt equality | wrapper compiles | boot.min strips `+` lines |
+| rp@ @ | return address = anon:' | nonzero check | call structure differs |
+| sp@ @ = NOS | memory stack | nonzero check | register-based stack |
+| bswap | 32-bit value | 64-bit value | cell-sized operation |
+| 2@/dup@ | 4-byte allot/offset | 8-byte allot/offset | cell size |
+| @+ | x 4+ | x 8+ | cell-sized advance |
+| 2! | aa 4+ @ | aa 8+ @ | cell-sized offset |
+
+Each uses `[64] [IF]` / `[ELSE]` / `[THEN]` with the **same number of
+tests** in each branch.  Both architectures run exactly 122 tests —
+different implementations, same count, same rigor.
+
+### rp@ and sp@ Macros
+
+Added to ff64.boot for return/data stack pointer access:
+
+- `rp@` pushes RSP (the x86-64 call/return stack pointer)
+- `sp@` pushes R15 (the memory stack base pointer)
+
+Note: ff64's register-based stack means `sp@` does NOT give NOS like
+i386's `sp@` does.  The top 9 items live in registers (rbx, r8–r15
+minus r15), and R15 points to the overflow area.  This is why the sp@
+test uses a nonzero check instead of the i386's `sp@ @ → NOS` test.

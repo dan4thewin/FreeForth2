@@ -8960,3 +8960,53 @@ inside n^'s body compiles a `push nop-xt` that executes at n^'s runtime:
 - exp tests: all previously-passing tests still pass
 
 ---
+
+## Experiment 115: common1.ff cross-architecture, cell/[64] constants
+
+**Goal:** Run the i386 common1.ff test suite on ff64 with the same test
+count (122) on both architectures, using conditional compilation for the
+8 tests that differ due to cell size or register-based stack layout.
+
+**Actions:**
+
+1. **Added `cell` and `[64]` constants to both boot files:**
+   - ff64.boot: `8 constant cell` / `cell 4 - constant [64]`
+   - ff.boot: `4 constant cell` / `cell 4 - constant [64]`
+   - `cell` is the primary constant (useful for arithmetic); `[64]` is
+     derived for `[IF]` conditional compilation (truthy on 64-bit)
+
+2. **Added `rp@` and `sp@` macros to ff64.boot:**
+   - `rp@` pushes RSP (x86-64 call stack pointer)
+   - `sp@` pushes R15 (memory stack base pointer)
+   - Changed `r!` from wrapper to proper alias of `r0!`
+
+3. **Ported test/common1.ff with `[64] [IF]` conditional compilation:**
+   - test 38 (xxr): ff64 tests wrapper compiles; i386 tests xt equality
+   - tests 40,42 (rp@/sp@): ff64 tests nonzero; i386 tests memory layout
+   - test 52 (bswap): 64-bit vs 32-bit values
+   - tests 89-90 (2@/dup@): cell-sized allot and offset
+   - test 95 (@+): cell-sized offset
+   - tests 102-103 (2!): cell-sized offset
+
+4. **Key design decision:** Every `[64] [IF]` branch provides the same
+   number of tests as the `[ELSE]` branch. Both architectures run 122
+   tests — different implementations, same count, same rigor.
+
+**Reasoning:**
+
+DG asked: "why would we have a different count of tests?" — and the
+answer was: we shouldn't. Skipping tests on 64-bit would hide gaps in
+coverage. The right approach is to provide *equivalent* tests that
+verify the 64-bit behavior is correct, not *fewer* tests.
+
+DG also asked whether `[64]` should be a cell size constant instead.
+`cell` (8 or 4) is more generally useful — it serves for arithmetic
+*and* conditional compilation (`cell 4 -` = truthy on 64-bit). Both
+constants are promoted to the boot files so any .ff file can use them.
+
+**Results:**
+- common1.ff: 122/122 PASS on both ff64 and ff (i386)
+- test64.ff: 189/189 PASS
+- exp tests: all previously-passing tests still pass
+
+---

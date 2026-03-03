@@ -114,12 +114,34 @@ features ( -- addr ) buffer holding loaded feature names
 [os] ( -- 1 ) compile-time constant: operating system flag
   Returns 1 for Linux.
 
+cell` ( -- 8 ) compile-time constant: cell size in bytes
+  8 on ff64 (x86-64), 4 on ff (i386).
+  Use for portable address arithmetic: cell allot, cell +, etc.
+  see also: [64] cell+ cells
+
+[64]` ( -- 4 | 0 ) compile-time constant: 64-bit architecture flag
+  Returns 4 (truthy) on ff64, 0 (falsy) on ff.
+  Derived from cell: cell 4 -
+  Use with [IF] for conditional compilation:
+    [64] [IF] \ 64-bit code [ELSE] \ 32-bit code [THEN]
+  see also: cell [IF] [ELSE] [THEN]
+
 pad ( -- addr ) scratch buffer: here + 256
   Temporary workspace safe from ongoing compilation at here.
   Address changes whenever here changes — don't hold across defs.
 
 nop` ( -- ) compile a NOP (0x90) machine instruction
   : nop` $90 c, ;
+
+rp@` ( -- rsp ) compile: push the return stack pointer
+  On ff64, pushes RSP (the x86-64 call stack pointer).
+  : rp@` over` $48, ,1 $E389, s01 ;
+
+sp@` ( -- sp ) compile: push the data stack pointer
+  On ff64, pushes R15 (the memory stack base pointer).
+  Note: R15 is the memory portion of the register+memory stack.
+  The top 9 stack items live in registers, not at [R15].
+  : sp@` over` $4C, ,1 $FB89, s01 ;
 
 quit ( -- ) reset _top to default and restart the REPL
 

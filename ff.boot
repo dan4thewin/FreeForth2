@@ -232,6 +232,8 @@ create mrk 0 , 0 ,
 : [~]` wsparse find nip ;
 1 constant [1]`
 0 constant [0]`
+4 constant cell`
+cell 4 - constant [64]`
 
 variable io pvt
 : key io 1 under accept drop c@ ;
