@@ -180,11 +180,11 @@ variable _dlen pvt
 variable mainxt pvt
 :. _main mainxt @ execute 0 exit ;
 
-( see` — on first call, loads see64.ff which redefines see` )
-: see` ;` "see64.ff" needexec ;
+( see` — on first call, loads see.ff which redefines see` )
+: see` ;` "see.ff" needexec ;
 
-( help` — on first call, loads help64.ff which redefines help` )
-: help` ;` "help64.ff" needexec ;
+( help` — on first call, loads help.ff which redefines help` )
+: help` ;` "help.ff" needexec ;
 
 ( doargv — evaluate command line arguments as FreeForth words )
 :. doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap eval. ;

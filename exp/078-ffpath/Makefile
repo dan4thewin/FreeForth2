@@ -20,10 +20,10 @@ test:
 		'printf "\"testfp.ff\" needed ;\nfrom64 0 exit\n" | ./ff64' \
 		"lib/64"; \
 	run "lib fallback" \
-		'printf "\"help64.ff\" needed ;\nhelp dup 0 exit\n" | ./ff64' \
-		"duplicates TOS"; \
+		'printf "\"compat.ff\" needed ;\n-v\nbye\n" | ./ff64 2>&1 | strings | grep compat' \
+		"compat"; \
 	run "relative path passthrough" \
-		'printf "\"./lib/help64.ff\" needed ;\nhelp + 0 exit\n" | ./ff64' \
+		'printf "\"./lib/64/help.ff\" needed ;\nhelp + 0 exit\n" | ./ff64' \
 		"pops-add"; \
 	run "needed guard" \
 		'printf "\"testfp.ff\" needed ;\n\"testfp.ff\" needed ;\nfrom64 0 exit\n" | ./ff64' \

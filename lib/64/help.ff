@@ -1,4 +1,4 @@
-\ help64.ff — help system for ff64
+\ help.ff — help system for ff64
 \ Loaded on demand via needexec from help` stub in ff64.boot.
 \ Last definition (help`) replaces the stub.
 

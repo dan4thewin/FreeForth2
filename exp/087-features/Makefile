@@ -17,9 +17,9 @@ test-lib-features:
 	echo "$$result" | grep -q 'fixup' && echo "$$result" | grep -q 'ior' && echo "$$result" | grep -q 'shell' \
 	&& echo "PASS $@" || (echo "FAIL $@ (got: $$result)"; exit 1)
 
-# see64.ff loads pno.ff and shows in features
+# see.ff loads pno.ff and shows in features
 test-see-features:
-	@result=$$(cd $(ROOT) && printf '"see64.ff" needed ;\n-v\nbye\n' | ./ff64 2>&1); \
+	@result=$$(cd $(ROOT) && printf '"see.ff" needed ;\n-v\nbye\n' | ./ff64 2>&1); \
 	echo "$$result" | grep -q 'see' \
 	&& echo "PASS $@" || (echo "FAIL $@ (got: $$result)"; exit 1)
 

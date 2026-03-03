@@ -27,7 +27,7 @@ cmpl dict: ff
 	./ff -f mkimage.ff
 
 cmpl64 cmpl64.cfg: ff64
-	./ff64 -f lib/mkimage64.ff
+	./ff64 -f lib/64/mkimage.ff
 
 fftk.o: fftk.asm cmpl dict
 	fasm $< $@

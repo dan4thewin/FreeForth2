@@ -1,4 +1,4 @@
-\ see64.ff — native disassembler for ff64 (x86-64)
+\ see.ff — native disassembler for ff64 (x86-64)
 \ see` ( <name> -- )       native disassembly of compiled word
 \ see. ( @ -- )            native disassembly starting at address
 \ findxt ( @ # -- xt len ) looks for string in headers

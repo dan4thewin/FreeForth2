@@ -1,6 +1,6 @@
-\ mkimage64.ff — dump ff64 code image for turnkey builder
+\ mkimage.ff — dump ff64 code image for turnkey builder
 \
-\ Loaded with: ./ff64 -f lib/mkimage64.ff
+\ Loaded with: ./ff64 -f lib/64/mkimage.ff
 \ Produces:
 \   cmpl64     — raw code image from H address to here
 \   cmpl64.cfg — 16-byte file: DS0 + segvsetup address

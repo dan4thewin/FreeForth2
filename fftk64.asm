@@ -5,7 +5,7 @@
 ;;; Reads bootxt from the image and jumps to _boot.
 ;;;
 ;;; Build:
-;;;   ./ff64 -f lib/mkimage64.ff       (produces cmpl64, cmpl64.cfg)
+;;;   ./ff64 -f lib/64/mkimage.ff       (produces cmpl64, cmpl64.cfg)
 ;;;   fasm fftk64.asm fftk64.o
 ;;;   ld -m elf_x86_64 -lc -ldl --dynamic-linker=/lib64/ld-linux-x86-64.so.2 -o fftk64 fftk64.o
 

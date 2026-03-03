@@ -18,10 +18,10 @@ test:
 		'echo "libc@ . cr 0 exit ;" | $(FF)' \
 		"0"; \
 	run "needed loads file" \
-		'echo "\"lib/see64.ff\" needed 0 exit ;" | $(FF)' \
+		'echo "\"lib/64/see.ff\" needed 0 exit ;" | $(FF)' \
 		""; \
 	run "needexec runs last def" \
-		'$(FF) -f ../../lib/see64.ff -f /dev/stdin <<< "0 exit ;"' \
+		'$(FF) -f ../../lib/64/see.ff -f /dev/stdin <<< "0 exit ;"' \
 		""; \
 	run "doargv -f flag" \
 		'echo "0 exit ;" > /tmp/t074.ff && $(FF) -f /tmp/t074.ff && rm -f /tmp/t074.ff' \

@@ -1,90 +1,98 @@
-\ ff64.help — help for words specific to the x86-64 port
-\ These words do not exist in the original i386 FreeForth.
-\ Format: entry lines start at column 0; continuation lines start with space.
+\ ff64.help — help for words new or different in the x86-64 port
+\ Words that also appear in ff.help are omitted here unless their
+\ x86-64 behavior is materially different.  Use "help <word>" to
+\ search both files.
+\ Format: entry lines start at column 0; continuation lines start
+\ with two spaces.  Related words form a block; "see also" lists the
+\ block head first so "help <head>" shows the whole group.
 
-d@ ( addr -- n ) fetch 64-bit (double cell) value from memory
-  On i386 FreeForth, @ fetches 32 bits (one cell).
+\ === x86-64 data sizes ===
+
+d@ ( addr -- n ) fetch 64-bit (double cell) value
   On x86-64, @ already fetches 64 bits, so d@ is equivalent to @.
   Provided for clarity when 64-bit intent matters.
-
-d! ( n addr -- ) store 64-bit (double cell) value to memory
-  On i386 FreeForth, ! stores 32 bits. On x86-64, ! stores 64 bits.
-  d! is equivalent to ! but documents 64-bit intent.
-
-d, ( n -- ) compile a 64-bit value at here and advance here by 8
+d! ( n addr -- ) store 64-bit (double cell) value
+  On x86-64, ! already stores 64 bits, so d! is equivalent to !.
+d, ( n -- ) compile a 64-bit value at here; advance here by 8
   On i386, , compiles 32 bits. On x86-64, , compiles 32 bits (for opcodes).
   d, compiles a full 64-bit value (addresses, pointers).
+w, ( n -- ) compile a 16-bit value at here; advance here by 2
+  Useful for emitting 16-bit opcode fragments.
+d@` d!` d,` 2dupd!` tuckd!` compile-time macros for the above
+  see also: d@ d! d, w, @ ! ,
 
-w, ( n -- ) compile a 16-bit value at here and advance here by 2
-  Useful for emitting 16-bit opcode fragments in inline code generators.
-
-d@` compile-time macro for d@ (inline code generation)
-d!` compile-time macro for d! (inline code generation)
-d,` compile-time macro for d, (inline code generation)
-2dupd!` compile-time macro for 2dup d! (inline code generation)
-tuckd!` compile-time macro for tuck d! (inline code generation)
-
-8+` compile-time macro: add 8 to TOS (one cell width on x86-64)
+8+` compile-time macro: add 8 to TOS (one cell on x86-64)
   The x86-64 equivalent of i386's 4+` (cell+).
-
 8-` compile-time macro: subtract 8 from TOS
-  The x86-64 equivalent of i386's 4-`.
+  see also: 8+` 4+` 4-`
+
+\ === Compile-time stack ===
 
 >cs ( n -- ) push a value onto the compile-time stack
-  Used by START/ENTER/BREAK/END structured loops to save
-  forward-reference addresses for later resolution.
-
+  Used by START/ENTER/BREAK/END for forward-reference resolution.
 cs> ( -- n ) pop a value from the compile-time stack
-  Used by END to resolve break addresses saved by BREAK.
+  see also: >cs
 
-ds ( -- ) display the data stack contents (runtime version of .s`)
-  Prints the current stack depth and all values.
-  .s` is the compile-time equivalent (used in prompts).
-
-locals are compile-time macros for direct access to the top 6 cells
-  of the CALLstack and two ways to shift values from the DATAstack
-  to the CALLstack. Ported from DG's i386 locals in ff.ff.
->>r`  ( xn..x1 n -- | == xn..x1 ) pop n DATAstack cells, push to CALLstack
->>rr` ( xn..x1 n -- | == x1..xn ) pop n cells, push reversed to CALLstack
--r` ( n -- | == ?n..?1 ) reserve n uninitialized cells on CALLstack
-+r` ( n -- | xn..x1 == ) pop n CALLstack cells (values are lost)
-xxr` ( n -- | xn..x1 == ) alias for +r`
-r0` ( -- x | x == x ) push CALLstack top cell onto DATAstack
-r1` ( -- y | y x == y x ) push CALLstack 2nd cell
-r2` ( -- z | z y x == z y x ) push CALLstack 3rd cell
-r3`  ... 4th cell
-r4`  ... 5th cell
-r5`  ... 6th cell
-r0!` ( x -- | a == x ) store DATAstack top into CALLstack top cell
-r1!` ( x -- | b a == x a ) store into CALLstack 2nd cell
-r2!` ( x -- | c b a == x b a ) store into CALLstack 3rd cell
-r3!`  ... 4th cell
-r4!`  ... 5th cell
-r5!`  ... 6th cell
-r!` alias for r0!`
-  see also: >r r> dup>r dropr> rdrop 2rdrop
+\ === Dictionary / headers ===
 
 h.name ( hdr -- ) print the name field of a dictionary header
-  Given a header address, prints the word's name.
 
 h.next ( hdr -- hdr' ) advance to the next dictionary header
-  Computes the address of the following header by adding
-  the name length + fixed header overhead.
+  Computes hdr + name length + fixed header overhead.
+  see also: h.name h.next
+
+\ === Vector system ===
+
+:^ ( <name> -- ) define a vector (redirectable word)
+  Creates a word with a push/ret preamble: 68 <target32> C3.
+  The body follows at xt+6.  The push operand can be rewritten
+  by !^ n^ ^^ to redirect or disable the vector.
+!^ ( new-target xt -- ) set vector target
+  Writes new-target into the vector's push operand at xt+1.
+@^ ( xt -- target ) read current vector target
+n^ ( xt -- ) nop a vector (make it do nothing)
+  Sets target to xt+5 (the ret instruction): push xt+5; ret.
+x^ ( xt -- ) execute a vector's body directly
+  Pushes xt+6 onto the return stack, skipping the push/ret.
+^^ ( xt -- ) reset vector to its default body
+  Writes xt+6 (body start) into the push operand.
+  see also: :^ !^ @^ n^ x^ ^^
+
+\ === Peephole optimizers ===
+
+++` compile-time macro: increment variable in place
+  Rewrites a preceding variable push into an in-place increment.
+  Usage: variable x  ... x ++
+--` compile-time macro: decrement variable in place
+  see also: ++` --`
+
+\ === Control flow additions ===
+
+ds ( -- ) display the data stack contents (runtime)
+  .s` is the compile-time equivalent (used in prompts).
+
+cond.` compile-time macro: convert stack boolean to FLAGS
+  Emits: 0- drop 0<>
+  Used by IF. WHILE. UNTIL. (dotted conditionals) to bridge
+  stack booleans to FreeForth's FLAGS-based control flow.
+
+LOOP` compile-time macro: close a TIMES counted loop
+  Decrements counter, branches back if nonzero.
+  see also: TIMES REPEAT
+
+\ === Boot infrastructure ===
 
 loadfile ( addr len -- ) load and compile a Forth source file
-  Opens the named file, reads it into filebuf, and passes
-  the contents through the compiler. Saves and restores
-  the current parsing state (>in, tp).
+  Opens the named file, reads it into filebuf, passes contents
+  through the compiler.  Saves and restores parsing state.
 
-ff_argc ( -- addr ) variable holding the command-line argument count
-  Set by assembly at startup from the C argc value.
-
-ff_argv ( -- addr ) variable holding the pointer to argv array
-  Set by assembly at startup. Each entry is a pointer to a
-  NUL-terminated string.
+ff_argc ( -- addr ) variable: command-line argument count
+ff_argv ( -- addr ) variable: pointer to argv array
+  Set by assembly at startup.
+  see also: ff_argc ff_argv argv doargv
 
 helpbuf ( -- addr ) 128KB buffer used by the help system
-  Used by lib/help64.ff to read ff.help into memory.
+  Used by lib/64/help.ff to read ff.help into memory.
 
 xfp ( -- addr ) variable: exception frame pointer for catch/throw
   Points to the current catch frame on the return stack.
@@ -92,564 +100,213 @@ xfp ( -- addr ) variable: exception frame pointer for catch/throw
 
 stderr ( -- 2 ) file descriptor constant for standard error
 
-cond.` compile-time macro: convert stack boolean to FLAGS condition
-  Emits 0- drop 0<> — tests TOS, drops it, sets FLAGS.
-  Used by IF. WHILE. UNTIL. (dotted conditionals) to bridge
-  stack booleans to FreeForth's FLAGS-based control flow.
+features ( -- addr ) buffer holding loaded feature names
+  Space-separated list of features.  Printed by -v.
+-v ( -- ) display loaded features
+  see also: features -v
 
-LOOP` compile-time macro for counted loops
-  Used with TIMES: TIMES ... LOOP iterates a counted loop.
-  LOOP decrements the counter, branches back if nonzero.
+[os] ( -- 1 ) compile-time constant: operating system flag
+  Returns 1 for Linux.
 
-dlsetup ( -- ) open libc.so.6 and cache the handle in variable libc
-  Called automatically at boot. Safe to call multiple times
-  (returns immediately if already loaded).
+pad ( -- addr ) scratch buffer: here + 256
+  Temporary workspace safe from ongoing compilation at here.
+  Address changes whenever here changes — don't hold across defs.
 
-libc. ( <name> -- ) compile-time macro: resolve and call a libc function
+nop ( -- ) do nothing
+  Empty word; used as placeholder for vector targets.
+
+quit ( -- ) reset _top to default and restart the REPL
+
+\ === File loading ===
 
 needexec ( addr len -- ) load a file and execute its last definition
   Calls needed (with double-load guard), then executes the most
-  recently defined word via H@ @ execute. Used for lazy loading
-  of library files (e.g., help`, see`).
+  recently defined word via H@ @ execute.
+  see also: needed needs` needexec loadfile openlib -f`
 
-pad ( -- addr ) scratch buffer address, 256 bytes above here
-  Returns here + 256. This is a temporary workspace safe from
-  ongoing compilation at here. The address changes whenever here
-  changes — do not hold across definitions. ANS-compatible.
-  see also: here allot
-
-cmove ( src dst n -- ) copy n bytes from src to dst (low to high)
-  Forward byte copy. Use for non-overlapping copies or when
-  dst < src. For overlapping copies where dst > src, use cmove>.
-  see also: cmove> move place
-
-cmove> ( src dst n -- ) copy n bytes from src to dst (high to low)
-  Reverse byte copy. Safe for overlapping regions where dst > src.
-  Used by _hidepvt compaction to shift header chain entries.
-  see also: cmove move
-
-move ( src dst n -- ) smart copy: automatically selects direction
-  If dst < src, uses cmove (forward). Otherwise uses cmove> (reverse).
-  Safe for all overlapping copies. ANS-compatible.
-  see also: cmove cmove>
-
-place ( src count dst -- ) copy counted string to destination
-  Copies count bytes from src to dst. Equivalent to cmove but
-  with arguments reordered for string operations.
-  see also: cmove move
-
-fill ( addr n byte -- ) fill n bytes at addr with byte
-  see also: erase
-
-erase ( addr n -- ) fill n bytes at addr with zero
-  Equivalent to: 0 fill
-  see also: fill
-
-count ( addr -- addr+1 byte ) read counted string header
-  ANS name for c@+. Reads byte at addr, increments addr.
-  see also: c@+
-
-bounds ( addr n -- addr addr+n ) convert address+length to address pair
-  Commonly used with BEGIN...WHILE loops to iterate over a range.
-
-within ( n lo hi -- ; flags ) test if lo <= n < hi
-  Sets FLAGS (not stack boolean). Use with IF/WHILE/UNTIL.
-  Returns nzTRUE if in range, zFALSE otherwise.
-  see also: < > = u< u>
-
-zt ( addr len -- addr ) zero-terminate a string
-  Writes a NUL byte at addr+len. Returns addr.
-
-words ( -- ) list all words in the dictionary
-  Walks the header chain and prints each word's name.
-
-dump ( addr n -- ) hex dump of n bytes starting at addr
-  Prints 16 bytes per line with address headers.
-
-!^ ( new-target xt -- ) set vector target
-  Writes new-target into the vector's push operand at xt+1.
-  The vector will now jump to new-target when called.
-  see also: @^ n^ ^^ x^ :^
-
-@^ ( xt -- target ) read current vector target
-  Reads the 32-bit push operand at xt+1.
-  see also: !^ n^ ^^ x^
-
-n^ ( xt -- ) nop a vector (make it do nothing)
-  Sets the vector's target to xt+5 (the ret instruction).
-  The vector becomes: push xt+5; ret → jumps to ret → returns.
-  see also: !^ @^ ^^ x^
-
-x^ ( xt -- ) execute a vector's body directly
-  Pushes xt+6 onto the return stack, causing execution to
-  continue at the vector's default body (skipping the push/ret).
-  see also: !^ @^ n^ ^^
-
-^^ ( xt -- ) reset vector to its default body
-  Writes xt+6 (body start) into the push operand at xt+1.
-  Restores the vector to its original behavior.
-  see also: !^ @^ n^ x^
-
-:^ ( <name> -- ) define a vector (redirectable word)
-  Creates a word with a push/ret preamble: 68 <target32> C3.
-  The body follows at xt+6. The push operand can be rewritten
-  by !^ n^ ^^ to redirect or disable the vector.
-  see also: !^ @^ n^ ^^ x^
-
-quit ( -- ) reset _top to default and restart the REPL
-  Resets the _top vector to its original body, then calls it.
-
-2swap ( a b c d -- c d a b ) swap the top two pairs
-  Defined as: rot >r rot r>
-  Also available as compile-time macro 2swap`.
-
-max ( a b -- max ) return the larger of two values
-min ( a b -- min ) return the smaller of two values
-
-nop ( -- ) do nothing
-  Empty word, used as placeholder for vector targets.
-
-[os] ( -- 1 ) compile-time constant: operating system flag
-  Returns 1 for Linux. A future Windows port would return 0.
-  Used for conditional compilation: [os] [IF] ... [THEN]
-
-argv ( n -- addr len ) get nth command-line argument as string
-  Returns address and length of the NUL-terminated argument.
-  see also: argc ff_argc ff_argv
-
-needed ( addr len -- ) load file unless already loaded
-  Appends ` to filename, checks if that word exists. If found,
-  the file was already loaded — returns. Otherwise searches
-  FFPATH (lib/64:lib:.) for the file and loads it via loadfile.
-  Absolute paths (/...) and relative paths (./...) bypass FFPATH.
-  see also: needexec needs` loadfile openlib
-
-needs` ( <filename> -- ) load file by name (compile-time)
-  Semicolons first, then parses filename and calls needed.
-  see also: needed needexec
-
-openlib ( addr len -- addr' len' | -1 -1 ) search FFPATH for a file
-  Tries each directory in FFPATH (lib/64, lib, .) to find the file.
-  Returns the full path and length on success, or -1 -1 on failure.
-  Paths starting with / or . are returned unchanged (no search).
-  Called by needed; not normally used directly.
-  see also: needed
-
-doargv ( -- ) process command-line arguments
-  Evaluates all arguments after the program name as Forth.
-  Called by _postboot during normal boot.
-
--f` ( <filename> -- ) load a source file (compile-time)
-  Loads the named file via needed. If the file defines "main",
-  switches to turnkey mode: _top becomes _main, _postboot
-  is nop'd, and argc/argv belong to main.
-  see also: needed mainxt
-
-++` compile-time macro: increment variable (peephole optimization)
-  Rewrites a preceding variable fetch into an in-place increment.
-  Usage: variable x  ... x ++
-  see also: --`
-
---` compile-time macro: decrement variable (peephole optimization)
-  Rewrites a preceding variable fetch into an in-place decrement.
-  see also: ++`
-
-features ( -- addr ) buffer holding loaded feature names
-  Space-separated list of features. Printed by -v.
-
--v ( -- ) display loaded features
-  Prints "features:" followed by the feature list.
-
-eval ( addr len -- ) compile and run Forth source
-  Sets up the input buffer to the given string and calls the
-  compiler. Does not auto-execute trailing anonymous code.
-  see also: eval.
-
-eval. ( addr len -- ) compile and auto-execute Forth source
-  Like eval but calls _auto at the end, which executes any
-  trailing anonymous code (unless noauto is set).
-  see also: eval
-
-syscall ( args... #args syscall# -- ior ) generic Linux syscall
-  Same Forth interface as i386 fflinio.asm. Push args so that
-  the last-pushed arg maps to the first kernel register (rdi).
-  For write(fd, buf, count): count buf fd 3 1 syscall
-  NOTE: x86-64 syscall numbers differ from i386!
-  (e.g., read=0, write=1, open=2, close=3, exit=60)
-  Up to 6 args supported (rdi, rsi, rdx, r10, r8, r9).
-  see also: read write openr openw close exit
+\ === Signal handling ===
 
 SEGVhndlr ( -- ) signal handler for SIGSEGV
   Throws "SEGV caught" via !" (inline error + throw).
-  Installed via libc sigaction(2) during boot (SEGVthrow).
-  Replaces the assembly-level fatal handler with a recoverable
-  one — the REPL's catch frame catches the throw and continues.
-  see also: SEGVthrow catch throw
+  Installed via sigaction during boot.
+SEGVthrow ( -- ) install SEGV handler via sigaction
+  Called automatically during boot.  Can re-install after fork.
+  see also: SEGVhndlr SEGVthrow catch throw
 
-SEGVthrow ( -- ) install SEGV handler via libc sigaction
-  Calls sigaction(SIGSEGV, &SEGVact, NULL) to install SEGVhndlr.
-  Called automatically during boot. Can be called again to
-  re-install the handler (e.g., after a fork).
-  see also: SEGVhndlr
+\ === Library words (load with "needs <file>") ===
 
 fixup ( addr len -- ) self-patching libc symbol resolver
   Used in hidden definitions: :. _xxx "symbol" fixup ;
-  On first call: resolves "symbol" via dlsym, allocates an
-  11-byte trampoline (movabs rbx,imm64; ret), and patches
-  the caller's call instruction to point to the trampoline.
+  On first call: resolves via dlsym, builds a trampoline
+  (movabs rbx,imm64; ret), patches caller's call instruction.
   Subsequent calls go directly to the trampoline.
   IMPORTANT: the hidden definition MUST end with ; for tail-call.
   Loaded from: "fixup.ff" needed
-  see also: #lib #fun #call libc@
+  see also: fixup #lib #fun #call libc@
 
 strerror ( errno -- ) print error message for errno
-  Takes a negative errno (as returned by FreeForth syscalls),
-  negates it, and calls C strerror() via fixup to print the
-  corresponding error message.
+  Takes a negative errno, negates, calls C strerror() via fixup.
   Example: -13 strerror  →  "Permission denied"
+ior ( -- addr ) variable: last I/O result
+?ior ( n -- n ) store I/O result in ior; keep n on stack
+?ior. ( n -- n ) store in ior; if error, print message and throw
   Loaded from: "ior.ff" needed
-  see also: ?ior ?ior. ior
-
-ior ( -- addr ) variable holding last I/O result
-  Loaded from: "ior.ff" needed
-  see also: ?ior ?ior. strerror
-
-?ior ( n -- n ) store I/O result
-  Stores n in the ior variable. Does not consume n.
-  Loaded from: "ior.ff" needed
-  see also: ior ?ior. strerror
-
-?ior. ( n -- n ) store and optionally display I/O error
-  Stores n in ior. If n looks like an errno (dup $FF | -1 <>),
-  drops it silently. Otherwise calls strerror and throws.
-  Loaded from: "ior.ff" needed
-  see also: ior ?ior strerror
-
-malloc ( size -- addr ) allocate memory
-  Calls C malloc() via fixup. Returns address of allocated block.
-  Loaded from: "malloc.ff" needed
-  see also: free
-
-free ( addr -- ) release allocated memory
-  Calls C free() via fixup.
-  Loaded from: "malloc.ff" needed
-  see also: malloc
-
-getenv ( addr len -- addr len ) read environment variable
-  Returns the value string of the named env var.
-  Example: "HOME" getenv type
-  Loaded from: "shell.ff" needed
-  see also: getpid system shell cd !!
-
-getpid ( -- pid ) current process ID
-  Loaded from: "shell.ff" needed
-
-getppid ( -- pid ) parent process ID
-  Loaded from: "shell.ff" needed
-
-system ( addr len -- result ) execute shell command
-  Passes null-terminated string to C system().
-  FreeForth strings use _ for space: "ls_-la" system
-  Loaded from: "shell.ff" needed
-  see also: shell !!
-
-shell ( -- ) start interactive shell
-  Starts $SHELL (or /bin/sh). Return to FreeForth with 'exit'.
-  Loaded from: "shell.ff" needed
-
-cd ( addr len -- ) change directory
-  Uses chdir syscall (80).
-  Loaded from: "shell.ff" needed
-
-!! ( -- ) re-execute last shell command
-  Loaded from: "shell.ff" needed
-
-lseek ( whence offset fd -- offset ) reposition file offset
-  x86-64 syscall 8.
-  Loaded from: "fileops.ff" needed
-
-ioctl ( arg request fd -- result ) device control
-  x86-64 syscall 16.
-  Loaded from: "fileops.ff" needed
-
-select ( timeout exceptfds writefds readfds nfds -- result )
-  Monitor file descriptors. x86-64 syscall 23.
-  Loaded from: "fileops.ff" needed
-
-stat ( addr len statbuf -- result ) get file status
-  Calls stat syscall. statbuf must be ≥144 bytes.
-  st_size is at offset 48 in the struct.
-  Loaded from: "fileops.ff" needed
-  see also: mkst st.size
-
-mkst ( name -- ) compile-time: create a 144-byte stat buffer
-  Loaded from: "fileops.ff" needed
-
-st.size ( -- 48 ) offset of st_size in struct stat
-  Loaded from: "fileops.ff" needed
+  see also: strerror ior ?ior ?ior.
 
 cls ( -- ) clear screen (ANSI escape)
-  Loaded from: "console.ff" needed
-
 home ( -- ) move cursor to 0,0
-  Loaded from: "console.ff" needed
-
 atxy ( col row -- ) position cursor
-  Loaded from: "console.ff" needed
-
 atx ( col -- ) position cursor on current row
-  Loaded from: "console.ff" needed
-
 color ( n -- ) set ANSI color/attribute
-  Loaded from: "console.ff" needed
-  see also: normal bold nocolor foreground background
-
 key? ( -- ; zFALSE ) test if key is available on stdin
-  Uses select to check stdin readability.
-  Loaded from: "console.ff" needed
-
 ekey ( -- c ) read one key in raw mode
-  Puts terminal in raw mode, reads one byte, restores.
   Loaded from: "console.ff" needed
+  see also: cls home atxy atx color key? ekey
 
 .now ( -- ) display current date and time
-  Example output: sat 2026-2-28_4:01:19
   Loaded from: "time.ff" needed
-  see also: .d .wd .dt .t ms@ ms
+  see also: .now .d .wd .dt .t ms@ ms
 
-ms@ ( -- ms ) current time in milliseconds
-  Uses clock_gettime (syscall 228).
-  Loaded from: "time.ff" needed
-  see also: ms
+\ === Number literal formats ===
 
-ms ( n -- ) delay n milliseconds
-  Uses nanosleep (syscall 35).
-  Loaded from: "time.ff" needed
-  see also: ms@
+$N hex literal: $FF = 255, $DEADBEEF
+&N octal literal: &100 = 64, &777 = 511
+%N binary literal: %1010 = 10
+N#M explicit base: 8#77 = 63, 16#ff = 255
+'C ASCII literal: 'A = 65, '0 = 48
+N'N digit grouping (skip chars): 1'000'000 = 1000000
+  Apostrophe, comma, period, and slash are skip characters.
+Y-M-D Gregorian date: 2000-3-1 = 730485
+H:M:S time (x60 accumulation): 1:0:0 = 3600
+D_H:M:S day-hour-minute-second: 1_0:0:0 = 86400
+  see also: $N &N %N
 
-\ --- Number literal formats (full parser, ported from i386) ---
+\ === Syscall interface (fflin64.boot) ===
 
-$N ( -- n ) hexadecimal literal: $FF = 255, $deadbeef = 3735928559
+syscall ( args... #args syscall# -- ior ) generic Linux syscall
+  Push args so last-pushed maps to first kernel register (rdi).
+  write(fd, buf, count): count buf fd 3 1 syscall
+  NOTE: x86-64 syscall numbers differ from i386.
+  Up to 6 args (rdi, rsi, rdx, r10, r8, r9).
+  see also: syscall read write openr openw close
 
-&N ( -- n ) octal literal: &100 = 64, &777 = 511
-
-%N ( -- n ) binary literal: %1010 = 10, %11111111 = 255
-
-N#M ( -- n ) explicit base: 8#77 = 63, 16#ff = 255, 2#1010 = 10
-  N is accumulated as decimal, # sets it as base for remaining digits.
-
-'C ( -- n ) quoted ASCII: 'A = 65, '0 = 48
-  Returns the ASCII value of the character following the quote.
-
-N'N ( -- n ) digit grouping with skip chars: 1'000'000 = 1000000
-  Apostrophe, comma, and slash are skip characters (ignored in numbers).
-
-Y-M-D ( -- n ) Gregorian date literal: 2000-3-1 = 730485
-  Converts year-month-day to a linear day number.
-
-H:M:S ( -- n ) time literal (×60 accumulation): 1:0:0 = 3600, 24:0:0 = 86400
-
-D_H:M:S ( -- n ) day-hour-minute-second: 1_0:0:0 = 86400
-  Underscore multiplies accumulated value by 24 (day→hours).
-
-=== Syscall Word Library (fflin64.boot) ===
-
-All syscall wrappers use: ( argN...arg2 arg1 N sysnum syscall )
-Arg1 (first C parameter) on TOS.  See fflin64.boot for definitions.
-
---- File I/O ---
-
-read ( addr # fd -- n ) read from file descriptor
-  Uses >r swap r> to reorder from Forth-natural buffer pair.
-
-openr ( addr # -- fd ) open file read-only
-  Uses zt for NUL-termination. fd<0 on error.
-
-openw ( addr # -- fd ) open/create/truncate file, write-only, mode 0644
-  Uses zt for NUL-termination. fd<0 on error.
-
-close ( fd -- n ) close file descriptor
-
-lseek ( offset whence fd -- pos ) reposition file offset
-  whence: 0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END
+\ --- File I/O (boot — always available) ---
 
 fstat ( buf fd -- ior ) get file status by fd
   buf must be >= 144 bytes (struct stat).
-
-stat ( buf addr -- ior ) get file status by NUL-terminated path
-
 access ( mode addr -- ior ) check file permissions
-  addr must be NUL-terminated. mode: 0=F_OK, 1=X, 2=W, 4=R.
-
+  addr NUL-terminated.  mode: 0=F_OK, 1=X, 2=W, 4=R.
 dup2 ( newfd oldfd -- fd ) duplicate file descriptor
-
 fcntl2 ( arg cmd fd -- ior ) file control
-
 pipe ( pipefd -- ior ) create pipe
-  pipefd points to 8-byte buffer receiving 2 ints (read,write fds).
-
+  pipefd: 8-byte buffer receiving 2 ints (read fd, write fd).
 ioctl3 ( arg req fd -- ior ) device control
+lstat ( buf path -- ior ) like stat; doesn't follow symlinks
+  path NUL-terminated.  buf >= 144 bytes.
+truncate ( len fd -- ior ) truncate open file to length
+flock ( op fd -- ior ) advisory file locking
+  op: 1=LOCK_SH, 2=LOCK_EX, 4=LOCK_UN, 8=LOCK_NB (| to combine).
+link ( new old -- ior ) create hard link (both NUL-terminated)
+symlink ( new old -- ior ) create symbolic link
+readlink ( len buf path -- n ) read symbolic link target
+  Returns bytes placed in buf, or negative errno.
+fchmod ( mode fd -- ior ) change file mode via fd
+fchown ( gid uid fd -- ior ) change file owner/group via fd
+umask ( mask -- prev ) set file creation mask
+getdents64 ( count buf fd -- n ) read directory entries (raw)
+tell ( fd -- offset ) current file position
+  Convenience: lseek(fd, 0, SEEK_CUR).
+  see also: fstat access dup2 fcntl2 pipe ioctl3 lstat truncate
+  see also: flock link symlink readlink fchmod fchown umask
+  see also: getdents64 tell read openr openw close lseek stat
 
---- Memory Management ---
+\ --- Memory management (boot) ---
 
-PROT_READ   ( -- 1 ) mmap/mprotect read permission
-PROT_WRITE  ( -- 2 ) mmap/mprotect write permission
-PROT_EXEC   ( -- 4 ) mmap/mprotect execute permission
-MAP_SHARED  ( -- 1 ) mmap shared mapping
-MAP_PRIVATE ( -- 2 ) mmap private copy-on-write
-MAP_ANONYMOUS ( -- $20 ) mmap not backed by file
-
+PROT_READ   ( -- 1 )  mmap/mprotect permission flags
+PROT_WRITE  ( -- 2 )
+PROT_EXEC   ( -- 4 )
+MAP_SHARED  ( -- 1 )  mmap mapping flags
+MAP_PRIVATE ( -- 2 )
+MAP_ANONYMOUS ( -- $20 )
 mmap ( off fd flags prot len addr -- ptr ) map memory
-  Example: 0 -1 MAP_PRIVATE MAP_ANONYMOUS | PROT_READ PROT_WRITE | $1000 0 mmap
-
+  0 -1 MAP_PRIVATE MAP_ANONYMOUS | PROT_READ PROT_WRITE | $1000 0 mmap
 munmap ( len addr -- ior ) unmap memory
-
 mprotect ( prot len addr -- ior ) set memory protection
+brk ( addr -- newbrk ) change data segment size; 0 brk = query
+  see also: mmap munmap mprotect brk PROT_READ MAP_ANONYMOUS
 
-brk ( addr -- newbrk ) change data segment size
-  0 brk returns current break.
-
---- Process Control ---
-
-getpid ( -- pid ) get process ID
+\ --- Process control (boot) ---
 
 fork ( -- pid ) create child process
   Returns 0 in child, child pid in parent, negative on error.
-
 execve ( envp argv filename -- ior ) execute program
-  All pointers must be NUL-terminated.
-
 wait4 ( rusage options status pid -- pid ) wait for process
-  pid=-1 for any child. options: 1=WNOHANG.
-
+  pid=-1 for any child.  options: 1=WNOHANG.
 exit_group ( status -- ) exit all threads
-
---- Directory / Filesystem ---
-
-getcwd ( size buf -- len ) get current working directory
-  Returns length including NUL on success.
-
-chdir ( addr -- ior ) change directory (NUL-terminated path)
-
-mkdir ( mode addr -- ior ) create directory (NUL-terminated path)
-
-rmdir ( addr -- ior ) remove directory (NUL-terminated path)
-
-unlink ( addr -- ior ) delete file (NUL-terminated path)
-
-rename ( newpath oldpath -- ior ) rename file (both NUL-terminated)
-
---- Miscellaneous ---
-
-uname ( buf -- ior ) get system information
-  buf must be >= 390 bytes (struct utsname).
-
-gettimeofday ( tz tv -- ior ) get time
-  tv points to 16-byte struct (sec + usec). tz usually 0.
-
-getrandom ( flags len buf -- n ) get random bytes
-  flags: 0=blocking, 1=GRND_NONBLOCK, 2=GRND_RANDOM.
-
---- Tier 1+2 syscall words (exp 110) ---
-
-lstat ( buf path -- ior ) like stat but doesn't follow symlinks
-  path must be NUL-terminated. buf >= 144 bytes (struct stat).
-
-nanosleep ( rem req -- ior ) sleep with nanosecond precision
-  req points to 16-byte struct: 8-byte seconds + 8-byte nanoseconds.
-  rem receives remaining time if interrupted (or use 0).
-
-alarm ( seconds -- prev ) set signal alarm timer
-  Returns seconds remaining from previous alarm. 0 cancels alarm.
-
-getppid ( -- pid ) get parent process ID
-
-truncate ( len fd -- ior ) truncate open file to length
-  fd is an open file descriptor.
-
-flock ( op fd -- ior ) advisory file locking
-  op: 1=LOCK_SH, 2=LOCK_EX, 4=LOCK_UN, 8=LOCK_NB (combine with |).
-
-link ( new old -- ior ) create hard link
-  Both paths must be NUL-terminated.
-
-symlink ( new old -- ior ) create symbolic link
-  Both paths must be NUL-terminated.
-
-readlink ( len buf path -- n ) read symbolic link target
-  Returns number of bytes placed in buf, or negative errno.
-
-fchmod ( mode fd -- ior ) change file mode via fd
-  mode: e.g. $1C0 = rwx------.
-
-fchown ( gid uid fd -- ior ) change file owner/group via fd
-
-umask ( mask -- prev ) set file creation mask
-  Returns previous mask. mask: e.g. $1FF = rwxrwxrwx.
-
-getdents64 ( count buf fd -- n ) read directory entries
-  Raw syscall — returns packed dirent64 structs in buf.
-
-time ( tloc -- time ) get time in seconds since epoch
-  tloc: address to store result, or 0 for return value only.
-
-times ( buf -- ticks ) get process times
-  buf points to 32-byte struct tms. Returns clock ticks.
-
+alarm ( seconds -- prev ) set signal alarm timer; 0 cancels
 setpgid ( pgid pid -- ior ) set process group ID
-
-getpgrp ( -- pgid ) get process group ID of calling process
-
+getpgrp ( -- pgid ) get process group ID
 getpriority ( who which -- prio ) get scheduling priority
   which: 0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER.
-
 setpriority ( prio who which -- ior ) set scheduling priority
+chroot ( path -- ior ) change root directory (NUL-terminated)
+wait ( -- pid ) wait for any child
+  Convenience: wait4(-1, buf, 0, 0).
+  see also: fork execve wait4 exit_group alarm setpgid getpgrp
+  see also: getpriority setpriority chroot wait getpid getppid
 
-chroot ( path -- ior ) change root directory
-  path must be NUL-terminated. Requires privilege.
+\ --- Directory / filesystem (boot) ---
 
-tell ( fd -- offset ) get current file position
-  Convenience: 1 0 fd lseek (SEEK_CUR with offset 0).
+getcwd ( size buf -- len ) get current working directory
+mkdir ( mode addr -- ior ) create directory (NUL-terminated)
+rmdir ( addr -- ior ) remove directory (NUL-terminated)
+unlink ( addr -- ior ) delete file (NUL-terminated)
+rename ( newpath oldpath -- ior ) rename (both NUL-terminated)
+  see also: getcwd chdir mkdir rmdir unlink rename
 
-wait ( -- pid ) wait for any child process
-  Convenience: wait4(-1, buf, 0, 0). Returns child pid or -errno.
+\ --- Time and misc (boot) ---
 
---- Networking library (lib/64/net.ff) ---
+uname ( buf -- ior ) get system information
+  buf >= 390 bytes (struct utsname).
+gettimeofday ( tz tv -- ior ) get time
+  tv: 16-byte struct (sec + usec).  tz usually 0.
+getrandom ( flags len buf -- n ) get random bytes
+  flags: 0=blocking, 1=GRND_NONBLOCK, 2=GRND_RANDOM.
+nanosleep ( rem req -- ior ) sleep with nanosecond precision
+  req: 16-byte struct (8B seconds + 8B nanoseconds).
+  rem: remaining time if interrupted (or use 0).
+time ( tloc -- time ) seconds since epoch
+  tloc: address to store result, or 0 for return value only.
+times ( buf -- ticks ) get process times
+  buf: 32-byte struct tms.
+  see also: uname gettimeofday getrandom nanosleep time times
 
-Load with: needs net.ff
+\ === Networking library (lib/64/net.ff) ===
+\ Load with: needs net.ff
 
 socket ( proto type domain -- fd ) create socket
-  e.g. 0 SOCK_STREAM AF_INET socket
-
+  0 SOCK_STREAM AF_INET socket
 connect ( addrlen addr fd -- ior ) connect to address
-
 bind ( addrlen addr fd -- ior ) bind socket to address
-
 listen ( backlog fd -- ior ) listen for connections
-
 accept4 ( flags addrlen addr fd -- newfd ) accept connection
-  flags: 0 or SOCK_NONBLOCK|SOCK_CLOEXEC.
-
 shutdown ( how fd -- ior ) shutdown socket
   how: SHUT_RD(0), SHUT_WR(1), SHUT_RDWR(2).
-
 sendto ( tolen to flags len buf fd -- n ) send data
 recvfrom ( fromlen from flags len buf fd -- n ) receive data
 send ( flags len buf fd -- n ) send without address
 recv ( flags len buf fd -- n ) receive without address
-
 socketpair ( sv proto type domain -- ior ) create socket pair
-  sv points to 2-cell buffer for returned fds.
-
-setsockopt ( optlen optval optname level fd -- ior ) set socket option
-getsockopt ( optlen optval optname level fd -- ior ) get socket option
+  sv: 2-cell buffer for returned fds.
+setsockopt ( optlen optval optname level fd -- ior ) set option
+getsockopt ( optlen optval optname level fd -- ior ) get option
 getsockname ( addrlen addr fd -- ior ) get local address
 getpeername ( addrlen addr fd -- ior ) get remote address
-
 pselect6 ( sigmask timeout exceptfds writefds readfds nfds -- n )
   Synchronous I/O multiplexing.
-
 htons ( n -- n ) byte-swap 16-bit value for network byte order
+  see also: socket connect bind listen accept4 shutdown
+  see also: sendto recvfrom send recv socketpair htons
 
 Constants: AF_UNIX(1) AF_INET(2) AF_INET6(10)
   SOCK_STREAM(1) SOCK_DGRAM(2) SOCK_RAW(3)
