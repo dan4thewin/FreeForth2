@@ -185,10 +185,121 @@ Do not mark the task complete until all steps are done.
 ## Build and test
 
 - `make all` builds both `ff` (32-bit) and `ff64` (64-bit)
-- `make -C exp test` runs all experiments (currently 48, all PASS).
+- `make -C exp test` runs all experiments (currently 49, all PASS).
    The test runner exits nonzero if any experiment fails — never
    commit with failing tests.
 - `./ff64 -f ff64.boot` loads the standard library (via ff64.boot.min
   which includes fflin64.boot)
 - Assembler is FASM (flat assembler, version 1.73.32)
 - Linker warning about RWX segment is expected
+
+## Quick Reference
+
+### Register allocation
+
+| Register | Role | Notes |
+|----------|------|-------|
+| `rbx` | TOS (top of stack) | SWAPbit=0 |
+| `rdx` | NOS (next on stack) | SWAPbit=0 |
+| `r15` | Data stack pointer | Points to 3rd+ items in memory |
+| `rsp` | Return stack | Standard call/ret |
+| `rbp` | HERE / compilation pointer | Where next compiled byte goes |
+| `rax` | Scratch / syscall number | |
+| `rcx` | Scratch / counter | ch used by SWAPbit XOR (SC byte) |
+| `rdi`,`rsi` | Scratch / syscall args | |
+
+When SWAPbit=1 (SC bit 1 set): rbx and rdx swap roles.
+
+### Literal compiler suffixes
+
+The COMPILER (not interpreter) handles these on number tokens:
+
+| Suffix | Effect | Example |
+|--------|--------|---------|
+| `,` | Emit `mov [rbp], imm` meta-instruction (NO rbp advance) | `$DA89,` |
+| `@` | Compile fetch from address | `foo@` |
+| `!` | Compile store to address | `foo!` |
+| `_` | Replace TOS with value | `42_` |
+| `+` `-` `*` `/` `%` `&` `\|` `^` | Arithmetic with immediate | `8+` `$FF&` |
+
+litcomma (`,` suffix) ONLY writes bytes at [rbp]. Advance is separate
+via `,1`–`,4` or `s01`/`s08`/`s09`/`s1`.
+
+### SWAPbit advance helpers
+
+| Word | rbp advance | XOR mask | Use case |
+|------|-------------|----------|----------|
+| `,1`–`,4` | +N | none | Fixed bytes |
+| `s01` | +2 | bit 0 (dst) | Dest reg field |
+| `s08` | +2 | bit 3 (src) | Source reg field |
+| `s09` | +2 | bits 0+3 | Both reg fields |
+| `s1` | +1 | bit 0 | Single-byte opcodes |
+
+**CRITICAL:** `s01`/`s08`/`s09` advance by 2 AND XOR. Don't use after
+`,N` if all bytes are already placed — adds 2 spurious bytes.
+
+### String encoding
+
+In `"..."`, `."..."`, `!"..."`:
+`_` = space, `^X` = toggle bit 6 of next char (^J=newline, ^I=tab),
+`~` = toggle bit 7 of previous byte, `\X` = literal next char.
+Space char: use `$20` (not `' '`).
+
+### Number prefixes
+
+`$` = hex, `%` = binary, `-` = negative. ff64 lacks `&` (octal).
+In numbers: `'` `,` `.` `/` are ignored (digit grouping).
+`#` changes base to value so far. Character literal: `'X`.
+
+### Header structure
+
+```
++0: 8 bytes — XT       +8: ct byte    +9: name length    +10: name
+```
+ct: 0=code, 1=data, 2=immediate, 8=anon, 9=pvt, $20=alias, $21=constant.
+Constants: `h.ct`=8, `h.sz`=9, `h.nm`=10.
+
+### Vectors
+
+```forth
+:^ vec body ;            \ define vector
+new ' vec !^             \ redirect (macro: -call)
+vec n^                   \ nop vector (macro: -call)
+vec ' ^^                 \ reset to default (runtime word)
+vec ' x^                 \ call original body (runtime word)
+vec ' @^                 \ fetch current target (runtime word)
+```
+
+`!^` and `n^` are compile-time macros using `-call`. `^^`, `x^`, `@^`
+are runtime words — x86-64 can't encode abs64 in immediates like i386.
+
+### Flow control
+
+```forth
+IF ... THEN              \ conditional (requires preceding condition)
+IF ... ELSE ... THEN     \ two-way
+IF ... ;THEN             \ early return
+BEGIN ... cond UNTIL     \ loop until true
+BEGIN ... cond WHILE ... REPEAT
+START ... ENTER ... REPEAT  \ body skipped first time
+TIMES ... REPEAT         \ counted loop
+CASE ... ;;              \ multi-way dispatch
+```
+
+### Key non-obvious words
+
+| Word | Stack | Notes |
+|------|-------|-------|
+| `find` | `( @ # -- xt 0 \| @ # )` | 0 = FOUND |
+| `0;` | `( n -- n \| )` | Return if zero |
+| `0<>;` | `( n -- n \| )` | Return if nonzero |
+| `drop` | flags-preserving | `mov`+`lea`, no flag clobber |
+| `bye` | backtick macro | Kills process at compile time inside `:` — use `; t bye` |
+
+### Test pattern
+
+```bash
+timeout 5 ./ff64 ': prompt ;' -f test.ff
+```
+Boot is baked in. Suppress prompt via argv. Top-level code in loaded
+files needs trailing `;` to execute.
