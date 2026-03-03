@@ -16,9 +16,6 @@ public _start
 cmpl64: file "cmpl64"
 
 _start:
-        ;; Install SEGV handler (address from config)
-        call qword [segv_addr]
-
         ;; Load DS0 (dstack_top) from config file
         mov r15, [ds0_val]
 
@@ -58,7 +55,6 @@ _dummy:
 
         align 8
 ds0_val:  file "cmpl64.cfg"
-segv_addr = ds0_val + 8
 
 ;; New compilation goes here — past all fftk64 code/data
         align 8

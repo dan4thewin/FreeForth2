@@ -184,6 +184,8 @@
 : */mod` >r` m*` r>` m/mod` ;
 : */` */mod` nip` ;
 
+: (` ')' parse 2drop ;
+
 ( Private word infrastructure )
 : ct|! 8+ dupc@ rot | swap c! ;
 : pvt` 8 H@ ct|! ;
@@ -260,6 +262,7 @@ $77 : u>`  lit _?2 ;
 ( Memory )
 : fill rot rot BEGIN 0- 0> WHILE 1- -rot 2dup c! 1+ rot REPEAT drop 2drop ;
 : erase 0 fill ;
+: zlen ( addr -- addr len ) dup BEGIN dup c@ 0- 0<> WHILE drop 1+ REPEAT drop over - ;
 
 ( Flow control macros — composable backtick versions )
 : ;;` >S0 $C3, ,1 ;
@@ -368,8 +371,9 @@ variable mrk 0 mrk 8+ !
 : -call callmark@ here = 2drop IF -c ELSE drop THEN ;
 : @^ ( xt -- target ) 1+ d@ ;
 : !^` -call 1+ lit` d!` ;
+: ^^  ( xt -- ) dup 6+ swap 1+ d! ;
 : n^` -call dup 6+ swap 1+ d! ;
-: x^ ( xt -- ) 6+ >r ;
+: x^  ( xt -- ) 6+ >r ;
 : '` -call lit` ;
 ( ?` converts preceding call to conditional jump )
 :. _?` ?# c@ 0 ?# c! dup 0- 0= drop IF drop $75 THEN
@@ -452,6 +456,9 @@ variable base
 : .b 2 .#s ;
 : .w 4 .#s ;
 
+( cr — print newline, as a vector for overridability )
+:^ cr ."^J" ;
+
 ( Dictionary listing )
 : h.next dup h.sz+ c@ h.nm+ 1+ + ;
 : h.name dup h.nm+ over h.sz+ c@ type space ;
@@ -496,6 +503,7 @@ variable base
 ( noauto — variable controlling auto-semicolon in REPL )
 ( When 0, typed lines auto-execute via _auto calling ; )
 variable noauto pvt
+: \` 2 >in -! lnparse 2drop 1 noauto! ;
 
 ( eval — evaluate a counted string as Forth source )
 ( Saves >in and tp, sets new parsing bounds, calls compiler, restores. )
@@ -514,6 +522,9 @@ variable noauto pvt
 
 ( key — read a single character from stdin )
 : key tib 1 accept drop tib c@ ;
+
+( write — output bytes to file descriptor: addr # fd -- n )
+: write ( addr # fd -- n ) >r swap r> 3 1 syscall ;
 
 ( type — output a counted string: addr len -- )
 : type stdout write drop ;

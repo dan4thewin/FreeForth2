@@ -104,16 +104,18 @@ dlsetup
 : libc.` wsparse libc@ #fun lit` #call ' call, ;
 : libc_ libc@ #fun #call ;
 
-( SEGV handler — recoverable via throw, replaces assembly early-boot handler )
-( x86-64 struct sigaction: handler[8] sa_mask[128] sa_flags[4] pad[4] restorer[8] = 152 bytes )
-( codebuf is BSS-zeroed, so allot gives us a zeroed struct — no fill needed )
-( Requires libc for sigaction — in static build, assembly SEGV handler remains )
-create SEGVact pvt 152 allot
+( SEGV handler — recoverable via throw )
+( Uses kernel struct kernel_sigaction [32 bytes]: )
+(   +0: handler [8]  +8: sa_flags [8]  +16: restorer [8]  +24: sa_mask [8] )
+( rt_sigaction syscall 13 — works in both dynamic and static builds )
+create _ksa pvt 32 allot
 :. SEGVhndlr !"SEGV caught" ;
-SEGVhndlr ' SEGVact !
-$40000000 SEGVact 136+ !
-:. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
-libc@ 0- 0<> drop IF SEGVthrow THEN ;
+SEGVhndlr ' _ksa !
+$14000004 _ksa 8+ !
+sigrestorer _ksa 16+ !
+0 _ksa 24+ !
+:. SEGVthrow 8 0 _ksa 11 4 13 syscall drop ;
+SEGVthrow ;
 
 ( FFPATH — search path for needed/openlib )
 ( Default: lib/64:lib:. — overridable via FFPATH env var )
@@ -196,9 +198,6 @@ variable mainxt pvt
 :. _f_main mainxt ! _main ' _top !^ _postboot n^ ;
 : -f` ;` wsparse needed "main" find 0- 0<> drop IF drop ;THEN _f_main ;
 
-( ^^ — reset vector to its default body: xt -- )
-: ^^ dup 6+ swap 1+ d! ;
-
 ( quit — reset _top to default, then call it )
 : quit _top ' ^^ _top ;
 
@@ -208,9 +207,6 @@ _feat boot
 _feat help
 _feat dynlink
 _feat segv
-
-( \ — end-of-line comment; also sets noauto for multiline REPL input )
-: \` 2 >in -! lnparse 2drop 1 noauto! ;
 
 ( Boot sequence — ossetup is a vector for platform-specific init )
 :^ ossetup _ffpath_alloc ;

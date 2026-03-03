@@ -63,7 +63,8 @@ EXPERIMENTS = 023-forthmacros64 \
               095-locals-and-test \
               099-see64-improvements \
               110-perl-parity \
-              112-file-tests
+              112-file-tests \
+              113-asm-reduction
 
 test:
 	@fail=0; for d in $(EXPERIMENTS); do \

@@ -8744,3 +8744,139 @@ st_nlink=16(8B) st_atime=72(8B) st_mtime=88(8B) st_ctime=104(8B)
 18 new words in lib/64/stat.ff.  14 tests passing on both ff64 and ff64s.
 
 ---
+
+## Experiment 113: Assembly Reduction
+
+### Goal
+
+Lavarenne's philosophy: "assembly is intentionally minimal — most things
+are implemented in Forth."  Now that we have `syscall` as a generic
+assembly word, several assembly-only words can move to Forth.
+
+### Key Discovery: 0= emits no runtime code
+
+During exp 112, we discovered that unary condition words (`0=`, `0<>`,
+`0<`, etc.) emit NO runtime code — they only store a Jcc opcode in
+`cond_jmp`.  CPU FLAGS survive across `CALL`/`RET` (which don't modify
+RFLAGS) and `drop` (which uses `mov`+`lea`).  This means FLAGS cross
+word boundaries: a word can set FLAGS internally and the caller just
+writes `0= IF`.
+
+This insight isn't directly about assembly reduction, but it emerged
+from the same "what does Lavarenne's approach really imply?" thinking.
+
+### Changes
+
+**Removed dead code:**
+- `_readline` — defined but never called (64 bytes saved)
+
+**Moved `write` to Forth (ff64.boot):**
+- Was: 19 lines of assembly register setup + syscall
+- Now: `: write ( addr # fd -- n ) >r swap r> 3 1 syscall ;`
+- `type` already called `write`; now both are Forth
+- Matches i386 pattern where `write` wraps `syscall`
+
+**Moved `cr` to Forth (ff64.boot):**
+- Was: 14 assembly instructions (push/pop, write syscall)
+- Now: `:^ cr ."^J" ;` — a vector, exactly like i386
+- Uses `type` → `write` → `syscall`, all Forth
+
+**Moved SEGV handler setup to Forth (fflin64.boot):**
+- Was: 30 assembly instructions building kernel_sigaction on stack
+- Now: Forth fills a `create` buffer and calls `rt_sigaction` via
+  `4 13 syscall` (syscall 13 = rt_sigaction)
+- Works in BOTH dynamic and static builds (no libc dependency)
+- Assembly `_segv_handler` (fatal) and `_segv_restorer` (for kernel)
+  remain — the restorer is required by SA_RESTORER flag
+- Exposed `_segv_restorer` as `sigrestorer` WORD64 so Forth can
+  reference it
+- Removed `call _install_segv` from boot sequence — Forth boot
+  installs the handler during `ossetup`
+
+**Updated turnkey builder:**
+- `fftk64.asm`: removed `call [segv_addr]` — boot installs SEGV
+- `lib/64/mkimage.ff`: config file is now 8 bytes (DS0 only)
+
+### What stayed in assembly
+
+- `emit` — minimal I/O primitive (one byte → stdout); needed before
+  `write` exists in boot.  Could move later if we add a tiny buffer
+  variable early in boot.
+- `_segv_handler` — fatal fallback; `_segv_restorer` — kernel callback
+- All compiler/dictionary infrastructure (`_find`, `_compiler`, etc.)
+
+### Result
+
+Binary: 378952 → 378744 = **208 bytes saved**.
+Assembly WORD64 entries: 62 → 60.
+8 tests passing on both ff64 and ff64s.
+
+---
+
+### Round 2: fill, erase, zlen
+
+**Removed assembly `fill` and `erase`** — ff64.boot already had Forth
+redefinitions at line 261-262 that shadowed the assembly versions.  The
+assembly WORD64 entries created headers that were never used after boot.
+Removed both the code (~55 bytes) and headers.
+
+**Moved `zlen` to Forth (ff64.boot):**
+- Was: 13 assembly instructions (byte-by-byte scan loop)
+- Now: `: zlen ( addr -- addr len ) dup BEGIN dup c@ 0- 0<> WHILE drop 1+ REPEAT drop over - ;`
+- Note: `c@` pushes the byte — must `drop` it both inside the loop and
+  at exit.  First version forgot this, causing SEGV.
+
+**Could NOT move `(` and `\`** — they're ct=2 immediates needed from
+line 1 of boot, before `drop` or `2drop` exist.  Like i386, they must
+stay in assembly.
+
+**Could NOT move `,1`–`,4`** — compiler internals called from backtick
+macros; only 2-3 bytes each; not worth the complexity.
+
+Binary: 378952 → 378712 = **240 bytes saved total** (32 more this round).
+Assembly WORD64 entries: 62 → 57.
+
+### Round 3: `(` and `\` — comments belong in Forth; `^^` is a vector word
+
+**Goal:** Remove `_paren` and `_backslash` from assembly.  Audit
+fflin64.boot for misplaced definitions.
+
+**Key insight from DG:** The Makefile rule that produces `ff64.boot.min`
+strips lines starting with `(` or `\`:
+```
+grep -h '^[: _$A-Za-z0-9]' $^ > $@
+```
+This means `(` and `\` are never invoked during boot compilation — they're
+only needed after boot, when loaded files or interactive input use comments.
+So there's no chicken-and-egg problem with defining them in Forth.
+
+**Implementation:**
+
+- `(` defined early in ff64.boot (after `2drop`): `: (` ')' parse 2drop ;`
+- `\` was already defined in fflin64.boot with the correct i386 behavior:
+  `: \` 2 >in -! lnparse 2drop 1 noauto! ;` — the `2 >in -!` backs up
+  past the `\ ` token before parsing.  The assembly `_backslash` never
+  set `noauto` — that was a latent bug, now fixed.
+- Removed `_paren`, `_backslash` code and WORD64 entries from ff64.asm.
+
+**Audit of fflin64.boot:** DG pointed out that `\` doesn't belong in the
+OS-specific file — it's a language feature.  Since fflin64.boot already
+had the correct definition, we kept it there (it depends on `noauto` which
+is in ff64.boot, and both are concatenated into ff64.boot.min).
+
+Also moved `^^` (reset vector to default) from fflin64.boot to ff64.boot,
+grouped with the other vector words (`:^`, `!^`, `n^`, `@^`, `x^`).
+`^^` is vector infrastructure, not OS-specific.
+
+**Note on `^^` as macro vs runtime word:** In i386, `^^` is a backtick
+macro that emits `mov [xt+1], xt+6` — one x86-32 instruction.  In x86-64,
+there's no `mov [abs64], imm32` encoding, so `^^` remains a runtime colon
+word: `dup 6+ swap 1+ d!`.  An attempt to make it a macro using `lit``
+crashed because xt addresses in the dynamic build exceed 32 bits (above
+4GB), and `lit`` emits 10-byte `mov reg, imm64` sequences whose SWAPbit
+interactions were problematic.
+
+Binary: 378952 → 378640 = **312 bytes saved total**.
+Assembly WORD64 entries: 62 → 55.
+
+---

@@ -135,37 +135,7 @@ _zlt:   test rbx, rbx           ; 0< ( n -- flag )
         sar rbx, 63             ; -1 if negative, 0 if positive
         ret
 
-_cr:    push rax
-        push rdi
-        push rsi
-        push rdx
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [nl_char]
-        mov rdx, 1
-        syscall
-        pop rdx
-        pop rsi
-        pop rdi
-        pop rax
-        ret
-
-
-
 ;; String/memory operations
-_zlen:                          ; zlen ( addr -- addr len )
-        sub r15, 8              ; DUP: push NOS
-        mov [r15], rdx
-        mov rdx, rbx            ; NOS = addr (copy of original TOS)
-        mov rax, rbx            ; scan from addr
-        xor ecx, ecx
-.loop:  cmp byte [rax], 0
-        je .done
-        inc rax
-        inc ecx
-        jmp .loop
-.done:  mov rbx, rcx            ; TOS = length
-        ret
 
 ;; cmove> ( src dst n -- ) copy n bytes backward (for overlapping dst>src)
 _cmove_up:
@@ -184,28 +154,6 @@ _cmove_up:
         mov rbx, [r15+8]
         mov rdx, [r15+16]
         add r15, 24
-        ret
-
-_fill:  push rdi                ; fill ( addr n char -- )
-        mov rax, rbx            ; char
-        mov rcx, rdx            ; n
-        mov rdi, [r15]          ; addr
-        rep stosb
-        pop rdi
-        mov rbx, [r15+8]
-        mov rdx, [r15+16]
-        add r15, 24
-        ret
-
-_erase: push rdi                ; erase ( addr n -- )
-        mov rcx, rbx            ; n
-        mov rdi, rdx            ; addr
-        xor eax, eax
-        rep stosb
-        pop rdi
-        mov rbx, [r15]
-        mov rdx, [r15+8]
-        add r15, 16
         ret
 
 _strcmp: push rsi                ; $- ( @1 @2 # -- n ) 0=match
@@ -562,34 +510,6 @@ _swap_inline:
 ;; Flow control (IF/THEN/ELSE/BEGIN/AGAIN/UNTIL/WHILE/REPEAT)
 ;; Migrated to ff64.boot — Forth-defined using cond/d!
 ;; ~140 lines of assembly replaced by ~10 lines of Forth
-
-;; ( -- skip input until matching )
-_paren:
-        mov rdi, [tin]
-        mov rsi, [tp]
-.scan:  cmp rdi, rsi
-        jae .done
-        cmp byte [rdi], ')'
-        je .found
-        inc rdi
-        jmp .scan
-.found: inc rdi                 ; skip past )
-.done:  mov [tin], rdi
-        ret
-
-;; \ -- skip rest of line
-_backslash:
-        mov rdi, [tin]
-        mov rsi, [tp]
-.scan:  cmp rdi, rsi
-        jae .done
-        cmp byte [rdi], 10      ; newline?
-        je .found
-        inc rdi
-        jmp .scan
-.found: inc rdi                 ; skip past the newline
-.done:  mov [tin], rdi
-        ret
 
 ;; parse ( sep -- @ # ) — scan for delimiter, return start and length
 _parse:
@@ -1834,27 +1754,6 @@ _find_forth:
 .find_not_found:
         ret
 
-;; write ( addr count fd -- written )
-_write_word:
-        push rax
-        push rdi
-        push rsi
-        push rcx
-        mov rax, 1              ; sys_write
-        mov rdi, rbx            ; fd = TOS
-        mov rcx, rdx            ; save count = NOS
-        mov rsi, [r15]          ; addr = third
-        mov rdx, rcx            ; count for syscall
-        syscall
-        mov rbx, rax            ; TOS = bytes written
-        mov rdx, [r15+8]       ; NOS = item below third
-        add r15, 16             ; pop third + old NOS
-        pop rcx
-        pop rsi
-        pop rdi
-        pop rax
-        ret
-
 ;; accept ( addr count -- nread ) read from stdin, one line at a time
 ;; Reads byte-by-byte until newline, EOF, or count reached.
 _accept:
@@ -1988,59 +1887,10 @@ _segv_handler:
         syscall
 
 ;; _segv_restorer: required on x86-64 (SA_RESTORER flag)
+;; Exposed as constant so Forth SEGV setup can use it with rt_sigaction.
 _segv_restorer:
         mov rax, 15             ; sys_rt_sigreturn
         syscall
-
-;; _install_segv: install SEGV handler (called during initialization)
-_install_segv:
-        push rdi
-        push rsi
-        push rdx
-        push r10
-        ;; Set up kernel_sigaction struct on stack (32 bytes)
-        ;; struct kernel_sigaction {
-        ;;   __sighandler_t handler;   // offset 0
-        ;;   unsigned long sa_flags;   // offset 8
-        ;;   __sigrestore_t restorer;  // offset 16
-        ;;   sigset_t sa_mask;         // offset 24
-        ;; }
-        sub rsp, 32
-        lea rax, [_segv_handler]
-        mov [rsp], rax                     ; handler
-        mov qword [rsp+8], $14000004       ; SA_RESTORER | SA_SIGINFO | SA_NODEFER
-        lea rax, [_segv_restorer]
-        mov [rsp+16], rax                  ; restorer
-        mov qword [rsp+24], 0              ; sa_mask (empty)
-        ;; rt_sigaction(SIGSEGV=11, &act, NULL, sizeof(sigset_t)=8)
-        mov rax, 13             ; sys_rt_sigaction
-        mov rdi, 11             ; SIGSEGV
-        mov rsi, rsp            ; act
-        xor edx, edx            ; oldact = NULL
-        mov r10, 8              ; sigsetsize
-        syscall
-        add rsp, 32
-        pop r10
-        pop rdx
-        pop rsi
-        pop rdi
-        ret
-
-_readline:
-        mov rax, 0
-        mov rdi, 0
-        lea rsi, [inbuf]
-        mov rdx, 4096
-        syscall
-        test rax, rax
-        jz .eof
-        lea rcx, [inbuf]
-        mov [tin], rcx
-        lea rcx, [rcx + rax]
-        mov [tp], rcx
-        test rax, rax
-.eof:   ret
-
 
 ;; loadfile ( addr len -- ) load and compile file from data stack
 ;; Like _include but takes filename string from stack instead of parsing.
@@ -2336,7 +2186,7 @@ WORD64 "H", H, 1, 1
 WORD64 "ff_argc", ff_argc, 1, 7
 WORD64 "ff_argv", ff_argv, 1, 7
 WORD64 "_bootxt", bootxt, 1, 7
-WORD64 "segvsetup", _install_segv, 1, 9
+WORD64 "sigrestorer", _segv_restorer, 1, 11
 WORD64 ">in", tin, 1, 3
 WORD64 "tp", tp, 1, 2
 WORD64 "tib", inbuf, 1, 3
@@ -2345,11 +2195,7 @@ WORD64 "xfp", xfp, 1, 3
 
 ;; Code words — ascending XT order
 WORD64 ">S0", _rst, 0, 3
-WORD64 "cr", _cr, 0, 2
-WORD64 "zlen", _zlen, 0, 4
 WORD64 "cmove>", _cmove_up, 0, 6
-WORD64 "fill", _fill, 0, 4
-WORD64 "erase", _erase, 0, 5
 WORD64 "$-", _strcmp, 0, 2
 WORD64 "emit", _emit, 0, 4
 WORD64 "d@", _dfetch, 0, 2
@@ -2370,8 +2216,6 @@ WORD64 ",3", _comma3, 0, 2
 WORD64 ",4", _comma4, 0, 2
 WORD64 "lit`", _lit, 0, 4
 WORD64 "swap`", _swap_inline, 0, 5
-WORD64 "(", _paren, 2, 1
-WORD64 "\", _backslash, 2, 1
 WORD64 "parse", _parse, 0, 5
 WORD64 "lnparse", _lnparse, 0, 7
 WORD64 "wsparse", _wsparse_forth, 0, 7
@@ -2383,7 +2227,6 @@ WORD64 "compiler", _compiler, 0, 8
 WORD64 "catch", _catch, 0, 5
 WORD64 "throw", _throw, 0, 5
 WORD64 "find", _find_forth, 0, 4
-WORD64 "write", _write_word, 0, 5
 WORD64 "accept", _accept, 0, 6
 WORD64 "syscall", _syscall, 0, 7
 WORD64 "loadfile", _loadfile, 0, 8
@@ -2408,9 +2251,6 @@ _start:
 
         lea rax, [filebuf]
         mov [filebuf_ptr], rax
-
-        ;; Install SEGV handler early for crash diagnostics
-        call _install_segv
 
         ;; Save argc/argv for Forth access
         mov rax, [rsp]          ; argc

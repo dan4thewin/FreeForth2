@@ -3,7 +3,7 @@
 \ Loaded with: ./ff64 -f lib/64/mkimage.ff
 \ Produces:
 \   cmpl64     — raw code image from H address to here
-\   cmpl64.cfg — 16-byte file: DS0 + segvsetup address
+\   cmpl64.cfg — 8-byte file: DS0 address
 \
 \ The cmpl64 file contains the entire .flat section content:
 \ variables, assembly runtime, headers, buffers, and compiled
@@ -16,7 +16,7 @@
 
 here
 : _save openw dup >r write drop r> close drop ;
-: _writecfg ( -- ) DS0 pad ! segvsetup pad 8 + ! pad 16 "cmpl64.cfg" _save ;
+: _writecfg ( -- ) DS0 pad ! pad 8 "cmpl64.cfg" _save ;
 "\_boot" find drop _bootxt !
 0 libc !
 dup anon !
