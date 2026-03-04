@@ -9167,3 +9167,50 @@ All three gates pass:
 - `exp/099-see64-improvements/Makefile`: lib/64 → lib/x86-64
 
 ---
+
+## Experiment 118: Trim ff.ff — remove inline pno
+
+### Goal
+Begin Phase 5 (trim ff.ff): replace the inline pno block with
+`"pno.ff" needed`, loading it from the shared `lib/pno.ff` created
+in exp 117.
+
+### Provenance audit
+
+| File | Origin | Source |
+|------|--------|--------|
+| lib/pno.ff | DG | ff.ff lines 33–50 |
+
+**Comparison:** The shared `lib/pno.ff` is DG's original code from
+`ff.ff` with char literals (`'0'+`, `'z'`, `'-'`, `'?'_`). The
+`lib/64/pno.ff` (now deleted) was an early workaround that used hex
+constants (`$30+`, `$7A`, `$2D`, `$3F`) because char literals didn't
+work yet on ff64. The lib/64 version also renamed `_s` to `_ps` to
+avoid collision with ff64.boot's `_s` (stack display helper) — but
+`needed` guards prevent double-loading, so the name collision is
+harmless.
+
+**Decision:** Use DG's original. Char literals work on ff64 since
+exp 040. The original is more readable and preserves authorial intent.
+
+**Verification:** `42 0 <# #s #> type` produces `42` on both ff and
+ff64. `-7 dup abs 0 <# #s rot sign #>` produces `-7` on both.
+`$DEADBEEF 0 <# x#s #>` produces `deadbeef` on both.
+
+### Actions
+Replaced ff.ff lines 33–50 (18-line pno block) with single line:
+`"pno.ff" needed`
+
+The `needed` guard ensures pno is loaded exactly once even if
+`ff.ff` is loaded after something else already loaded `pno.ff`.
+
+### Test results
+All three gates pass:
+- `make test`: 4 configs × 6 tests = 24 PASS
+- `make test64`: 4 PASS, 3 SKIPPED
+- `make -C exp test`: all experiments PASS
+
+### Files changed
+- `ff.ff`: replaced 18-line pno block with `"pno.ff" needed`
+
+---
