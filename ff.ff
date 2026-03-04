@@ -37,18 +37,19 @@ constant` ' alias equ` \ shorter, and more usual for assembly programmers
 \ fixup replaces a 5 byte call with a mov ebx,funh and
 \ modifies the call stack to return to just before the mov;
 \ used for once-only symbol resolution at runtime (turnkey safe)
-: fixup libc@ #fun rdrop r> 5- dup>r $bb overc! 1+ ! ;
+\ relies on tail-call optimization: "fixup" must be followed by ;
+: fixup libc@ #fun r> 5- dup>r $bb overc! 1+ ! ;
 
-:. _strerror "strerror" fixup
+:. _strerror "strerror" fixup ;
 :  strerror negate 1 dup _strerror #call zlen type cr ;
 
 variable ior \ I/O result, error when negative:
 : ?ior dup ior! \ n -- ; displays system error message
 : ?ior. dup $FF | -1 <> 2drop IF drop ;THEN strerror !"system_call_failed" ;
 
-:. _malloc "malloc" fixup
+:. _malloc "malloc" fixup ;
 :  malloc 1 dup _malloc #call  ; \ # -- @ ; see "man malloc"
-:. _free "free" fixup
+:. _free "free" fixup ;
 :  free 1 dup _free #call drop ; \ @ --
 
 \ syscall values see /usr/include/asm-i386/unistd.h
@@ -102,13 +103,13 @@ variable fdset pvt  0 , 0 , \ for select, the 2 zeros are a null timeval
 : zt  \ @ # -- @ ; append zero-terminator
   over+ 0 swap c! ;
 
-:. _getenv "getenv" fixup
+:. _getenv "getenv" fixup ;
 :  getenv 1_ dup _getenv #call 0- 0= IF 0 ELSE zlen THEN ;
-:. _getpid "getpid" fixup
+:. _getpid "getpid" fixup ;
 :  getpid 0 0 _getpid #call ;
-:. _getppid "getppid" fixup
+:. _getppid "getppid" fixup ;
 :  getppid 0 0 _getppid #call ;
-:. _system "system" fixup
+:. _system "system" fixup ;
 :  system zt 1 dup _system #call ;
 
 : man` >in@ 4- lnparse + over- \ <mantopic> -- ; 4-:"man_" fallthru

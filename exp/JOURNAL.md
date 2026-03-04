@@ -9360,3 +9360,70 @@ Phase 2 (exp 119) are clean. The fixup difference blocks further
 ff.ff trimming of fixup-dependent blocks.
 
 ---
+
+## Experiment 120: Unify fixup convention — tail-call on both arches
+
+### Goal
+Remove `rdrop` from i386 fixup so both arches use the same tail-call
+convention: `:. _xxx "symbol" fixup ;` (semicolon required).
+
+### Background
+The previous journal finding documented an arch difference blocking
+shared library files: i386 fixup used `rdrop` (expected `call`),
+x86-64 fixup relied on tail-call optimization (expected `jmp`).
+
+DG asked what would need to change for i386 to adopt the tail-call
+approach. Answer: remove `rdrop` — one word.
+
+### How it works
+
+i386 already has tail-call optimization in `_semisemi` (ff.asm lines
+906–919). When `;` follows a `call`, the optimizer converts
+`E8 rel32` (call) to `E9 rel32` (jmp). This means:
+
+**Before (rdrop convention):**
+```
+_strerror:  call fixup    ; E8 — call pushes return address
+fixup:      rdrop         ; drop fixup's return addr
+            r> 5-         ; get _strerror caller's addr, back 5
+            ...           ; patch the call site
+```
+
+**After (tail-call convention):**
+```
+_strerror:  jmp fixup     ; E9 — no return address pushed
+fixup:      r> 5-         ; _strerror caller's addr is already on top
+            ...           ; patch the call site
+```
+
+The `;` after `fixup` triggers tail-call optimization, so `call fixup`
+becomes `jmp fixup`. No extra return address means no `rdrop` needed.
+
+### Testing — before and after comparison
+
+Tested all fixup-based words in both `ff` (non-turnkey) and `fftk`
+(turnkey), before and after the change:
+
+| Word | ff before | ff after | fftk before | fftk after |
+|------|-----------|----------|-------------|------------|
+| strerror | ✓ | ✓ | ✓ | ✓ |
+| malloc/free | ✓ | ✓ | ✓ | ✓ |
+| getenv | ✓ | ✓ | SEGV (pre-existing) | SEGV (pre-existing) |
+| getpid | ✓ | ✓ | ✓ | ✓ |
+| system | ✓ | ✓ | ✓ | ✓ |
+
+The turnkey `getenv` SEGV is **pre-existing** — confirmed identical
+crash with the old `rdrop` version. Not caused by this change.
+
+### Impact
+Both arches now use the same convention. `lib/ior.ff` and
+`lib/malloc.ff` (which use `;` after fixup) are now truly portable —
+they work on both ff and ff64. This unblocks further ff.ff trimming.
+
+### Files changed
+- `ff.ff`: removed `rdrop` from fixup (line 40), added `;` to all 7
+  hidden fixup defs (_strerror, _malloc, _free, _getenv, _getpid,
+  _getppid, _system)
+- `lib/x86/fixup.ff`: removed `rdrop`, updated comment
+
+---
