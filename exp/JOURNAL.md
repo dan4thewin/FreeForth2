@@ -9314,3 +9314,49 @@ All three gates pass:
 - Removed: lib/see64.ff.bak, lib/see64.ff.bak2, lib/see64.ff.save
 
 ---
+
+## Finding: fixup semicolon convention differs between arches
+
+### Discovery
+While attempting to trim ff.ff by replacing inline fixup/ior/malloc
+with `"X.ff" needed ;` calls, discovered that the fixup `;` convention
+is fundamentally different between i386 and x86-64.
+
+**i386 (Lavarenne's design):**
+```forth
+:. _strerror "strerror" fixup    \ NO semicolon
+:  strerror negate 1 dup _strerror #call zlen type cr ;
+```
+Fixup does `rdrop r> 5-` — pops two return addresses. The hidden
+definition falls through (`:` on the next line acts as terminator).
+
+**x86-64 (DG's design):**
+```forth
+:. _strerror "strerror" fixup ;  \ MUST have semicolon
+:  strerror negate 1 dup _strerror #call zlen type cr ;
+```
+Fixup relies on tail-call optimization (compiler converts `call fixup`
+→ `jmp fixup` when `;` follows). No `rdrop` needed. Without `;`,
+fixup patches the wrong call site.
+
+### Impact on shared files
+- `lib/ior.ff` and `lib/malloc.ff` currently use the x86-64 convention
+  (`;` after fixup) — they work on ff64 but crash on i386.
+- These files are currently only consumed by x86-64 code
+  (`lib/x86-64/shell.ff`, `lib/x86-64/fileops.ff`), so no actual bug.
+- BUT they cannot be used as-is to replace the inline definitions in
+  ff.ff — that would require the i386 convention (no `;`).
+
+### Options for true sharing
+1. **Make fixup handle both conventions** — add `rdrop` to x86-64 fixup
+   so it works with or without `;`
+2. **Use `[64] [IF]`** — have the `;` conditional:
+   `:. _strerror "strerror" fixup [64] [IF] ; [THEN]`
+3. **Keep arch-specific** — separate ior.ff/malloc.ff per arch
+
+### Status
+Documenting for DG to triage. Not blocking: pno trim (exp 118) and
+Phase 2 (exp 119) are clean. The fixup difference blocks further
+ff.ff trimming of fixup-dependent blocks.
+
+---
