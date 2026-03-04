@@ -258,7 +258,10 @@ $77 : u>`  lit _?2 ;
 ( Output )
 : on -1 swap ! ;
 : off 0 swap ! ;
-: space $20 emit ;
+( space/putc — on i386, space falls through to putc which is a vector )
+( for emit. On ff64, emit is assembly; putc is just an alias. )
+: space 32 emit ;
+: putc emit ;
 : type BEGIN 0- 0> WHILE swap dup c@ emit 1+ swap 1- REPEAT 2drop ;
 
 ( Memory )
@@ -453,10 +456,13 @@ r0!` ' alias r!`
 variable base
 10 base! ;
 :. _d tuck 0 swap m/mod 0- 0= IF drop nip ;THEN rot _d
-: .digit $30+ $39 u> drop IF 39+ $7A u> drop IF drop $3F THEN THEN emit ;
+( .digit — convert digit value 0-35 to character and emit )
+( Lavarenne's char-literal version: '0'+ checks if past '9', )
+( adjusts for A-F, checks 'z' overflow, falls back to '?' )
+: .digit '0'+ '9' u> drop IF 39+ 'z' u> drop IF '?'_ THEN THEN emit ;
 : .ub\ _d .digit ;
 : .ub .ub\ space ;
-:. .sign 0- 0< IF $2D emit negate THEN ;
+:. .sign 0- 0< IF '-' emit negate THEN ;
 : .\ .sign base@ .ub\ ;
 : . .\ space ;
 : .dec\ .sign 10 .ub\ ;
@@ -465,7 +471,8 @@ variable base
 : .u .u\ space ;
 : .ux\ $10 .ub\ ;
 : .ux .ux\ space ;
-: .x\ .sign $10 .ub\ ;
+( .x\ — Lavarenne's hex display: shows $ prefix for values > 9 )
+: .x\ .sign 9 > drop IF '$' emit THEN $10 .ub\ ;
 : .x .x\ space ;
 
 ( Hex digit output — .#s prints N hex digits of a value )
@@ -511,9 +518,11 @@ variable base
 \ new H (discarding the marker and all later definitions).
 :. _mark ;` r> 5- here - allot anon:`
   H@ BEGIN dup@ swap h.sz+ c@+ + 1+ swap here = 2drop UNTIL H! ;
-: marker 2dup + dup c@ >r dup >r $60 swap c! 1+
+( marker — Lavarenne's original uses '`' char literal for backtick append )
+( mark` falls through to marker — ;` + wsparse provides the name string )
+: mark` ;` wsparse
+: marker 2dup + dup c@ >r dup >r '`' swap c! 1+
   here 0 header 2r> c! _mark ' call, anon:` ;
-: mark` ;` wsparse marker ;
 
 ( I/O constants )
 0 constant stdin

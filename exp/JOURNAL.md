@@ -9862,3 +9862,45 @@ Before: 378952 bytes. After: 378840 bytes.
 - `make test`: all 5 i386 configurations pass
 - `make test64`: all pass
 - `make -C exp test`: 8 passed, 0 failed
+
+## Experiment 126: Restore char literals and output words
+
+### Goal
+
+Restore Lavarenne's readable char-literal style in output words and
+add missing `putc` alias.
+
+### Why these were hex-ified
+
+The ff64 number parser was one of the last subsystems to stabilize
+(experiments 30+). Early experiments used hex constants exclusively
+because char literal parsing (`'X'` syntax) wasn't yet trusted. By the
+time it worked correctly, hex constants like `$30`, `$39`, `$2D` were
+already entrenched throughout ff64.boot.
+
+The `putc` word was omitted because ff64's `emit` is an assembly
+primitive (not a Forth vector like i386), making the `space`→`putc`→
+`emit` fall-through chain unnecessary. But `putc` appears in library
+code that targets both architectures.
+
+The `.x\` hex display lost its `$` prefix during porting — Lavarenne's
+original shows `$` before hex values greater than 9 (e.g., `$ff` not
+`ff`), which distinguishes hex from decimal in mixed output.
+
+### What changed
+
+- `.digit`: restored char literals: `'0'+`, `'9'`, `'z'`, `'?'_`
+  instead of `$30+`, `$39`, `$7A`, `drop $3F`
+- `.sign`: restored `'-' emit` instead of `$2D emit`
+- `.x\`: restored `$ prefix` display: `9 > IF '$' emit THEN`
+- `space`: restored decimal `32` instead of `$20`
+- `putc`: added as alias for `emit` (i386 has it as a vector)
+- `marker`: restored `'\\`' swap c!` instead of `$60 swap c!`
+- `mark`/`marker`: restored fall-through chain
+
+### Verification
+
+- `make test`: all 5 i386 configurations pass
+- `make test64`: all pass
+- `make -C exp test`: 8 passed, 0 failed
+- `.x` output now matches i386: `$ff $a $2a` (not `ff a 2a`)
