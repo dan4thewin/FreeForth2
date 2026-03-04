@@ -854,6 +854,21 @@ The x86-64 differences are minimal: `0-\`` emits `48 85 DB` (test
 rbx,rbx with REX prefix) instead of i386's `09 DB` (or ebx,ebx), and
 `_?2` emits `48 39 DA` (cmp rdx,rbx) instead of `39 DA` (cmp edx,ebx).
 
+**Carry flag conditionals (exp 127)**: `C1?\`` and `C0?\`` test the CPU
+carry flag (JB=$72, JAE=$73) as unary conditions, sharing opcodes with
+`u<\``/`u>=\``:
+
+```forth
+$72 dup : C1?` lit _?1 ; : u<`  lit _?2 ;
+$73 dup : C0?` lit _?1 ; : u>=` lit _?2 ;
+```
+
+The `dup` shares one opcode between both consumers. Each `;` executes
+the preceding anonymous definition, consuming one value. This is the
+same sharing pattern as the signed comparisons — one `dup`, two
+definitions. An early attempt with two `dup`s left extra items on
+the compile-time stack.
+
 As part of exp 092, ff64.boot was comprehensively reordered to match
 ff.boot's logical structure: infrastructure → defining words →
 comparisons → flow control → runtime words.
@@ -1242,8 +1257,16 @@ directly emits machine code bytes via litcomma. But Lavarenne's
 FreeForth builds higher-level macros FROM simpler ones:
 
 ```forth
-: 0;` 0-` 0=` IF` drop` ;THEN` ;
+: 0;` 0-` 0=` IF` drop`
+: ;THEN` ;;` THEN` ;
 ```
+
+**Fall-through (restored in exp 127)**: `0;`` falls through to `;THEN`` — there
+is no `;` after `drop``. When `0;`` executes, it emits test/conditional-jump/drop,
+then falls directly into `;THEN``'s code which emits ret + patches the forward
+jump. This is Lavarenne's original pattern; the ff64 port initially made `0;``
+self-contained (calling `;THEN`` explicitly) because the fall-through semantics
+of `:` were not yet understood.
 
 This says: "define `0;` as a macro that, when invoked, calls `0-`
 (emit test), `0=` (set condition), `IF` (emit conditional jump),
@@ -1788,13 +1811,18 @@ exit:
 
 ### TIMES/LOOP vs WHILE/REPEAT
 
-The i386 FreeForth uses REPEAT for both patterns, with END` detecting the
-loop type. Our x86-64 uses a dedicated LOOP` that includes rdrop:
+**Important note (exp 127)**: `LOOP` is NOT an original FreeForth word — it
+was invented during the ff64 port as a counted-loop terminator that combines
+backward-jump + rdrop + THEN. Lavarenne's i386 FreeForth uses `REPEAT` for
+both conditional and counted loops. Experiment 127 restored `.#s` to use
+`TIMES...REPEAT` (matching `ff.boot`), though `LOOP` remains available for
+cases where it was defined during the port.
 
 | Pattern | When to use | Terminator |
 |---------|-------------|------------|
 | `BEGIN ... WHILE ... REPEAT` | Conditional loops | REPEAT` |
-| `N TIMES ... LOOP` | Counted loops | LOOP` |
+| `N TIMES ... REPEAT` | Counted loops (Lavarenne's original) | REPEAT` |
+| `N TIMES ... LOOP` | Counted loops (ff64 port addition) | LOOP` |
 
 ### The SWAPbit Ordering Fix
 

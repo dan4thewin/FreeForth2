@@ -91,6 +91,15 @@ LOOP` compile-time macro: close a TIMES counted loop
   Decrements counter, branches back if nonzero.
   see also: TIMES REPEAT
 
+C1?` compile-time macro: test CPU carry flag (set)
+  Stores JB ($72) in cond_jmp. Use after add/adc/sbb
+  to branch on overflow/borrow.
+  Example: $FFFFFFFFFFFFFFFF 1 + C1? IF ( carry set ) THEN
+
+C0?` compile-time macro: test CPU carry flag (clear)
+  Stores JAE ($73) in cond_jmp. Complement of C1?.
+  Example: 5 1 + C0? IF ( no carry ) THEN
+
 \ === Boot infrastructure ===
 
 loadfile ( addr len -- ) load and compile a Forth source file

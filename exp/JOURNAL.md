@@ -9904,3 +9904,114 @@ original shows `$` before hex values greater than 9 (e.g., `$ff` not
 - `make test64`: all pass
 - `make -C exp test`: 8 passed, 0 failed
 - `.x` output now matches i386: `$ff $a $2a` (not `ff a 2a`)
+
+---
+
+## Experiment 127: Flow-control fall-throughs and carry conditionals
+
+### Goal
+
+Restore three flow-control patterns to Lavarenne's originals:
+
+1. **`0;`/`;THEN` fall-through** — the poster child of the `:` non-closure
+   discovery. On i386, `0;`` falls through to `;THEN``. During the ff64 port,
+   `0;`` was made self-contained (`0;` 0-` 0=` IF` drop` ;THEN` ;`) because
+   we believed `0;` "leaves the IF open." Experiment 124 corrected that
+   misunderstanding — now restore the original fall-through.
+
+2. **`.b`/`.#s` fall-through with REPEAT** — On i386, `.b` is just `: .b 2`
+   that falls through to `.#s`. Also, `.#s` closes its `TIMES` loop with
+   `REPEAT`, not `LOOP`. `LOOP` is not a FreeForth word — it was invented
+   during the ff64 port as an early substitute before `REPEAT` was understood.
+
+3. **`C1?`/`C0?` carry flag conditionals** — These test the CPU carry flag
+   (`JB`/`JAE`) as unary conditions, complementing the existing `u<``/`u>=``
+   binary conditions on the same opcodes. The i386 has them; ff64 was missing
+   them.
+
+### Analysis: why these were originally rewritten
+
+**`0;`/`;THEN`**: The fall-through was broken in the very first boot experiments
+because we didn't understand that `:` does NOT emit `RET` for the previous named
+definition. The self-contained `0;`` worked correctly, so there was no urgency to
+restore it — until experiment 124 revealed the error in our understanding.
+
+**`.b`/`.#s`**: The original `.b 2 : .#s TIMES...REPEAT drop ;` chain was broken
+for two reasons: (1) same fall-through misunderstanding, and (2) `REPEAT` wasn't
+fully trusted. Early experiments used `LOOP` (a word we invented that combines
+backward-jump + rdrop + THEN) because `REPEAT` + `TIMES` had subtle interactions
+we didn't understand. By the time `REPEAT` was working correctly, `.#s` was
+already using `LOOP` and nobody questioned it.
+
+**`C1?`/`C0?`**: Simply omitted during the port. The unsigned comparison factory
+lines (`$72 : u<`` ...`) used the opcodes without adding the unary carry-test
+forms. The i386 pattern is `$72 dup : C1?` lit _?1 ; : u<` lit _?2 ;` — the
+`dup` provides the opcode byte to both the unary `C1?`` (via `_?1`) and the
+binary `u<`` (via `_?2`). We need one `dup` for two consumers, not `dup` before
+each.
+
+### Actions
+
+1. **C1?/C0? addition**: Added `dup` and `C1?``/`C0?`` to the `$72`/`$73` lines.
+
+   **Bug found and fixed**: Initially wrote `$72 dup : C1?` lit _?1 ; dup : u<``
+   lit _?2 ;` — but the second `dup` creates an extra copy that's never consumed,
+   leaving 2 items on the data stack at boot time. The correct pattern (matching
+   i386) is `$72 dup : C1?` lit _?1 ; : u<` lit _?2 ;` — one `dup` provides
+   the value to both definitions. The first `;` executes `C1?``'s anonymous body
+   (consuming the dup'd value), but the original `$72` remains for `u<``'s `;`
+   to consume.
+
+2. **`0;`/`;THEN` fall-through**: Swapped order so `0;`` is defined first and
+   falls through to `;THEN``:
+   ```
+   : 0;` 0-` 0=` IF` drop`
+   : ;THEN` ;;` THEN` ;
+   ```
+
+3. **`.b`/`.#s` fall-through + REPEAT**: Restored `.b` as just `2` falling through
+   to `.#s`, and replaced `LOOP` with `REPEAT`:
+   ```
+   : .b 2
+   : .#s TIMES dup r 4* >> $F & .digit REPEAT drop ;
+   ```
+
+### The dup-sharing insight
+
+The bug in C1?/C0? illuminates an important pattern in the comparison factory.
+When i386 writes:
+
+```
+$72 dup : C1?` lit _?1 ; : u<` lit _?2 ;
+```
+
+The `$72 dup` pushes the opcode twice. Then `: C1?`` creates a header, `lit _?1`
+compiles code that stores the opcode, and `;` terminates by executing the
+anonymous body — which consumes one copy. The remaining copy is consumed by
+`u<``'s `;` execution. The two definitions share one `dup`. This is why the
+existing signed comparison lines work:
+
+```
+$74 dup : 0=` lit _?1 ; : =` lit _?2 ;
+```
+
+One `dup`, two consumers. The pattern is: `opcode dup : unary` ... ; : binary` ... ;`
+
+### Testing
+
+```
+$ echo ': prompt ; $FFFFFFFFFFFFFFFF 1 + C1? IF 99 ELSE 0 THEN .' | ./ff64 -f ff64.boot
+99
+$ echo ': prompt ; 5 1 + C0? IF 77 ELSE 0 THEN .' | ./ff64 -f ff64.boot
+77
+```
+
+C1? correctly detects carry (overflow from $FFFFFFFFFFFFFFFF + 1).
+C0? correctly detects no carry (5 + 1 fits in 64 bits).
+
+### Results
+
+- `make test`: all 5 i386 configurations pass
+- `make test64`: all pass
+- `make -C exp test`: 8 passed, 0 failed
+- Binary: 367632 bytes (from 367640 before, -8 bytes from fall-through savings)

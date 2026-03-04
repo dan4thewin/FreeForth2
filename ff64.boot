@@ -212,9 +212,10 @@ $7C dup : 0<`  lit _?1 ; : <`  lit _?2 ;
 $7D dup : 0>=` lit _?1 ; : >=` lit _?2 ;
 $7E dup : 0<=` lit _?1 ; : <=` lit _?2 ;
 $7F dup : 0>`  lit _?1 ; : >`  lit _?2 ;
-\ Unsigned: JB=$72 JAE=$73 JBE=$76 JA=$77
-$72 : u<`  lit _?2 ;
-$73 : u>=` lit _?2 ;
+\ Unsigned + carry: JB=$72 JAE=$73 JBE=$76 JA=$77
+( C1?/C0? test CPU carry flag — used by adc, sbb, and low-level code )
+$72 dup : C1?` lit _?1 ; : u<`  lit _?2 ;
+$73 dup : C0?` lit _?1 ; : u>=` lit _?2 ;
 $76 : u<=` lit _?2 ;
 $77 : u>`  lit _?2 ;
 
@@ -271,8 +272,12 @@ $77 : u>`  lit _?2 ;
 
 ( Flow control macros — composable backtick versions )
 : ;;` >S0 $C3, ,1 ;
+( 0;` falls through to ;THEN` — Lavarenne's fall-through pattern. )
+( 0;` emits: test-zero, conditional-jump, drop. If TOS was nonzero, )
+( execution continues past ;THEN. If zero, ;THEN emits RET and )
+( resolves the forward jump from IF`. )
+: 0;` 0-` 0=` IF` drop`
 : ;THEN` ;;` THEN` ;
-: 0;` 0-` 0=` IF` drop` ;THEN` ;
 : 0<>;` 0-` 0<>` IF` drop` ;THEN` ;
 : ?dup` 0-` 0<>` IF` dup` THEN` ;
 : BOOL` 0 lit` IF` ~` THEN` ;
@@ -476,8 +481,10 @@ variable base
 : .x .x\ space ;
 
 ( Hex digit output — .#s prints N hex digits of a value )
-: .#s TIMES dup r 4* >> $F & .digit LOOP drop ;
-: .b 2 .#s ;
+( .b falls through to .#s — just provides the count 2. )
+( REPEAT not LOOP: Lavarenne's original uses TIMES...REPEAT. )
+: .b 2
+: .#s TIMES dup r 4* >> $F & .digit REPEAT drop ;
 : .w 4 .#s ;
 
 ( cr — print newline, as a vector for overridability )
