@@ -10089,3 +10089,53 @@ the explicit `>in@ 1- >in!` form which is equivalent and working.
 - `make test64`: all pass
 - `make -C exp test`: all pass (0 failures)
 - Binary: 367624 bytes (from 367632, -8 bytes)
+
+---
+
+## Experiment 129: Add [~]` conditional compilation helper
+
+### Goal
+
+Add the missing `[~]`` word — a conditional compilation helper from ff.boot
+that was overlooked during the port.
+
+### What [~]` does
+
+```forth
+: [~]` wsparse find nip ;
+```
+
+`[~]`` parses the next word from input and looks it up in the dictionary.
+It returns `find`'s second stack value: **0 if found, nonzero if not found**.
+The `~` in the name means "not" — the result is truthy when the word does
+NOT exist. This makes it natural for conditional compilation:
+
+```forth
+[~] some-extension [IF]
+  ( ... define some-extension ... )
+[THEN]
+```
+
+The `find` stack effect is `( addr len -- xt 0 | addr len )`: it pushes
+`(xt 0)` when found, or leaves the input unchanged when not found. `nip`
+drops NOS, keeping TOS — so we get 0 (found) or the string length (not found).
+
+### Why it was missing
+
+Simply overlooked — `[~]`` has no dependencies beyond `wsparse` and `find`,
+both of which have been available since early boot experiments. It was never
+needed during the port because we weren't writing conditional-compilation
+code that tests for word existence.
+
+### Actions
+
+1. Added `[~]`` to ff64.boot after `[THEN]`` (matching ff.boot placement)
+2. Added help entry to ff64.help
+3. Verified: `[~] eval` → found (0), `[~] nonexistent` → not found (11)
+
+### Results
+
+- `make test`: all 5 i386 configurations pass
+- `make test64`: all pass
+- `make -C exp test`: all pass
+- Binary: 367648 bytes

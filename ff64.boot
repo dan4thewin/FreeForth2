@@ -649,6 +649,9 @@ AGAIN
 : [IF]` 0- 0= drop IF
 : [ELSE]` >in@ _[] drop
 : [THEN]` THEN ;
+( [~]` — test whether a word exists. Returns 0 if found, nonzero if not. )
+( Usage: [~] foo [IF] ...not-found code... [ELSE] ...found code... [THEN] )
+: [~]` wsparse find nip ;
 1 constant [1]`
 0 constant [0]`
 8 constant cell

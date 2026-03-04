@@ -138,7 +138,13 @@ cell` ( -- 8 ) compile-time constant: cell size in bytes
   Derived from cell: cell 4 -
   Use with [IF] for conditional compilation:
     [64] [IF] \ 64-bit code [ELSE] \ 32-bit code [THEN]
-  see also: cell [IF] [ELSE] [THEN]
+  see also: cell [IF] [ELSE] [THEN] [~]
+
+[~]` ( <name> -- 0 | nonzero ) test whether a word exists
+  Returns 0 (null) if found, nonzero if not found.
+  : [~]` wsparse find nip ;
+  Usage: [~] foo [IF] ...not-found... [ELSE] ...found... [THEN]
+  see also: [IF] [ELSE] [THEN] [0] [1] [64]
 
 pad ( -- addr ) scratch buffer: here + 256
   Temporary workspace safe from ongoing compilation at here.
