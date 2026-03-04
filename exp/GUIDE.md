@@ -869,7 +869,7 @@ infrastructure to porting ff.boot's inline code generators. Each
 macro teaches something about x86 encoding, the SWAPbit mechanism,
 or FreeForth's design philosophy.
 
-### Store operations and fall-through definitions (exp 024)
+### Store operations and fall-through definitions (exp 024, restored exp 125)
 
 FreeForth uses **fall-through definitions** — a definition that
 doesn't end with `;` continues into the next definition's code:
@@ -885,18 +885,35 @@ previous one's code. This is how Lavarenne achieved code reuse
 without the overhead of a call — `r>`` and `dropr>`` share the
 `$5B, s1` instruction.
 
-The store operations follow a layered pattern:
+**Critical principle**: `:` does NOT close the previous named
+definition. It only closes a pending *anonymous* definition. For
+named definitions, `:` simply creates a new header pointing at the
+current code emission address. The previous definition's code
+continues seamlessly into the new one.
+
+This principle also underlies `0;`/`;THEN`, `[IF]`/`[ELSE]`/`[THEN]`,
+and all other multi-`:` definition groups in ff.boot.
+
+The store operations use Lavarenne's **fall-through triads** — three
+words defined on a single line, each building on the previous:
 
 ```forth
-: 2dup!`  $48, ,1 $1389, s09 ;      ( addr val -- addr val )
-: tuck!`  2dup!` nip` ;              ( addr val -- addr )
-: !`      tuck!` drop` ;             ( addr val -- )
-: over!`  swap` tuck!` ;             ( val addr -- val )
+: over!`  swap` : tuck!`  2dup!`  nip` ; : !`  tuck!`  drop` ;
+: overc!` swap` : tuckc!` 2dupc!` nip` ; : c!` tuckc!` drop` ;
+: overw!` swap` : tuckw!` 2dupw!` nip` ; : w!` tuckw!` drop` ;
+: over+!` swap` : tuck+!` 2dup+!` nip` ; : +!` tuck+!` drop` ;
+: over-!` swap` : tuck-!` 2dup-!` nip` ; : -!` tuck-!` drop` ;
 ```
 
-Each layer adds one operation — `nip`` to consume an argument,
-`drop`` to consume another, `swap`` to reorder. This is pure
-composition with zero redundancy.
+Reading the first line: `over!`` emits `swap`` then falls through
+to `tuck!``'s body (`2dup!`` + `nip``). After `nip``'s `;`, the
+next `:` creates `!``'s entry point. `!`` emits `tuck!`` (the code
+just before it!) then `drop``. Five store variants × three access
+patterns = 15 words, defined in 5 lines with shared code throughout.
+
+During the initial port, these chains were broken into standalone
+definitions because we didn't understand `:` fall-through semantics.
+Experiment 125 restored them.
 
 ### The xchg [r15] rotation trick (exp 024)
 

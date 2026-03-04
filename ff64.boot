@@ -15,9 +15,12 @@
 \ Core stack macros (swap` is an assembly primitive)
 : under` $F87F8D4D, ,4 $49, ,1 $1789, s08 ;
 : nip` $49, ,1 $178B, s08 $087F8D4D, ,4 ;
-: nipdup` $48, ,1 $DA89, s09 ;
 : drop` swap` nip` ;
-: dup` under` nipdup` ;
+( dup` falls through to nipdup` — Lavarenne's key insight: )
+( dup = allocate NOS slot + store TOS there + copy TOS to NOS )
+( The "copy TOS to NOS" part IS nipdup, so dup shares its code. )
+: dup` under`
+: nipdup` $48, ,1 $DA89, s09 ;
 : over` under` swap` ;
 : tuck` swap` over` ;
 
@@ -86,27 +89,21 @@
 : dupw@` over` $0F, ,1 $1AB7, s09 ;
 
 \ Memory store (2dup variants preserve both operands)
+( 2dupw!` falls through to 2dup!` — the $66 prefix makes the mov 16-bit, )
+( then the mov [rdx],rbx body is shared with 2dup!`. )
+: 2dupw!` $66, ,1
 : 2dup!` $48, ,1 $1389, s09 ;
 : 2dupc!` $1388, s09 ;
-: 2dupw!` $66, ,1 $1389, s09 ;
 : 2dup+!` $48, ,1 $1301, s09 ;
 : 2dup-!` $48, ,1 $1329, s09 ;
-\ Consuming store ops
-: tuck!` 2dup!` nip` ;
-: !` tuck!` drop` ;
-: tuckc!` 2dupc!` nip` ;
-: c!` tuckc!` drop` ;
-: tuckw!` 2dupw!` nip` ;
-: w!` tuckw!` drop` ;
-: tuck+!` 2dup+!` nip` ;
-: +!` tuck+!` drop` ;
-: tuck-!` 2dup-!` nip` ;
-: -!` tuck-!` drop` ;
-: over!` swap` tuck!` ;
-: overc!` swap` tuckc!` ;
-: overw!` swap` tuckw!` ;
-: over+!` swap` tuck+!` ;
-: over-!` swap` tuck-!` ;
+\ Consuming store ops — Lavarenne's fall-through triads:
+\ over!` falls through to tuck!` (just adds swap` prefix)
+\ tuck!` falls through to !` (emits 2dup! + nip + drop in layers)
+: over!`  swap` : tuck!`  2dup!`  nip` ; : !`  tuck!`  drop` ;
+: overc!` swap` : tuckc!` 2dupc!` nip` ; : c!` tuckc!` drop` ;
+: overw!` swap` : tuckw!` 2dupw!` nip` ; : w!` tuckw!` drop` ;
+: over+!` swap` : tuck+!` 2dup+!` nip` ; : +!` tuck+!` drop` ;
+: over-!` swap` : tuck-!` 2dup-!` nip` ; : -!` tuck-!` drop` ;
 
 \ 32-bit (dword) store — for patching jump offsets
 : 2dupd!` $1389, s09 ;
@@ -150,11 +147,12 @@
 \ Composed operations
 : 2dup` over` over` ;
 : 3dup` 2dup` $F87F8D4D, ,4 $18478B49, ,4 $078949, ,3 ;
-: 2drop` drop` drop` ;
 : 2dup+` over` over+` ;
 : 2r>` 2dup` dropr>` swap` dropr>` swap` ;
 : 2dup>r` swap` dup>r` swap` dup>r` ;
-: 2>r` 2dup>r` 2drop` ;
+( 2>r` falls through to 2drop` — push both then discard both. )
+: 2>r` 2dup>r`
+: 2drop` drop` drop` ;
 
 \ Fetch and advance (address on stack, returns value and advanced addr)
 : @+`  dup@`  swap` 8+` swap` ;
@@ -186,14 +184,18 @@
 
 : (` ')' parse 2drop ;
 
-( Private word infrastructure )
+( Private word infrastructure — Lavarenne's 3-way fall-through chain: )
+( :.` starts a named def and falls through to pvt` which falls through )
+( to ct|! — three operations composed without any call/ret overhead. )
+: :.` :`
+: pvt` 8 H@
 : ct|! 8+ dupc@ rot | swap c! ;
-: pvt` 8 H@ ct|! ;
-: :.` :` pvt` ;
 
 ( Dictionary defining words )
 : create` :` 1 H@ ct|! anon:` ;
 : variable` create` 0 , anon:` ;
+( constant` — initial definition, before _alias is available. )
+( Redefined after _alias to use Lavarenne's create` _alias form. )
 : constant` create` H@ ! $20 H@ ct|! anon:` ;
 
 ( FLAGS-based conditionals — ported from ff.boot )
@@ -386,8 +388,13 @@ H@ @ constant _nop pvt
 ( Range check — uses FLAGS tail-call pattern )
 : within over- -rot - u> 2drop nzTRUE ? zFALSE ;
 
+( alias` falls through to _alias — :` creates the header, )
+( then _alias stores the value, sets the constant flag, and closes. )
+: alias` :`
 : _alias H@ ! $20 H@ ct|! anon:` ;
-: alias` :` _alias ;
+( constant` reuses _alias: create` makes a ct=1 header, then _alias )
+( overwrites the xt with the value and adds the $20 alias flag. )
+: constant` create` _alias ;
 
 \ Locals — direct access to call stack cells and bulk data↔call transfers
 \ r0/r0! alias r/r! — call stack top; r1..r5 access deeper cells
@@ -433,9 +440,14 @@ r0!` ' alias r!`
 : sp@` over` $4C, ,1 $FB89, s01 ;
 
 ( Bracket state switching )
+( [/] — switch between compilation and interpretation within a definition )
+( [ saves anon and SC state, starts a new anonymous block )
+( ] saves the block via ;, then restores original anon/SC via _] )
+( ]` falls through to _] — 2>r saves SC byte + anon, ;` closes the )
+( bracket block, 2r> recovers the saved state, _] restores it. )
 : [` anon@ SC c@ anon:` ;
+: ]` 2>r ;` 2r>
 :. _] SC c! anon! ;
-: ]` 2>r ;` 2r> _] ;
 
 ( Number output )
 variable base

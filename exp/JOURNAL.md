@@ -9768,3 +9768,97 @@ interactively.
 - `make test64`: all pass (core1.ff/core2.ff/mmap.ff skipped as before)
 - `make -C exp test`: 8 passed, 0 failed
 - core1.ff: 579 ok, 58 skipped, PASSED (was 5 fm/mod failures before fix)
+
+## Experiment 125: Restore fall-through chains in ff64.boot
+
+### Goal
+
+Restore Christophe Lavarenne's fall-through `:` definition chains that
+were broken during the x86-64 port. Fall-through is a defining
+characteristic of FreeForth: consecutive `:` definitions share code
+because `:` creates a new entry point without closing the previous
+definition.
+
+### Why these were originally broken
+
+During early porting (experiments 1–10), we treated each `:` definition
+as a standalone unit. Every definition got an explicit `;` terminator,
+and fall-through chains were replaced with explicit calls. This was the
+pragmatic choice: we didn't understand that `:` does NOT close the
+previous named definition. The i386 ff.boot had no comments explaining
+this, and the behavior is surprising to anyone coming from ANS Forth
+where `:` starts a completely new definition.
+
+The misunderstanding persisted through 124 experiments. It wasn't until
+DG explicitly stated "The `:` does NOT close" and pointed us to ff.ff's
+30-line `[IF]` block and ff.boot's `0;`/`;THEN` fall-through that we
+understood this was intentional design, not an accident.
+
+### What changed
+
+**1. `dup`/`nipdup` fall-through restored**
+
+Before: `: dup` under` nipdup` ;` — standalone, calls both explicitly.
+After:  `: dup` under` / : nipdup` ...` — `dup` falls through to
+`nipdup`. This is Lavarenne's key insight: `dup` = allocate NOS slot +
+store TOS there + copy TOS to NOS. The "copy TOS to NOS" part IS
+`nipdup`, so `dup` shares its code rather than calling it.
+
+**2. Store-op triads restored (5 chains)**
+
+Before: 15 standalone definitions (tuck!`, !`, over!` etc.)
+After:  5 one-line triads:
+```
+: over!`  swap` : tuck!`  2dup!`  nip` ; : !`  tuck!`  drop` ;
+: overc!` swap` : tuckc!` 2dupc!` nip` ; : c!` tuckc!` drop` ;
+```
+Each line defines three words: `over!` falls through to `tuck!` (just
+adds `swap` prefix), and `tuck!` falls through to the part of `!` that
+does `nip + drop`. This is pure composition with zero redundancy.
+
+**3. `2dupw!`/`2dup!` fall-through restored**
+
+The `$66` (operand size override) prefix before `2dup!`'s body makes
+the mov 16-bit. By falling through, `2dupw!` shares the mov instruction.
+
+**4. `2>r`/`2drop` fall-through restored**
+
+`2>r` pushes both TOS and NOS to the return stack, then falls through
+to `2drop` which discards both from the data stack.
+
+**5. `:.`/`pvt`/`ct|!` 3-way chain restored**
+
+`:.` starts a definition and falls through to `pvt` which falls through
+to `ct|!`. Three operations — create header, mark private, OR into ct
+byte — composed as one seamless code path.
+
+**6. `alias`/`_alias` fall-through restored**
+
+`alias` creates the header via `:` and falls through to `_alias` which
+stores the value, sets the $20 flag, and closes.
+
+**7. `constant` redefined using `_alias`**
+
+Now uses Lavarenne's original `create` _alias` form (after `_alias` is
+defined). The initial definition remains for early boot constants (h.ct,
+h.sz, h.nm).
+
+**8. `]`/`_]` fall-through restored**
+
+`]` falls through to `_]` — saves state via `;`, recovers saved anon/SC
+from return stack, and restores compilation context.
+
+### Binary size effect
+
+The fall-through restorations save ~112 bytes by eliminating redundant
+CALL/RET instruction pairs. The generated code for words like `dup` and
+`!` is unchanged — the same machine code is emitted — but the boot-time
+compiler definitions themselves are more compact.
+
+Before: 378952 bytes. After: 378840 bytes.
+
+### Verification
+
+- `make test`: all 5 i386 configurations pass
+- `make test64`: all pass
+- `make -C exp test`: 8 passed, 0 failed
