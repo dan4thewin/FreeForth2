@@ -522,9 +522,6 @@ variable noauto pvt
 ( Like eval but calls _auto to execute the compiled code )
 :. eval. >in@ tp@ 2>r over + tp! >in! compiler _auto 2r> tp! >in! ;
 
-( _eval — evaluate and get result xt via tick )
-:. _eval eval. '
-
 ( key — read a single character from stdin )
 : key tib 1 accept drop tib c@ ;
 
