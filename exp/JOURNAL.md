@@ -10363,3 +10363,102 @@ syscall order, no shuffling needed. `tell` updated: `1 0 rot _lseek`.
 - `make -C exp test`: all pass
 - `make ff`: i386 builds with new `zt` in fflin.boot
 - Binary: 378856 bytes
+
+---
+
+## Experiment 133: Help file audit — load hints and standardization
+
+### Date: 2025-07-15
+
+### Goal
+
+After experiments 130–132 reorganized library files (shell.ff, fileops.ff,
+malloc.ff, ior.ff, console.ff, time.ff, stat.ff) and moved `zt` into boot,
+the help files (ff.help and ff64.help) still referenced the old monolithic
+`ff.ff` and `full.ff`. DG asked us to:
+
+1. Audit every library word in ff.help and ff64.help for correct load hints
+2. Standardize on a single `needs filename.ff` line before `see also:`
+3. Remove stale file references
+
+### Analysis
+
+We surveyed every `see also` line referencing `ff.ff` or `full.ff`:
+
+| Word(s)                  | Old reference | Actual location       | Action               |
+|--------------------------|---------------|-----------------------|----------------------|
+| `zt`                     | `ff.ff`       | fflin.boot (boot)     | Remove — always avail |
+| `getenv`/`cd`/`shell`/`!!` | `ff.ff`    | lib/shell.ff          | `needs shell.ff`     |
+| `lseek`                  | `ff.ff`       | lib/fileops.ff        | `needs fileops.ff`   |
+| `ioctl`                  | `ff.ff`       | lib/fileops.ff        | `needs fileops.ff`   |
+| `select`                 | `ff.ff`       | lib/fileops.ff        | `needs fileops.ff`   |
+| `malloc`/`free`          | `ff.ff`       | lib/malloc.ff         | `needs malloc.ff`    |
+| `stat`/`st.size`         | `full.ff`     | lib/stat.ff           | `needs stat.ff`      |
+| `mkmm`/`mmapr`/etc.     | `full.ff`     | lib/x86/mmap.ff       | `needs mmap.ff`      |
+| `?ior`/`?ior.`           | `ff.ff`       | lib/ior.ff            | `needs ior.ff`       |
+| `cls`/`atxy`/`color`     | `ff.ff`       | lib/console.ff        | `needs console.ff`   |
+| `.now`/`ms`/`ms@`/etc.   | `ff.ff`       | lib/time.ff           | `needs time.ff`      |
+| `{{{`/`}}}`              | `ff.ff`       | lib/x86/perf.ff       | `needs perf.ff`      |
+| `2over'`/`sp@'`          | `ff.ff`       | ff.boot (boot)        | Remove — always avail |
+| `abs`/`dnegate`/`dabs`   | `ff.ff`       | ff.boot (boot)        | Remove — always avail |
+| `#s`/`X#s`               | `ff.ff`       | ff.boot (boot)        | Remove — always avail |
+| `dump`/`;dump`           | `ff.ff`       | ff.boot (boot)        | Remove — always avail |
+
+Words that are always available (defined in ff.boot or fflin.boot) had their
+`ff.ff` tag removed entirely — no `needs` line is appropriate since they're
+always loaded.
+
+### ff64.help changes
+
+The ff64.help already had `Loaded from: "xxx.ff" needed` format in some
+entries. We standardized all to the simpler `needs filename.ff` format.
+
+Also updated boot syscall entries to use the underscore-prefixed names from
+experiment 132: `fstat` → `_fstat`, `lstat` → `_lstat`, `stat` → `_stat`,
+`lseek` → `_lseek` in see-also references.
+
+Added `needs stat.ff` to each word group in the stat.ff section (7 groups),
+and `needs net.ff` to the networking section's see-also line.
+
+### Format convention
+
+Standardized format for library words:
+
+```
+wordname ( stack -- effect ) description
+  ...details...
+  needs filename.ff
+  see also: related words
+```
+
+The `needs` line goes immediately before `see also:`, providing a single
+clear instruction for loading. Boot words (always available) have no
+`needs` line.
+
+### ff64.help additional fixes
+
+After the initial load-hint pass, DG pointed out that every word in a
+`see also:` line should be something a user can type after `help` and get
+a result.  We ran a Python audit checking every see-also word against
+entry headers in both ff64.help and ff.help.  Fixes:
+
+- **`4-``** — removed from see-also (doesn't exist in ff64, only i386)
+- **`cells`/`cell+`** — removed from see-also (not defined in ff64);
+  replaced with `cell 8+`
+- **`_stat`** — added entry (boot syscall wrapper, was referenced but
+  undocumented)
+- **`_lseek`** — added entry (boot syscall wrapper, was referenced but
+  undocumented)
+- **`chdir`** — added entry (boot syscall wrapper, existed but unlisted)
+- **`libc@`** — removed from see-also (internal variable, not user-facing)
+- **`_fstat`/`_lstat`** — renamed from `fstat`/`lstat` in entries to match
+  exp 132 underscore convention
+- Updated boot file-I/O see-also lines to use underscore-prefixed names
+
+Final audit: zero see-also words in ff64.help without a corresponding
+entry in ff64.help or ff.help.
+
+### Results
+
+- `make -C exp test`: all pass
+- No code changes — help files only

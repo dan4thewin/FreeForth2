@@ -243,7 +243,7 @@ pick` ( xn..x0 n -- xn..x0 xn ) compiles inline code to replace TOS=n with
     $5C8B, s08 10 << $24+ w, ;  \ 8B5C24xx(mov ebx,[esp+4n])
 2over` ( a b c d -- a b c d a b ) copies a to NOS and b to TOS
   : 2over` 3 lit` pick` 3 lit` pick` ;
-  see also: dup over  ff.ff
+  see also: dup over
 
 2drop` ( x y -- ) double-pop DATAstack
   : 2drop` drop` drop` ;
@@ -324,7 +324,7 @@ rp@` ( -- @ ) push on DATAstack the current CALLstack pointer
   : rp@` over` $C389, s01 ;  \ mov ebx,eax
 sp@` ( -- @ ) push on DATAstack the current DATAstack pointer
   : sp@` over` $E389, s01 ;  \ mov ebx,esp
-  see also: rp@ pick  ff.ff
+  see also: rp@ pick
 
   ------------------
   INTEGER ARITHMETIC
@@ -457,7 +457,7 @@ dnegate ( d -- -d ) double-cell version of negate
   : dnegate` ~` swap` negate` swap` ;
 dabs ( d -- |d| ) double-cell version of abs
   : dabs` 0-` 0<` IF` dnegate` THEN` ;
-  see also: min max within abs dnegate dabs BOOL conditionals  ff.ff
+  see also: min max within abs dnegate dabs BOOL conditionals
 
 bounds` ( @ # -- @+# @ ) converts start address "@" under count "#"
   into limit address "@+#" under start address
@@ -1448,7 +1448,8 @@ stat ( @ # st -- 0 | -n ) requests the operating system to stat a file;
   returns 0 on success and -n if an error occurred; populates st
   with a stat structure.
 st.size ( -- n ) offset of size field within st struct
-  see also: mkst openr openw read write "man stat"  full.ff
+  needs stat.ff
+  see also: mkst openr openw read write "man stat"
 
 mmap see mkmm mmapr mmapw mmapwt
 mkmm ( <name> -- ) allocate mm structure to describe an mmap'd file and
@@ -1470,7 +1471,8 @@ mmapwt ( @ # n mm -- @ | -n ) open and mmaps a new file for reading and writing;
   populates mm struct; returns address on success or -n on error.
 munmap ( mm -- ior ior ) munmaps and closes mmap'd file referred to by the
   mm struct and returns the result of each operation.
-  see also: mkmm mm.sz mm.fd mm.prot mm.flags mmapr mmapw mmapwt munmap  full.ff
+  needs mmap.ff  (i386 only)
+  see also: mkmm mm.sz mm.fd mm.prot mm.flags mmapr mmapw mmapwt munmap
 
 lseek ( wh off fd -- off ) request the operating system to seek through the
   file specified by the file-descriptor "fd", for "off" bytes relatively to
@@ -1479,32 +1481,37 @@ lseek ( wh off fd -- off ) request the operating system to seek through the
   the start of file, or -1 to indicate an error.
   Lin: lseek 3 19 syscall ;
   Win: 0 -rot 4 k32. SetFilePointer ; \ see win32.hlp
-  see also: openr openw read write "man lseek"  ff.ff
+  needs fileops.ff
+  see also: openr openw read write "man lseek"
 
 ioctl ( arg request fd -- ? ) manipulates the underlying device parameters of
   special files; returns null if success, or a negative value if "ioctl" failed
   Lin: ioctl 3 54 syscall ;
   Win: (not implemented)
-  see also: openr openw "man ioctl"  ff.ff
+  needs fileops.ff
+  see also: openr openw "man ioctl"
 
 select ( timeval exceptfds writefds readfds nfds -- ? ) monitor multiple file
   descriptors, until one or more become ready for some class of I/O operation;
   returns null if success, or a negative value if "select" failed
   Lin: select 5 142 syscall ;
   Win: (not implemented)
-  see also: openr openw "man select"  ff.ff
+  needs fileops.ff
+  see also: openr openw "man select"
 
 malloc ( # -- @ ) allocates from system heap "#" bytes and returns a pointer
   to the allocated memory, or NULL if error
   Lin: 1 libc. malloc ;
   Win: 0 2 k32. LocalAlloc ; \ 2ndArg:LMEM_FIXED  see win32.hlp
-  see also: free "man malloc"  ff.ff
+  needs malloc.ff
+  see also: free "man malloc"
 
 free ( @ -- ) no-op if "@" is NULL, otherwise frees the memory space pointed to
   by "@", which must have been returned by a previous call to malloc
   Lin: 1 libc. free drop ;
   Win: 1 k32. LocalFree drop ; \ see win32.hlp
-  see also: malloc "man malloc"  ff.ff
+  needs malloc.ff
+  see also: malloc "man malloc"
 
 type ( @ # -- ) requests the operating system to write into the
   standard-output file-descriptor (stdout) "#" bytes starting
@@ -1600,7 +1607,7 @@ X# ( xx -- yy ) # using base 16
 X#s ( xx -- 0 0 ) #s using base 16
 x# ( xx -- yy ) # using base 16 and lowercase letters
 x#s ( xx -- 0 0 ) #s using base 16 and lowercase letters
-  see also: <# # #s #> . .l  ff.ff
+  see also: <# # #s #> . .l
 
   -----------
   MEMORY DUMP
@@ -1628,7 +1635,7 @@ dump ( @ # -- ) displays an hexadecimal memory dump of # bytes
 stopdump? ( -- ; nz? ) check whether we are at end of user input:
   Linux receives LF at each end-of-line, whereas Windows receives CR+LF
   : stopdump? [os] [IF] key 10- [ELSE] key 13- key 10- | [THEN] drop ;
-  see also: ;dump dump .h .s  ff.ff
+  see also: ;dump dump .h .s
 
 ui ( -- ) user redirectable vector, by default displays the FreeForth prompt
   :^ ui prompt ;  \ ff.boot
@@ -1894,7 +1901,8 @@ ior ( -- @ ) variable used by "?ior"
 ?ior. ( n -- ) like ?ior but does not store n in ior
   Use ?ior after openr/openw/openw0 to save fd in ior and ?ior. after
   read/write so fd is preserved.
-  see also: ior shell cd libc k32  Lin:ff.ff Win:ffwinio.asm
+  needs ior.ff
+  see also: ior shell cd libc k32
 
 zt ( @ # -- @ ) append a NUL byte to string starting at address "@"
   for "#" bytes, making it a Zero-Terminated string.
@@ -1903,7 +1911,7 @@ zt ( @ # -- @ ) append a NUL byte to string starting at address "@"
   Note: as wsparse considers the NUL character as whitespace, NUL may replace
   any other whitespace (HT,LF,VT,FF,CR,space) without breaking source code.
   : zt over+ 0 swap c! ;
-  see also: libc  ff.ff
+  see also: libc  fflin.boot
 
 getenv ( @key # -- @value # | 0 0 ) returns the counted string value for the
   environment variable key or 0 in TOS and 0 in NOS if not found
@@ -1918,7 +1926,8 @@ shell ( @ # -- ) passes the string at address "@" for "#" bytes to the shell
 !!` ( <line> -- ) passes the rest of the current line to "shell"
   this is very convenient to pass command lines to the shell
   : !!` lnparse zt shell ;
-  see also: getenv getpid getppid cd shell !! ?ior zt  ff.ff
+  needs shell.ff
+  see also: getenv getpid getppid cd shell !! ?ior zt
 
   ---------
   UTILITIES
@@ -1928,26 +1937,29 @@ home ( -- ) resets the console window cursor into its top-left corner
 atxy ( xCol yRow -- ) moves the console window cursor at row "yRow" and
   column "xCol", relative to the window frame-buffer top-left corner at
   character coordinates (0,0)
-  see also: cls home foreground background normal  ff.ff
+  needs console.ff
+  see also: cls home foreground background normal
 
 normal ( -- ) resets the console window color attribute fore/back = black/white
 background ( color -- ) changes the console window background color attribute
 foreground ( color -- ) changes the console window foreground color attribute
   "color" may be "black" "red" "green" "yellow" "blue" "magenta" "cyan" "white"
-  Linux and Windows define some other specific attributes (see ff.ff)
+  Linux and Windows define some other specific attributes (see console.ff)
 nocolor ( -- ) disable colors; reset the color vector to enable again, i.e.,
   color ^^
-  see also: normal background cls  ff.ff
+  needs console.ff
+  see also: normal background cls
 
 .d ( u -- ) displays n as Gregorian date since 0-0-0
 .wd ( u -- ) displays weekday of nth days since 0-0-0 in Gregorian calendar
 .dt ( u -- ) displays u seconds as date&time (yyyy-mm-dd_hh:mm:ss)
 .t ( u -- ) displays u seconds as time (hh:mm:ss)
-.now` ( -- ) displays the current date and time (see also: .wd .dt .t in ff.ff)
+.now` ( -- ) displays the current date and time (see also: .wd .dt .t)
 now ( -- u ) returns the number of seconds since 2000-3-1_0:0:0
 ms ( u -- ) waits inactively during at least "n" milliseconds
 ms@ ( -- u ) returns the system current milliseconds count
-  see also: .now now ms  ff.ff
+  needs time.ff
+  see also: .now now ms
 
 }}}` ( -- ) marks the end of a code section to be timed
 {{{` ( -- ) marks the beginning of a code section, marked at end with "}}}",
@@ -1956,7 +1968,8 @@ ms@ ( -- u ) returns the system current milliseconds count
   The measurement overhead may be measured alone with "{{{  }}}" and then
   subtracted from other measurements.
   Example:  {{{ ."hello" }}}  \ measures processor cycles to display "hello"
-  see also: }}} ms@ now  ff.ff
+  needs perf.ff  (i386 only)
+  see also: }}} ms@ now
 
 test the file test.ff provides a test harness akin to the one from John Hayes
   and borrowing from TAP (test anything protocol).  Run "make test" from the

@@ -24,7 +24,7 @@ d@` d!` d,` 2dupd!` tuckd!` compile-time macros for the above
 8+` compile-time macro: add 8 to TOS (one cell on x86-64)
   The x86-64 equivalent of i386's 4+` (cell+).
 8-` compile-time macro: subtract 8 from TOS
-  see also: 8+` 4+` 4-`
+  see also: 8+` 4+`
 
 \ === Compile-time stack ===
 
@@ -132,7 +132,7 @@ features ( -- addr ) buffer holding loaded feature names
 cell` ( -- 8 ) compile-time constant: cell size in bytes
   8 on ff64 (x86-64), 4 on ff (i386).
   Use for portable address arithmetic: cell allot, cell +, etc.
-  see also: [64] cell+ cells
+  see also: [64] cell 8+
 
 [64]` ( -- 4 | 0 ) compile-time constant: 64-bit architecture flag
   Returns 4 (truthy) on ff64, 0 (falsy) on ff.
@@ -190,8 +190,8 @@ fixup ( addr len -- ) self-patching libc symbol resolver
   (movabs rbx,imm64; ret), patches caller's call instruction.
   Subsequent calls go directly to the trampoline.
   IMPORTANT: the hidden definition MUST end with ; for tail-call.
-  Loaded from: "fixup.ff" needed
-  see also: fixup #lib #fun #call libc@
+  needs fixup.ff
+  see also: fixup #lib #fun #call
 
 strerror ( errno -- ) print error message for errno
   Takes a negative errno, negates, calls C strerror() via fixup.
@@ -199,7 +199,7 @@ strerror ( errno -- ) print error message for errno
 ior ( -- addr ) variable: last I/O result
 ?ior ( n -- n ) store I/O result in ior; keep n on stack
 ?ior. ( n -- n ) store in ior; if error, print message and throw
-  Loaded from: "ior.ff" needed
+  needs ior.ff
   see also: strerror ior ?ior ?ior.
 
 cls ( -- ) clear screen (ANSI escape)
@@ -209,11 +209,11 @@ atx ( col -- ) position cursor on current row
 color ( n -- ) set ANSI color/attribute
 key? ( -- ; zFALSE ) test if key is available on stdin
 ekey ( -- c ) read one key in raw mode
-  Loaded from: "console.ff" needed
+  needs console.ff
   see also: cls home atxy atx color key? ekey
 
 .now ( -- ) display current date and time
-  Loaded from: "time.ff" needed
+  needs time.ff
   see also: .now .d .wd .dt .t ms@ ms
 
 \ === Number literal formats ===
@@ -241,8 +241,10 @@ syscall ( args... #args syscall# -- ior ) generic Linux syscall
 
 \ --- File I/O (boot — always available) ---
 
-fstat ( buf fd -- ior ) get file status by fd
+_fstat ( buf fd -- ior ) get file status by fd
   buf must be >= 144 bytes (struct stat).
+_stat ( buf addr -- ior ) stat a NUL-terminated path
+  buf must be >= 144 bytes.  Follows symlinks.
 access ( mode addr -- ior ) check file permissions
   addr NUL-terminated.  mode: 0=F_OK, 1=X, 2=W, 4=R.
 dup2 ( newfd oldfd -- fd ) duplicate file descriptor
@@ -250,7 +252,7 @@ fcntl2 ( arg cmd fd -- ior ) file control
 pipe ( pipefd -- ior ) create pipe
   pipefd: 8-byte buffer receiving 2 ints (read fd, write fd).
 ioctl3 ( arg req fd -- ior ) device control
-lstat ( buf path -- ior ) like stat; doesn't follow symlinks
+_lstat ( buf path -- ior ) like stat; doesn't follow symlinks
   path NUL-terminated.  buf >= 144 bytes.
 truncate ( len fd -- ior ) truncate open file to length
 flock ( op fd -- ior ) advisory file locking
@@ -265,9 +267,11 @@ umask ( mask -- prev ) set file creation mask
 getdents64 ( count buf fd -- n ) read directory entries (raw)
 tell ( fd -- offset ) current file position
   Convenience: lseek(fd, 0, SEEK_CUR).
-  see also: fstat access dup2 fcntl2 pipe ioctl3 lstat truncate
+_lseek ( whence offset fd -- pos ) raw lseek syscall
+  whence: 0=SET, 1=CUR, 2=END.  Returns offset or negative errno.
+  see also: _fstat _stat access dup2 fcntl2 pipe ioctl3 _lstat truncate
   see also: flock link symlink readlink fchmod fchown umask
-  see also: getdents64 tell read openr openw close lseek stat
+  see also: getdents64 tell read openr openw close _lseek _stat
 
 \ --- Memory management (boot) ---
 
@@ -307,6 +311,7 @@ wait ( -- pid ) wait for any child
 \ --- Directory / filesystem (boot) ---
 
 getcwd ( size buf -- len ) get current working directory
+chdir ( addr -- ior ) change current directory (NUL-terminated)
 mkdir ( mode addr -- ior ) create directory (NUL-terminated)
 rmdir ( addr -- ior ) remove directory (NUL-terminated)
 unlink ( addr -- ior ) delete file (NUL-terminated)
@@ -354,6 +359,7 @@ getpeername ( addrlen addr fd -- ior ) get remote address
 pselect6 ( sigmask timeout exceptfds writefds readfds nfds -- n )
   Synchronous I/O multiplexing.
 htons ( n -- n ) byte-swap 16-bit value for network byte order
+  needs net.ff
   see also: socket connect bind listen accept4 shutdown
   see also: sendto recvfrom send recv socketpair htons
 
@@ -376,12 +382,14 @@ st@ ( -- mode ) read st_mode from shared buffer
 sz@ ( -- size ) read st_size from shared buffer
 mt@ ( -- time ) read st_mtime from shared buffer
 nl@ ( -- nlink ) read st_nlink from shared buffer
+  needs stat.ff
   see also: ?stat ?lstat st@ sz@ mt@ nl@
 
 fmode ( addr len -- mode|-1 ) stat path, return st_mode
 fsize ( addr len -- size|-1 ) stat path, return st_size
 flmode ( addr len -- mode|-1 ) lstat path, return st_mode
   Inline strings work directly: "path" fmode
+  needs stat.ff
   see also: fmode fsize flmode
 
 is-reg  ( mode -- mode ) test for regular file (sets ZF)
@@ -392,17 +400,20 @@ is-sock ( mode -- mode ) test for socket (sets ZF)
 is-blk  ( mode -- mode ) test for block device (sets ZF)
 is-chr  ( mode -- mode ) test for character device (sets ZF)
   Chainable: "f" fmode is-reg 0= IF ... THEN drop
+  needs stat.ff
   see also: is-reg is-dir is-link is-fifo is-sock is-blk is-chr
 
 can-r ( mode -- mode ) test owner-read permission (sets ZF)
 can-w ( mode -- mode ) test owner-write permission (sets ZF)
 can-x ( mode -- mode ) test owner-execute permission (sets ZF)
+  needs stat.ff
   see also: can-r can-w can-x is-reg
 
 file? ( addr len -- ) is path a regular file? (sets ZF)
 dir?  ( addr len -- ) is path a directory? (sets ZF)
 link? ( addr len -- ) is path a symbolic link? (sets ZF)
   "path" dir? 0= IF ."yes" THEN
+  needs stat.ff
   see also: file? dir? link? fmode fsize
 
 st.mode ( -- 24 ) offset of st_mode in struct stat
@@ -413,4 +424,5 @@ st.gid  ( -- 32 ) offset of st_gid
 st.atime ( -- 72 ) offset of st_atime
 st.mtime ( -- 88 ) offset of st_mtime
 st.ctime ( -- 104 ) offset of st_ctime
-  see also: st.mode st.size st.nlink stat fstat lstat
+  needs stat.ff
+  see also: st.mode st.size st.nlink ?stat ?lstat _fstat
