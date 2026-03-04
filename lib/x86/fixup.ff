@@ -1,0 +1,6 @@
+\ fixup.ff — self-patching libc symbol resolution (i386)
+\ Replaces a 5-byte call with mov ebx,<func_handle> and modifies
+\ the return stack to restart at the mov instruction.
+\ Used for once-only symbol resolution at runtime (turnkey safe).
+: fixup libc@ #fun rdrop r> 5- dup>r $bb overc! 1+ ! ;
+" fixup" features append ;

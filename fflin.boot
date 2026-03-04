@@ -14,8 +14,8 @@ $40000000 SEGVact 132+ ! \ SA_NODEFER
 
 "HOME"   1_ libc. getenv 0- 0<> IF zlen THEN dup >r
 "FFPATH" 1_ libc. getenv 0- 0<> IF zlen THEN dup >r
-2r> + 46+ create ffpath allot
-":.:lib:" tuck ffpath place + >r
+2r> + 54+ create ffpath allot
+":.:lib/x86:lib:" tuck ffpath place + >r
 0- 0= IF drop ELSE tuck r> place + ':' overc! 1+ >r THEN
 0- 0= IF drop ELSE tuck r> place + "/.local/share/ff:" dup>r rot place r> + >r THEN
 "/usr/local/share/ff:^@" r> place drop

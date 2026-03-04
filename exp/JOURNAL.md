@@ -9214,3 +9214,103 @@ All three gates pass:
 - `ff.ff`: replaced 18-line pno block with `"pno.ff" needed`
 
 ---
+
+## Experiment 119: Phase 2 — lib/x86/ directory, i386 FFPATH
+
+### Goal
+Move i386-specific library files from `lib/` to `lib/x86/`, create
+`lib/x86/fixup.ff`, and update i386 FFPATH to search `lib/x86:lib:.`.
+
+### Background
+After Phase 1 (exp 117) established `lib/x86-64/` and shared `lib/`,
+the i386-specific files were still sitting loose in `lib/`. This
+experiment mirrors the x86-64 structure for i386.
+
+### Provenance audit
+
+| File | Origin | Notes |
+|------|--------|-------|
+| lib/x86/fixup.ff | Lavarenne (via DG's ff.ff) | One-line definition, unchanged |
+| lib/x86/see.ff | DG | i386 disassembler |
+| lib/x86/compat.ff | DG | Cross-arch compatibility layer |
+| lib/x86/test.ff | DG | i386 test harness |
+| lib/x86/debug.ff | DG | Debugging tools |
+| lib/x86/fpu.ff | DG | FPU operations |
+| lib/x86/longconds.ff | DG | Extended conditionals |
+| lib/x86/mkimage.ff | DG | Turnkey image builder |
+| lib/x86/mmap.ff | DG | Memory mapping |
+| lib/x86/perf.ff | DG | Performance tools |
+| lib/x86/dis.ff | DG | Disassembler helper |
+
+**lib/x86/fixup.ff** is new — extracted from ff.ff line 40:
+```forth
+: fixup libc@ #fun rdrop r> 5- dup>r $bb overc! 1+ ! ;
+```
+This is Lavarenne's original self-patching trampoline. It replaces a
+5-byte `call` with `mov ebx,<func_handle>` and adjusts the return
+stack to re-execute from the `mov`. One-time resolution, turnkey safe.
+
+Added `" fixup" features append ;` for consistency with the x86-64
+version.
+
+### Actions
+
+**1. Update i386 FFPATH in fflin.boot**
+Changed default path string from `":.:lib:"` to `":.:lib/x86:lib:"`
+so `needed` searches `lib/x86/` before `lib/` (matching the x86-64
+pattern of arch-specific-first).
+
+Also bumped ffpath buffer from `46+` to `54+` to accommodate the
+longer default string.
+
+**2. Move i386-specific files to lib/x86/**
+Moved: see.ff, compat.ff, debug.ff, fpu.ff, longconds.ff, mkimage.ff,
+mmap.ff, perf.ff, test.ff, dis.ff (untracked).
+
+**3. Create lib/x86/fixup.ff**
+Extracted from ff.ff line 40. Added features append and comments.
+
+**4. Clean up backup files**
+Removed stale lib/see64.ff.bak, lib/see64.ff.bak2, lib/see64.ff.save.
+
+### Directory layout after this experiment
+```
+lib/
+├── pno.ff              # shared (DG's original)
+├── ior.ff              # shared (depends on fixup word)
+├── malloc.ff           # shared (depends on fixup word)
+├── x86/                # i386-specific
+│   ├── fixup.ff        # NEW — self-patching libc resolution
+│   ├── see.ff          # disassembler
+│   ├── compat.ff       # cross-arch compat
+│   ├── test.ff         # test harness
+│   ├── debug.ff        # debugging tools
+│   ├── dis.ff          # disassembler helper
+│   ├── fpu.ff          # FPU ops
+│   ├── longconds.ff    # extended conditionals
+│   ├── mkimage.ff      # turnkey builder
+│   ├── mmap.ff         # memory mapping
+│   └── perf.ff         # performance tools
+└── x86-64/             # x86-64-specific
+    ├── fixup.ff, see.ff, help.ff, mkimage.ff, ...
+    ├── console.ff, fileops.ff, shell.ff, stat.ff, time.ff, net.ff
+    └── test.ff
+```
+
+FFPATH: `.:lib/x86:lib:~/.local/share/ff:/usr/local/share/ff` (i386)
+FFPATH: `lib/x86-64:lib:.` (x86-64)
+
+### Test results
+All three gates pass:
+- `make test`: 4 configs × 6 tests = 24 PASS
+- `make test64`: 4 PASS, 3 SKIPPED
+- `make -C exp test`: all experiments PASS
+
+### Files changed
+- `fflin.boot`: FFPATH `:.:lib/x86:lib:`, buffer 46→54
+- `lib/x86/fixup.ff`: NEW — extracted from ff.ff
+- `lib/{see,compat,debug,fpu,longconds,mkimage,mmap,perf,test}.ff` → `lib/x86/`
+- `lib/x86/dis.ff`: moved (was untracked)
+- Removed: lib/see64.ff.bak, lib/see64.ff.bak2, lib/see64.ff.save
+
+---

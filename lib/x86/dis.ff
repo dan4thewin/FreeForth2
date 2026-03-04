@@ -1,0 +1,29 @@
+\ dis` ( <name> -- )		calls gdb to disassemble <name>
+\ findxt ( @ # -- xt len )	looks for string in headers, skips constants and aliases
+needs shell.ff
+needs pno.ff
+
+variable ~xt pvt
+:. ~sz-		2dup h.sz+ c@ - drop ;					\ ( # h - # h ) set ZF if # - hdr name size == 0
+:. ~nm-		3dup h.nm+ swap $- drop ;				\ ( @ # h - @ # h ) set ZF if strings match
+:. ~hdr-	~sz- ~nm- 0= ? ;						\ ( @ # h - @ # h ) set ZF if size and strings match
+:. ~skip?	dup h.ct+ c@ $20& drop ;				\ ( @ - @ ) set ZF if not alias/constant
+:. ~stop?	dup h.sz+ c@ 0<>; !"not found" ;			\ ( @ - @ ) if size is nonzero return else abort
+:. ~nexth	BEGIN ~stop? h.sz+ c@+ + 1+ ~skip? 0<> WHILE REPEAT ;	\ ( @ - @' ) increment @ to start of next exec hdr
+: ~findxt	here ~xt! H@						\ ( @ # - xt # | abort )
+		BEGIN ~stop? ~hdr- 0<> WHILE dup@ ~xt! ~nexth REPEAT
+		nip nip @ ~xt@ over- ;
+
+create ~buf pvt 80 allot
+:. ~ba		~buf append ;
+:. ~ua		0 <# #s #> ~ba ;
+:. gdbscript	over+ swap
+		0 ~buf!
+		"attach " ~ba getpid ~ua "^J" ~ba
+		"set disassembly-flavor intel^J" ~ba
+		"disass/r " ~ba ~ua "," ~ba ~ua "^J" ~ba ;
+:. gdbrun	"gdb --batch -x .see | less -F -+c" shell ;
+:. rmsave	"rm -f .see" shell ;
+:. tmpsave	rmsave openw ?ior ior@ write ?ior. ior@ close ?ior. ;
+:. gdbdump	gdbscript ~buf c@+ ".see" tmpsave gdbrun ;
+: dis`		wsparse ~findxt gdbdump ;
