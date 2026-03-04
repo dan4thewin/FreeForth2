@@ -3,8 +3,6 @@ needs fixup.ff
 needs ior.ff
 needs syscalls.ff
 
-: zt over+ 0 swap c! ; ( addr len -- addr ; zero-terminate string )
-
 :. _getenv "getenv" fixup ;
 :  getenv 1_ dup _getenv #call 0- 0= IF 0 ELSE zlen THEN ; ( addr -- addr len | 0 0 )
 :. _getpid "getpid" fixup ;

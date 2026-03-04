@@ -10325,3 +10325,41 @@ Deleted the early char-by-char `type`.
 
 Final result: zero word redefinitions in ff64.boot.
 Binary: 378872 bytes.
+
+---
+
+## Experiment 132: Resolve boot/library naming conflicts
+
+### Goal
+
+Eliminate confusion between boot syscall wrappers and library versions
+with different interfaces.
+
+### What changed
+
+**1. `zt` moved to OS-specific boot files** — was in ff64.boot, now in
+fflin64.boot (before `openr` which uses it) and fflin.boot (new — i386
+didn't have it despite ff.help documenting it). Removed from lib/shell.ff
+since it's now always available.
+
+**2. Raw syscall wrappers renamed** — `lseek`, `fstat`, `stat`, `lstat`
+in fflin64.boot renamed to `_lseek`, `_fstat`, `_stat`, `_lstat`. The
+underscore prefix marks them as raw/internal, avoiding collision with
+lib/fileops.ff's higher-level versions which have different stack effects:
+- `_lseek ( whence offset fd -- pos )` — raw syscall order
+- `lseek ( whence offset fd -- offset )` — lib/fileops.ff (same order, uses named constant)
+- `_stat ( buf addr -- ior )` — raw: takes NUL-terminated address
+- `stat ( addr len statbuf -- result )` — lib/fileops.ff: takes counted string + buffer
+
+**3. `_lseek` argument order simplified** — was `( offset whence fd )`
+with `>r swap r>` to rearrange. Now `( whence offset fd )` — natural
+syscall order, no shuffling needed. `tell` updated: `1 0 rot _lseek`.
+
+**4. lib/x86-64/stat.ff updated** — `?stat` and `?lstat` now call
+`_stat`/`_lstat` instead of `stat`/`lstat`.
+
+### Results
+
+- `make -C exp test`: all pass
+- `make ff`: i386 builds with new `zt` in fflin.boot
+- Binary: 378856 bytes

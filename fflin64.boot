@@ -11,6 +11,9 @@
 
 1 constant [os]`
 
+( zt — zero-terminate a string for syscalls: addr len -- addr )
+: zt over+ 0 swap c! ;
+
 ( Syscall-based I/O — replaces assembly WORD64 entries )
 ( x86-64 syscall: read=0, write=1, open=2, close=3 )
 ( Stack keeps Forth-natural ( addr # ) buffer pair; fd on top )
@@ -24,10 +27,11 @@
 ( Convention: ( argN...arg2 arg1 N sysnum syscall ) )
 (   arg1=closest to TOS → rdi, arg2 → rsi, arg3 → rdx, etc. )
 
-( File I/O )
-: lseek   ( offset whence fd -- pos )  >r swap r> 3 8 syscall ;
-: fstat   ( buf fd -- ior )  2 5 syscall ;
-: stat    ( buf addr -- ior )  2 4 syscall ;
+( File I/O — raw syscall wrappers, prefixed _ to avoid shadowing )
+( lib/fileops.ff provides higher-level lseek/stat with different interfaces )
+: _lseek  ( whence offset fd -- pos )  3 8 syscall ;
+: _fstat  ( buf fd -- ior )  2 5 syscall ;
+: _stat   ( buf addr -- ior )  2 4 syscall ;
 : access  ( mode addr -- ior )  2 21 syscall ;
 : dup2    ( newfd oldfd -- fd )  2 33 syscall ;
 : fcntl2  ( arg cmd fd -- ior )  3 72 syscall ;
@@ -67,7 +71,7 @@ $20 constant MAP_ANONYMOUS
 : chroot  ( addr -- ior )  1 161 syscall ;
 
 ( File metadata )
-: lstat      ( buf addr -- ior )  2 6 syscall ;
+: _lstat     ( buf addr -- ior )  2 6 syscall ;
 : fchmod     ( mode fd -- ior )  2 91 syscall ;
 : fchown     ( gid uid fd -- ior )  3 93 syscall ;
 : truncate   ( len fd -- ior )  2 77 syscall ;
@@ -89,7 +93,7 @@ $20 constant MAP_ANONYMOUS
 : setpriority ( pri who which -- ior )  3 141 syscall ;
 
 ( Compound words )
-: tell  ( fd -- pos ) 0 1 rot lseek ;
+: tell  ( fd -- pos ) 1 0 rot _lseek ;
 : wait  ( status -- pid ) 0 0 rot -1 wait4 ;
 
 ( Miscellaneous )

@@ -16,8 +16,8 @@ variable _stbuf pvt 136 allot
 104 constant st.ctime
 
 ( --- fill shared buffer from a NUL-terminated path --- )
-: ?stat  ( addr -- ior ) _stbuf swap stat ;
-: ?lstat ( addr -- ior ) _stbuf swap lstat ;
+: ?stat  ( addr -- ior ) _stbuf swap _stat ;
+: ?lstat ( addr -- ior ) _stbuf swap _lstat ;
 
 ( --- read fields from shared buffer [call ?stat first] --- )
 : st@ ( -- mode )  _stbuf st.mode + w@ ;

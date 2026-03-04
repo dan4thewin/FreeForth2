@@ -1,4 +1,5 @@
 1 constant [os]`
+: zt over+ 0 swap c! ;
 \ do dlopen now, and hook it to _boot to do dlopen for the turnkey case
 :. dlsetup libc@ 0<>; drop "libc.so.6" #lib libc! ;
 dlsetup

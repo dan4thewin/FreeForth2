@@ -578,13 +578,11 @@ variable noauto pvt
 ( append — append counted string to a counted-string buffer )
 ( appendc — append single char to a counted-string buffer )
 ( -v` — display list of loaded features )
-( zt — zero-terminate a string: addr len -- addr )
 variable features 100 allot
 : append 2dup c@ + over 2>r c@+ + place drop 2r>
   2dup c! + 1+ 0 swap c! ;
 : appendc tuck c@+ + tuck c! 0 over 1+ c! over- swap c! ;
 : -v` ."\ features:" features c@+ type cr ;
-: zt over+ 0 swap c! ;
 
 ( 2swap` — inline version of 2swap )
 : 2swap` rot` >r` rot` r>` ;
