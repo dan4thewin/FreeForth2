@@ -9069,3 +9069,100 @@ word executes.
 - `./ff64 -f test/test64.ff` → 189/189 PASS (-f works!)
 
 ---
+
+## Experiment 117: Library Unification Phase 1 — ss/dd in boot, shared lib/, rename lib/64
+
+### Goal
+Begin the library unification plan: add `ss` (stack show) and `dd`
+(depth drain) to ff64.boot, create shared `lib/pno.ff` from Lavarenne's
+original i386 code, move portable `ior.ff` and `malloc.ff` to `lib/`,
+rename `lib/64/` → `lib/x86-64/`, and update all references.
+
+### Background
+The library tree was `lib/` (i386) and `lib/64/` (x86-64). For
+multi-platform future, `lib/` becomes the shared home for portable
+Forth; arch-specific files go in `lib/x86/` and `lib/x86-64/`.
+
+Three tiers of portability:
+- **Tier 1 (pure Forth)**: pno.ff, ior.ff, malloc.ff — can share today
+- **Tier 2 (syscall-only)**: console, fileops, shell, stat, time — need `[64] [IF]`
+- **Tier 3 (deep arch)**: see.ff, fixup.ff, mkimage.ff — separate per arch
+
+### Actions
+
+**1. Add ss and dd to ff64.boot**
+DG directed that `ss` (show stack in `( depth; val1 val2 )` format)
+and `dd` (depth drain — drop everything) belong in boot, not in library
+files. Both were previously only available after loading `ff.ff` on i386
+or `test.ff` on ff64.
+
+Added after the `ds` definition (line 476):
+```forth
+:. _ss 1- 0; swap >r _ss r .x r> ;
+: ss depth ."( " dup .dec\ ."; " 1+ 3 max _ss .")" cr ;
+: dd depth TIMES drop REPEAT ;
+```
+
+The boot `ss` is colorless (no `cyan foreground`/`normal` — those come
+from console.ff which isn't loaded yet at boot). The colored version
+in `ff.ff` will override when loaded.
+
+**2. Create shared lib/pno.ff from Lavarenne's original**
+The `lib/64/pno.ff` was written early in the port when char literals
+didn't work, using hex constants (`$30+`, `$7A`, `$2D`, `$3F`) instead
+of Lavarenne's original char literals (`'0'+`, `'z'`, `'-'`, `'?'_`).
+
+Now that char literals work (since exp 040), we use Lavarenne's
+original code verbatim. Tested: identical output on both ff and ff64.
+
+Key: `'0'+` is char `0` (48) with suffix `+`. Trailing `'` in `'z'`
+is a number-parser grouping separator (like `,` and `.`), ignored.
+
+**3. Move portable ior.ff and malloc.ff to lib/**
+These files depend on the `fixup` *word* but not on fixup's
+*implementation* (which differs per arch — 4 vs 8 byte pointers).
+The `"fixup.ff" needed ;` line loads the correct arch-specific
+fixup.ff via FFPATH.
+
+**4. Rename lib/64/ → lib/x86-64/**
+Following Linux kernel naming convention. Updated:
+- `fflin64.boot` FFPATH: `"lib/x86-64"` (10-char cmove, was 6)
+- FFPATH comment: `lib/x86-64:lib:.`
+- `fftk64.asm` comment
+- `Makefile` mkimage path
+- `test/test64.ff` comment
+- `lib/x86-64/mkimage.ff` comment
+- `lib/x86-64/testfp.ff` from64 string
+- 6 experiment Makefiles (073, 074, 078, 079, 086, 099)
+
+**5. Fix exp/079-fixup test-strerror**
+The test used `"lib/x86-64/ior.ff" loadfile` but ior.ff moved to
+`lib/`. Updated to `"lib/ior.ff" loadfile`.
+
+### Test results
+All three gates pass:
+- `make test`: 4 configs × 6 tests = 24 PASS
+- `make test64`: 4 PASS, 3 SKIPPED (core1/core2/mmap need compat.ff)
+- `make -C exp test`: all experiments PASS
+
+### Files changed
+- `ff64.boot`: added _ss, ss, dd after ds
+- `ff64.help`: added ss, dd entries
+- `fflin64.boot`: FFPATH lib/64 → lib/x86-64 (line 161, comment 121)
+- `lib/pno.ff`: NEW — shared, from Lavarenne's original ff.ff
+- `lib/ior.ff`: NEW — moved from lib/64/ (portable Forth)
+- `lib/malloc.ff`: NEW — moved from lib/64/ (portable Forth)
+- `lib/64/` → `lib/x86-64/`: renamed (git mv)
+- `lib/x86-64/pno.ff`: REMOVED (superseded by lib/pno.ff)
+- `lib/x86-64/ior.ff`: REMOVED (superseded by lib/ior.ff)
+- `lib/x86-64/malloc.ff`: REMOVED (superseded by lib/malloc.ff)
+- `Makefile`, `fftk64.asm`, `test/test64.ff`: lib/64 → lib/x86-64
+- `lib/x86-64/mkimage.ff`, `lib/x86-64/testfp.ff`: updated paths
+- `exp/073-turnkey/Makefile`: lib/64 → lib/x86-64
+- `exp/074-fflin64-boot/Makefile`: lib/64 → lib/x86-64
+- `exp/078-ffpath/Makefile`: lib/64 → lib/x86-64
+- `exp/079-fixup/Makefile`: lib/64 → lib/x86-64, ior.ff path fix
+- `exp/086-shrink/Makefile`: updated comment
+- `exp/099-see64-improvements/Makefile`: lib/64 → lib/x86-64
+
+---

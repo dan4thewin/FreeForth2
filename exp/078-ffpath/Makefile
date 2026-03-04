@@ -16,18 +16,18 @@ test:
 	run "help via ffpath" \
 		'echo "help dup 0 exit" | ./ff64' \
 		"duplicates TOS"; \
-	run "lib/64 precedence" \
+	run "lib/x86-64 precedence" \
 		'printf "\"testfp.ff\" needed ;\nfrom64 0 exit\n" | ./ff64' \
-		"lib/64"; \
+		"lib/x86-64"; \
 	run "lib fallback" \
 		'printf "\"compat.ff\" needed ;\n-v\nbye\n" | ./ff64 2>&1 | strings | grep compat' \
 		"compat"; \
 	run "relative path passthrough" \
-		'printf "\"./lib/64/help.ff\" needed ;\nhelp + 0 exit\n" | ./ff64' \
+		'printf "\"./lib/x86-64/help.ff\" needed ;\nhelp + 0 exit\n" | ./ff64' \
 		"pops-add"; \
 	run "needed guard" \
 		'printf "\"testfp.ff\" needed ;\n\"testfp.ff\" needed ;\nfrom64 0 exit\n" | ./ff64' \
-		"lib/64"; \
+		"lib/x86-64"; \
 	run "not found error" \
 		'echo "\"nosuchfile.ff\" needed 0 exit" | ./ff64' \
 		"not found"; \

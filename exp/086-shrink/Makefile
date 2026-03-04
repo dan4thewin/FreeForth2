@@ -13,7 +13,7 @@ test-boot:
 test-pno-absent:
 	@echo '<# bye' | $(FF) 2>&1 | grep -q '???' && echo "PASS $@" || (echo "FAIL $@"; exit 1)
 
-# PNO words load from lib/64/pno.ff (run from repo root for FFPATH)
+# PNO words load from lib/pno.ff (run from repo root for FFPATH)
 test-pno-load:
 	@cd $(ROOT) && printf '"pno.ff" needed ;\n42 0 <# #s #> type cr\nbye\n' | ./ff64 | grep -q '42' && echo "PASS $@" || (echo "FAIL $@"; exit 1)
 

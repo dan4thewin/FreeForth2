@@ -4048,12 +4048,12 @@ The search path is stored as NUL-separated directory entries with a
 double-NUL terminator:
 
 ```
-lib/64\0lib\0.\0\0
+lib/x86-64\0lib\0.\0\0
 ```
 
-Default order: `lib/64` (64-bit specific), `lib` (shared), `.` (CWD).
-This means a file in `lib/64/` always takes precedence over the same
-filename in `lib/` — the mechanism for providing 64-bit-specific
+Default order: `lib/x86-64` (x86-64-specific), `lib` (shared), `.` (CWD).
+This means a file in `lib/x86-64/` always takes precedence over the same
+filename in `lib/` — the mechanism for providing architecture-specific
 implementations of cross-platform library words.
 
 When `needed "somefile.ff"` is called:
@@ -4098,7 +4098,7 @@ context) writes path data to it.
 | Aspect | i386 (fflin.boot) | x86-64 (fflin64.boot) |
 |--------|--------------------|-----------------------|
 | Path storage | `eob` buffer | `variable ffpath pvt 248 allot` |
-| Default path | Single `lib` dir | `lib/64:lib:.` |
+| Default path | Single `lib` dir | `lib/x86-64:lib:.` |
 | File open | Direct open | `openr` (addr len -- fd) |
 | Guard creation | `marker pvtmargin` | File creates own guard |
 | Error handling | `!"Can't_open_file."` | `!"_not_found"` |
@@ -4206,7 +4206,7 @@ the end — execution falls through into the next definition's body.
 
 #### The First Consumers: strerror, ?ior, ?ior.
 
-`lib/64/ior.ff` provides I/O error checking:
+`lib/ior.ff` provides I/O error checking:
 
 - **strerror** ( errno -- ): Prints error message for a given errno
   (negated, as FreeForth returns negative errnos from syscalls)
@@ -4219,33 +4219,36 @@ These match Lavarenne's i386 `ff.ff` definitions exactly, including
 the `?ior.` quirk where the `<>` comparison doesn't consume its
 operands (by FreeForth's FLAGS-based conditional design).
 
-### The Library System (lib/64/)
+### The Library System
 
 Lavarenne kept less-used words in `ff.ff`, loaded on demand via
-`needed`. DG organized the x86-64 equivalents in `lib/64/` as
+`needed`. DG organized the x86-64 equivalents in `lib/x86-64/` as
 separate topic-based files rather than a monolithic `ff64.ff`.
+Portable Forth files live in `lib/` (shared between architectures).
 
 #### Directory Structure
 
 ```
 lib/
-├── 64/                     # x86-64-specific library files
+├── pno.ff                  # Pictured numeric output (shared)
+├── ior.ff                  # I/O error checking (shared)
+├── malloc.ff               # Dynamic memory (shared)
+├── x86-64/                 # x86-64-specific library files
 │   ├── fixup.ff            # Self-patching libc resolution
-│   ├── ior.ff              # I/O error checking (strerror, ?ior)
-│   ├── malloc.ff           # Dynamic memory (malloc, free)
 │   ├── shell.ff            # OS interface (getenv, system, cd)
 │   ├── fileops.ff          # File operations (lseek, stat, ioctl)
 │   ├── console.ff          # Terminal control (color, cursor, ekey)
-│   └── time.ff             # Date/time (.now, ms@, ms)
-├── help64.ff               # Help system
-├── see64.ff                # Disassembler
-└── mkimage64.ff            # Turnkey image dumper
+│   ├── time.ff             # Date/time (.now, ms@, ms)
+│   ├── see.ff              # Disassembler
+│   ├── help.ff             # Help system
+│   └── mkimage.ff          # Turnkey image dumper
+└── (i386 files)            # see.ff, compat.ff, debug.ff, etc.
 ```
 
 #### FFPATH Resolution
 
-`needed` searches directories in FFPATH order: `lib/64:lib:.`
-(configurable via `FFPATH` environment variable). Since `lib/64`
+`needed` searches directories in FFPATH order: `lib/x86-64:lib:.`
+(configurable via `FFPATH` environment variable). Since `lib/x86-64`
 precedes `lib`, x86-64-specific versions of a word automatically
 take precedence.
 

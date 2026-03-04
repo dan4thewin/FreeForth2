@@ -77,6 +77,11 @@ x^` ( vec x^ -- ) compile: execute a vector's body directly
 ds ( -- ) display the data stack contents (runtime)
   .s` is the compile-time equivalent (used in prompts).
 
+ss ( -- ) display stack as ( depth; val1 val2 ... )
+  Shows depth count and each value in hex.
+
+dd ( -- ) drain data stack: drop all values
+
 cond.` compile-time macro: convert stack boolean to FLAGS
   Emits: 0- drop 0<>
   Used by IF. WHILE. UNTIL. (dotted conditionals) to bridge

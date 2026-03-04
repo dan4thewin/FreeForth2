@@ -1,5 +1,5 @@
 \ test64.ff — consolidated regression tests for ff64
-\ Uses lib/64/test.ff framework: t{ actual -> expected }t
+\ Uses lib/x86-64/test.ff framework: t{ actual -> expected }t
 \ Run: ./ff64 ': prompt ;' -f test/test64.ff
 
 needs test.ff

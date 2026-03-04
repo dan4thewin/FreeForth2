@@ -474,6 +474,9 @@ variable base
 :. _s 0; depth 2 < drop IF drop ;THEN drop 1- swap >r _s r . r> ;
 : .s` prompt depth _s cr ;
 : ds prompt depth _s cr ;
+:. _ss 1- 0; swap >r _ss r .x r> ;
+: ss depth ."( " dup .dec\ ."; " 1+ 3 max _ss .")" cr ;
+: dd depth TIMES drop REPEAT ;
 : .h` ."free:" here H@ - $400/ .\ ."k_SC=" SC c@ . .s` ;
 : .l 8 .#s ;
 

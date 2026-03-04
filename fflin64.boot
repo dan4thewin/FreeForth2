@@ -118,7 +118,7 @@ sigrestorer _ksa 16+ !
 SEGVthrow ;
 
 ( FFPATH — search path for needed/openlib )
-( Default: lib/64:lib:. — overridable via FFPATH env var )
+( Default: lib/x86-64:lib:. — overridable via FFPATH env var )
 ( Path stored as NUL-separated directory entries; double-NUL terminates )
 ( Buffers allocated via variable+allot; _ffpath_alloc initializes them )
 ( from a separate anonymous block [ossetup], per Primer §create+allot. )
@@ -158,7 +158,7 @@ variable _dlen pvt
   _openbuf 8+ _openbuf !
   _fnbuf 8+ _fnbuf !
   ffpath @
-  "lib/64" drop over 6 cmove 6+ 0 over c! 1+
+  "lib/x86-64" drop over 10 cmove 10+ 0 over c! 1+
   "lib" drop over 3 cmove 3+ 0 over c! 1+
   "." drop over 1 cmove 1+ 0 over c! 1+ 0 swap c! ;
 
