@@ -29,14 +29,14 @@ variable features 100 allot
 
 constant` ' alias equ` \ shorter, and more usual for assembly programmers
 
-"pno.ff" needed
+needs pno.ff
 
 \ --------------------------------------------------------------------
 \ fixup, ior, malloc — loaded from lib/ via FFPATH
 
-"fixup.ff" needed ;
-"ior.ff" needed ;
-"malloc.ff" needed ;
+needs fixup.ff
+needs ior.ff
+needs malloc.ff
 
 \ syscall values see /usr/include/asm-i386/unistd.h
 : lseek  3  19 syscall ; \ wh off fd -- off ; wh=0:SET 1:CUR 2:END

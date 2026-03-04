@@ -1,7 +1,7 @@
 ( ior.ff — I/O result checking and strerror )
 ( Equivalent of strerror/?ior from Lavarenne's ff.ff, via fixup. )
 ( Requires fixup.ff [loaded automatically via needed]. )
-"fixup.ff" needed ;
+needs fixup.ff
 
 :. _strerror "strerror" fixup ;
 :  strerror negate 1 dup _strerror #call zlen type cr ;

@@ -1,7 +1,7 @@
 \ test.ff — test framework for ff64 (port of lib/test.ff)
 \ mashup of test harness from John Hayes and TAP (test anything protocol)
 \ t{ 1 dup 1+ -> 1 2 }t
-"console.ff" needed ;
+needs console.ff
 : dd depth TIMES drop LOOP ;
 " test" features append ;
 

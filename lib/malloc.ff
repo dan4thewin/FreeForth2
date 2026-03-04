@@ -1,5 +1,5 @@
 ( malloc.ff — dynamic memory allocation via libc malloc/free )
-"fixup.ff" needed ;
+needs fixup.ff
 :. _malloc "malloc" fixup ;
 :  malloc 1 dup _malloc #call ; ( size -- addr )
 :. _free "free" fixup ;

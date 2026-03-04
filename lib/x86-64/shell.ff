@@ -1,6 +1,6 @@
 ( shell.ff — OS interface: getenv, getpid, system, shell, cd, !! )
-"fixup.ff" needed ;
-"ior.ff" needed ;
+needs fixup.ff
+needs ior.ff
 
 : zt over+ 0 swap c! ; ( addr len -- addr ; zero-terminate string )
 

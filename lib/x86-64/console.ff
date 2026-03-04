@@ -1,5 +1,5 @@
 ( console.ff — terminal and console display control )
-"fileops.ff" needed ;
+needs fileops.ff
 
 ( --- cursor and display control --- )
 : cls` ."^[[2J" ( -- )
