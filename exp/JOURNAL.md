@@ -10015,3 +10015,77 @@ C0? correctly detects no carry (5 + 1 fits in 64 bits).
 - `make test64`: all pass
 - `make -C exp test`: 8 passed, 0 failed
 - Binary: 367632 bytes (from 367640 before, -8 bytes from fall-through savings)
+
+---
+
+## Experiment 128: Restore word algorithms
+
+### Goal
+
+Restore Lavarenne's original algorithms for dictionary and debug words where
+possible. Specifically:
+
+1. **`words`** — restore as backtick macro with START/ENTER/UNTIL
+2. **`.hdr+`/`.hdrs`** — restore .hdr+ to advance-to-next, .hdrs with START/ENTER
+3. **`eval`/`eval.`** — use `over+` (single backtick word) instead of `over +`
+4. **`_s`/`.s`/`ds`** — evaluate Lavarenne's `9 _s` pattern
+5. **`_auto`** — evaluate `>in@ --` pattern
+
+### Analysis: what was tried and what worked
+
+**`words`` as backtick macro (RESTORED)**: The i386 `words`` is a backtick macro
+that uses START/ENTER/UNTIL to iterate headers. The ff64 port rewrote it as a
+regular word (`words`) using BEGIN/WHILE/REPEAT with helper words `h.name` and
+`h.next`. The original pattern works directly — `2dup+ 1+ -rot type space`
+prints the name inline, `h.sz+ c@+ 0- 0= UNTIL` checks for the zero-length
+sentinel. The helper words `h.name`/`h.next` are kept since they're useful
+independently.
+
+The `see words` test in exp 099 needed updating to `see words\`` since the
+dictionary entry name changed.
+
+**`.hdr+` stack effect fix (RESTORED)**: The i386 `.hdr+` ends with
+`h.sz+ c@+ 2dup type + 1+` which advances the pointer to the next header.
+The ff64 version ended with `h.name` which prints the name but leaves the
+pointer unchanged — making `.hdrs` depend on a separate `h.next` call. This
+mismatch caused `.hdrs` to loop infinitely when initially restored with
+START/ENTER. The fix: restore i386's `.hdr+` stack effect. The ff64 version
+had added an extra `h.sz c@ .x` display (showing name length numerically),
+which is lost but was redundant since the name itself is printed.
+
+**`eval`/`eval.` with `over+` (RESTORED)**: Trivial — `over +` (two words,
+two calls) replaced with `over+` (one backtick macro, one inline add). The
+original used `over+` but early SWAPbit bugs made backtick ops unreliable
+in runtime code, so the port spelled it out. Now that the compiler is stable,
+the original form works.
+
+**`_s` with `9 _s` (NOT RESTORED)**: Lavarenne's `_s` takes a max count
+(`:. _s 1- 0; swap >r _s depth 0= drop IF space THEN r . r>`) and `.s``
+calls it with `9 _s`. This works at compile time where the stack frame
+extends deep enough, but at runtime it recurses past valid data and prints
+garbage (zeros or stale values below the stack). Since ff64 has `ds` (runtime
+stack display, not in i386), the depth-aware `_s` from the ff64 port is kept.
+DG's favored runtime display is `ss` which shows `( depth; val1 val2 ... )`.
+
+**`_auto` with `>in@ --` (NOT RESTORED)**: The i386 `_auto` uses `>in@ --`
+where `--`` patches the preceding `mov` instruction (from `>in@`) into a
+`dec [>in]` via `>mov`. Testing revealed this causes a boot error on ff64 —
+the `>mov` patching doesn't work correctly in this context (possibly because
+the ff64 `>in@` generates different instruction sequences than i386). Kept
+the explicit `>in@ 1- >in!` form which is equivalent and working.
+
+### Actions
+
+1. Changed `words` to `words`` (backtick macro) with START/ENTER/UNTIL
+2. Restored `.hdr+` to return next-header pointer (matching i386 stack effect)
+3. Restored `.hdrs` to use START/ENTER/UNTIL
+4. Changed `eval` and `eval.` to use `over+`
+5. Updated exp/099 test: `see words` → `see words\``
+6. Added comments explaining the algorithms
+
+### Results
+
+- `make test`: all 5 i386 configurations pass
+- `make test64`: all pass
+- `make -C exp test`: all pass (0 failures)
+- Binary: 367624 bytes (from 367632, -8 bytes)

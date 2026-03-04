@@ -490,12 +490,16 @@ variable base
 ( cr — print newline, as a vector for overridability )
 :^ cr ."^J" ;
 
-( Dictionary listing )
+( Dictionary listing — Lavarenne's original uses START/ENTER/UNTIL )
+( words` is a backtick macro: START iterates headers, printing name, )
+( ENTER advances to next header, UNTIL terminates on zero-length name. )
 : h.next dup h.sz+ c@ h.nm+ 1+ + ;
 : h.name dup h.nm+ over h.sz+ c@ type space ;
-: words H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE h.name h.next REPEAT drop cr ;
+: words` H@ START 2dup+ 1+ -rot type space ENTER h.sz+ c@+ 0- 0= UNTIL 2drop cr ;
 
 ( Debug output — .s` shows compile-time stack, ds shows runtime stack )
+( _s recurses depth-many times: 0; exits on zero count, depth 2 < )
+( exits when stack is too shallow. On unwind, prints each saved value. )
 :^ ui : prompt space depth .\ ';' anon@ 0- 0= drop IF 1- THEN emit space ;
 :. _s 0; depth 2 < drop IF drop ;THEN drop 1- swap >r _s r . r> ;
 : .s` prompt depth _s cr ;
@@ -506,9 +510,10 @@ variable base
 : .h` ."free:" here H@ - $400/ .\ ."k_SC=" SC c@ . .s` ;
 : .l 8 .#s ;
 
-( Dictionary inspector )
-: .hdr+ dup .x\ .":_" dup @ .x dup h.ct+ c@ .x dup h.sz+ c@ .x h.name ;
-: .hdrs H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE .hdr+ cr h.next REPEAT drop ;
+( Dictionary inspector — Lavarenne's .hdr+ advances to next header )
+( Stack effect: ( addr -- next-addr ) — prints header info, returns next )
+: .hdr+ dup .x\ .":_" dup @ .x dup h.ct+ c@ .x h.sz+ c@+ 2dup type + 1+ ;
+: .hdrs H@ START .hdr+ cr ENTER dup h.sz+ c@ 0- 0= drop UNTIL drop ;
 : .hdr .hdr+ cr drop ;
 
 ( System words )
@@ -543,7 +548,7 @@ variable noauto pvt
 
 ( eval — evaluate a counted string as Forth source )
 ( Saves >in and tp, sets new parsing bounds, calls compiler, restores. )
-: eval >in@ tp@ 2>r over + tp! >in! compiler 2r> tp! >in! ;
+: eval >in@ tp@ 2>r over+ tp! >in! compiler 2r> tp! >in! ;
 
 ( _auto — auto-execute anonymous code if noauto is 0 )
 ( Called after compiler returns in eval. Decrements >in and calls ; )
@@ -551,7 +556,7 @@ variable noauto pvt
 
 ( eval. — evaluate with auto-execution )
 ( Like eval but calls _auto to execute the compiled code )
-:. eval. >in@ tp@ 2>r over + tp! >in! compiler _auto 2r> tp! >in! ;
+:. eval. >in@ tp@ 2>r over+ tp! >in! compiler _auto 2r> tp! >in! ;
 
 ( key — read a single character from stdin )
 : key tib 1 accept drop tib c@ ;
