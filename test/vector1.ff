@@ -1,5 +1,5 @@
 needs test.ff
-13 >plan
+18 >plan
 testing :^ @^ !^ ^^ x^ n^
 
 t{ :^ t1 123 ; -> }t
@@ -15,5 +15,12 @@ t{ t1 ^^ -> }t
 t{ t1 -> 123 }t
 t{ t1 n^ -> }t
 t{ t1 -> }t
+
+testing deferred n^ inside :
+t{ :^ t3 77 ; -> }t
+t{ t3 -> 77 }t
+t{ : _nul3 t3 n^ ; -> }t
+t{ t3 -> 77 }t
+t{ _nul3 t3 -> }t
 
 tally-exit ;

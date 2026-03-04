@@ -21,19 +21,19 @@ test:
 		'echo "\"lib/64/see.ff\" needed 0 exit ;" | $(FF)' \
 		""; \
 	run "needexec runs last def" \
-		'$(FF) -f ../../lib/64/see.ff -f /dev/stdin <<< "0 exit ;"' \
+		'timeout 5 $(FF) -f ../../lib/64/see.ff -f /dev/stdin <<< "0 exit ;"' \
 		""; \
 	run "doargv -f flag" \
-		'echo "0 exit ;" > /tmp/t074.ff && $(FF) -f /tmp/t074.ff && rm -f /tmp/t074.ff' \
+		'echo "0 exit ;" > /tmp/t074.ff && timeout 5 $(FF) -f /tmp/t074.ff && rm -f /tmp/t074.ff' \
 		""; \
 	printf ":^ tv .\"a\" cr ;\ntv\n.\"b\" cr ;\ntv %c ^^ tv\n0 exit ;\n" "'" > /tmp/t074_vec.ff; \
 	run "vec reset ^^" \
-		'$(FF) -f /tmp/t074_vec.ff' \
+		'timeout 5 $(FF) -f /tmp/t074_vec.ff' \
 		"a"; \
 	rm -f /tmp/t074_vec.ff; \
 	printf "quit %c drop 0 exit ;\n" "'" > /tmp/t074_quit.ff; \
 	run "quit defined" \
-		'$(FF) -f /tmp/t074_quit.ff' \
+		'timeout 5 $(FF) -f /tmp/t074_quit.ff' \
 		""; \
 	rm -f /tmp/t074_quit.ff; \
 	run "[os] constant" \
@@ -41,7 +41,7 @@ test:
 		"1"; \
 	printf "ossetup %c drop 0 exit ;\n" "'" > /tmp/t074_os.ff; \
 	run "ossetup is vector" \
-		'$(FF) -f /tmp/t074_os.ff' \
+		'timeout 5 $(FF) -f /tmp/t074_os.ff' \
 		""; \
 	rm -f /tmp/t074_os.ff; \
 	echo "  ----"; \

@@ -9010,3 +9010,62 @@ constants are promoted to the boot files so any .ff file can use them.
 - exp tests: all previously-passing tests still pass
 
 ---
+
+## Experiment 116: Fix n^ vector nullify bug, -f now works, make test64
+
+**Date:** 2026-03-03
+
+**Goal:** Fix the long-standing bug where `./ff64 -f file.ff` and
+`./ff64 'arg'` did nothing — argv processing (doargv) never executed.
+
+**Discovery:** DG's interactive GDB session showed `_postboot`'s vector
+target was already nulled at boot time. The root cause was `n^` — the
+vector nullify macro. On i386, `n^` compiles runtime code (falls through
+to `!^` which emits `mov [addr], nop`). On ff64, `n^` did:
+```
+: n^` -call _nop swap 1+ d! ;
+```
+The `d!` (no backtick) executes **immediately at compile time**, storing
+`_nop` into the vector right then. This meant `:. _f_main ... _postboot n^ ;`
+(which should only null _postboot when -f finds a main word) was nulling
+_postboot at the moment _f_main was **defined** — before _boot ever ran.
+
+**Why tests didn't catch it:** The existing vector tests (vector1.ff,
+test64.ff) only used `n^` at top level or immediately after defining
+the calling word. At top level, compile-time IS runtime, so the effect
+was identical. The bug only manifests when `n^` is inside a `:` definition
+that's called **later** or **conditionally**.
+
+**Fix:**
+```
+: n^` -call _nop lit` 1+ lit` d!` ;
+```
+This compiles two runtime literals (_nop value and vector+1 address)
+followed by a runtime `d!`. The store only happens when the containing
+word executes.
+
+**Test:** Added 5 new tests to vector1.ff (18 total, up from 13):
+- Define `:^ t3 77 ;` and `: _nul3 t3 n^ ;`
+- Verify t3 still returns 77 after _nul3 is **defined** but not called
+- Verify t3 returns nothing after _nul3 is **called**
+- All 18 tests pass on both ff64 and ff (i386)
+
+**Collateral fixes:**
+- **Makefile:** Added `make test64` target — runs test/* against ff64
+  using `-f` (now that it works). Skips core1.ff, core2.ff, mmap.ff
+  (need i386 compat.ff). DG updated test1 to exclude test64.ff from
+  i386 runs (`grep -v 64`).
+- **test/test_div9.ff:** Added missing trailing `;` for consistency
+  with other test files.
+- **exp/074:** Added timeouts to -f test commands (doargv now fires,
+  some -f tests with multi-line `^^` can SEGV-loop without timeout).
+- **ff64s:** Rebuilt to include the n^ fix.
+
+**Results:**
+- `make test` (i386): 4 configs × 6 tests = 24 PASS
+- `make test64` (ff64): 4 PASS, 3 SKIPPED
+- `make -C exp test`: all experiments PASS (0 failures)
+- `./ff64 '42 . cr'` → prints 42 (argv works!)
+- `./ff64 -f test/test64.ff` → 189/189 PASS (-f works!)
+
+---

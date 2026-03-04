@@ -375,7 +375,7 @@ H@ @ constant _nop pvt
 : @^` -call 1+ lit` $1B8B, s09 ;
 : !^` -call 1+ lit` d!` ;
 : ^^` -call dup 6 + lit` 1+ lit` d!` ;
-: n^` -call _nop swap 1+ d! ;
+: n^` -call _nop lit` 1+ lit` d!` ;
 : x^` -call 6+ lit` >r` ;
 : '` -call lit` ;
 ( ?` converts preceding call to conditional jump )

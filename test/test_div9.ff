@@ -1,0 +1,5 @@
+needs test.ff
+1 >plan
+testing add
+t{ 6 2 + -> 8 }t
+tally-exit ;
