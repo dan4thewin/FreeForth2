@@ -9664,3 +9664,88 @@ constant for macro consumption.
 
 - `: test cell + ; 5 test . cr` → prints 13, depth=0 (no leak)
 - All three test gates pass
+
+## Experiment 124: Pure-Forth compat.ff replaces lib/x86/compat.ff
+
+### Goal
+
+Replace the i386-specific `lib/x86/compat.ff` with a shared pure-Forth
+`lib/compat.ff` that lives in the common library path. This eliminates
+the last arch-specific library file and makes the Forth 2012 compatibility
+shim portable.
+
+### Background
+
+The original `lib/x86/compat.ff` contained i386 machine code for three
+operations: `tos>si` (mov esi,ebx — set ESI register for the compiler's
+header lookup), `tos>di`/`di>tos` (save/restore EDI for fm/mod's
+sign-comparison logic), and `$-.` (case-insensitive byte comparison
+using `repz cmpsb`). These x86-specific instructions prevented the file
+from loading on ff64.
+
+### Key discoveries and fixes
+
+**1. `_$-ic` — case-insensitive compare without `repz cmpsb`**
+
+The i386 used `repz cmpsb` (string compare instruction) which sets
+FLAGS directly. The pure-Forth replacement accumulates the OR of all
+byte differences in a variable `_cmpres`, avoiding early-exit from a
+TIMES loop (which is dangerous — `;THEN` inside TIMES pops the loop
+counter as a return address, causing SEGV).
+
+**2. `tos>si` — conditional no-op on ff64**
+
+On i386, `_find` is vectored (`VECT "find",_find`), so `findic ' find !^`
+replaces what the compiler calls. The compiler reads `byte[esi+h.ct]`
+after find, so findic must set ESI via `tos>si` (mov esi,ebx = $DE89).
+On ff64, `_find` is a direct assembly function (not vectored), so the
+Forth-level `find` replacement doesn't affect the compiler — `tos>si`
+can be a no-op.
+
+**3. `fm/mod` — portable floored division without register save**
+
+The i386 version saved the divisor in EDI (`tos>di`) and compared signs
+using `0<.` (dotted comparison pushing boolean). The pure-Forth version
+saves the divisor in a variable `_fmdiv` and uses XOR sign-testing:
+after symmetric `m/mod`, if the remainder is nonzero AND the XOR of
+remainder and divisor is negative (signs differ), adjust by subtracting
+1 from quotient and adding divisor to remainder.
+
+Critical bug found: after `over 0- 0= IF drop ;THEN` (the early-return
+for zero remainder), the `over`'d copy stays on the stack when TOS is
+nonzero. The fix: use it directly with `_fmdiv @ ^` instead of doing
+another `over`. This was a subtle stack-effect issue where `0-` tests
+but doesn't consume TOS.
+
+**4. `0;` architecture difference (not used, but documented)**
+
+On ff64, `0;` includes `;THEN` (self-contained). On i386, `0;` leaves
+the IF open. Portable code should use explicit `0- 0= IF drop ;THEN`
+instead of `0;` when the behavior difference matters. In this file,
+`0;` is used only in `findok` and `aligned` where both semantics work.
+
+**5. `[IF]/[ELSE]/[THEN]` must be single-line**
+
+FreeForth's `[IF]/[ELSE]/[THEN]` scan the input buffer, which on file
+load is line-oriented. Multi-line `[IF]...[THEN]` blocks silently fail.
+All conditional compilation must fit on one line.
+
+### What changed
+
+- **Deleted**: `lib/x86/compat.ff` (i386-specific, contained machine code)
+- **Created**: `lib/compat.ff` (pure Forth, shared)
+  - Case-insensitive find with accumulated-OR comparison
+  - `which` variable created on ff64 (exists in i386 assembly)
+  - `tos>si` conditional (real on i386, no-op on ff64)
+  - `number.` hook conditional (i386 only — ff64 has no vectored number)
+  - `cell+`/`cells` conditional (8 vs 4)
+  - `aligned` conditional (8-byte vs 4-byte)
+  - fm/mod rewritten with variable instead of register save
+  - Hdrswap section unconditional (ff64 doesn't have dotted comparisons yet)
+
+### Verification
+
+- `make test`: all 5 configurations pass (ff, ff+longconds, fftk, fftk+longconds)
+- `make test64`: all pass (core1.ff/core2.ff/mmap.ff skipped as before)
+- `make -C exp test`: 8 passed, 0 failed
+- core1.ff: 579 ok, 58 skipped, PASSED (was 5 fm/mod failures before fix)

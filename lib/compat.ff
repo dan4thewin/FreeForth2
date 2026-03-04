@@ -1,13 +1,21 @@
-\ shim aimed at passing most of the Forth 2012 Core word set tests
+\ compat.ff — Forth 2012 compatibility shim (pure Forth, both arches)
 " compat" features append
 
-\ swap find for one that ignores case and won't return a word being defined
-:. sz-		2dup h.sz+ c@ - drop ;
-:. nm-		3dup h.nm+ swap $-. drop ;
-:. hdr-		sz- nm- 0= ? ;
+\ --- case-insensitive string compare and find ---
+[64] [IF] variable which [THEN]
+:. _uc	dup 97 - 26 u< drop drop IF $DF & THEN ;
+variable _cmpres pvt
+:. _$-ic ( @1 @2 # -- ; FLAGS set from accumulated diff )
+  0 _cmpres !
+  TIMES over c@ _uc over c@ _uc - _cmpres @ | _cmpres !
+    swap 1+ swap 1+
+  REPEAT 2drop _cmpres @ 0- ;
+:. sz-	2dup h.sz+ c@ - drop ;
+:. nm-	3dup h.nm+ swap _$-ic drop ;
+:. hdr-	sz- nm- 0= ? ;
 :. more?	dup h.sz+ c@ 0- drop ;
 :. nexth	h.sz+ c@+ + 1+ ;
-:. tos>si`	$de89, s08 ;	\ 89DE(mov esi,ebx)
+[64] [IF] :. tos>si` ; [ELSE] :. tos>si`	$de89, s08 ; [THEN]
 :. findic	H@ anon@ 0- drop 0= IF nexth THEN BEGIN
 		more? 0<> WHILE
 		hdr- 0= IF tos>si dup which! @ swap 0_ rot BREAK
@@ -15,8 +23,7 @@
 findic ' find !^
 
 \ use base for number input as well as number output
-:. _number	base@ number. ;
-_number		' number !^
+[64] [IF] : _nop_number ; [ELSE] :. _number	base@ number. ; _number	' number !^ [THEN]
 : hex		$10 base! ;
 : decimal	$A base! ;
 
@@ -30,22 +37,23 @@ _number		' number !^
 r`		' alias r@` ;
 /%`		' alias /mod` ;
 m/mod`		' alias sm/rem` ;
-4+`		' alias cell+` ;
-4*`		' alias cells` ;
+[64] [IF] 8+` [ELSE] 4+` [THEN] ' alias cell+` ;
+[64] [IF] 8*` [ELSE] 4*` [THEN] ' alias cells` ;
 1+`		' alias char+` ; : chars ;
 lit`		' alias literal` ;
 c@+`		' alias count` ;
 eval		' alias evaluate ;
 .u		' alias u. ;
 
-: tos>di`	$DF89, s08 ;
-: di>tos`	dup` $FB89, ,1 s1 ;
-: fm/mod	tos>di m/mod over 0; 0<. di>tos 0<. ^ 0;
-		drop 1- swap di>tos + swap ;
+\ floored division (pure Forth — XOR sign test, variable for temp)
+variable _fmdiv pvt
+: fm/mod	dup _fmdiv ! m/mod over 0- 0= IF drop ;THEN
+		_fmdiv @ ^ 0- 0< drop IF
+		1- swap _fmdiv @ + swap THEN ;
 
 : spaces	TIMES space REPEAT ;
 : word		parse swap 1- swap overc! ;
-: char`		wsparse drop c@ lit` ;
+: char`	wsparse drop c@ lit` ;
 char`		' alias [char]` ;
 $20 constant bl
 
@@ -59,22 +67,23 @@ r2`		' alias j` ;
 exit		' alias osexit ;
 jmp`		' alias exit` ;
 : do`		2>r` BEGIN` ;
-: loop`		2r>` 1+` >` WHILE` 2>r` REPEAT` 2drop` ;
+: loop`	2r>` 1+` >` WHILE` 2>r` REPEAT` 2drop` ;
 : +loop`	r>` +` r>` swap` <=` WHILE` 2>r` REPEAT` 2drop` ;
 : leave`	unloop` exit` ;
 
 :. acc		swap base@ um* drop rot base@ um* d+ ;
-: toupper	dup 'a' >=. 0; drop dup 'z' <=. 0; drop -$21& ;
+: toupper	dup 97 - 26 u< drop drop IF -$21& THEN ;
 : digit?	toupper $30- 9 u> drop IF 7- $a u< drop IF zFALSE ;THEN THEN
 		base@ u>= drop IF zFALSE ;THEN nzTRUE ;
 : >number	2dup+ >r TIMES dupc@ digit? 0= IF drop BREAK swap >r acc r> 1+
 		REPEAT r> over- ;
 
 :. findok	find 0; !"not_found" ;
-:. xt_h		findok which@ ;
+:. xt_h	findok which@ ;
 : _hdrswap	xt_h 2swap xt_h 2xchg ! ! ;
 : hdrswap`	;` wsparse wsparse _hdrswap ;
 
+\ --- swap FLAGS comparisons for boolean ones ---
 hdrswap 0=`	0=.`
 hdrswap =`	=.`
 hdrswap 0<>`	0<>.`
@@ -98,13 +107,12 @@ hdrswap WHILE`	WHILE.`
 hdrswap TILL`	TILL.`
 hdrswap UNTIL`	UNTIL.`
 
-\ standard wants align to be non-immediate
-\ rename align` to align' - provide both macro and non-macro aliases
-"align`" xt_h 11+ $27 swap c! dup alias align,` alias align ;
-: aligned dup 3& 0; - 4+ ;
+\ rename align` to align'
+"align`" xt_h h.nm+ 5+ $27 swap c! dup alias align,` alias align ;
+[64] [IF] : aligned dup 7& 0; - 8+ ; [ELSE] : aligned dup 3& 0; - 4+ ; [THEN]
 
 : '.`	wsparse findok lit` ;
-'.`	' alias [']` ;
+'.`		' alias [']` ;
 hdrswap '`	'.`
 
 hidepvt ;
