@@ -4700,16 +4700,16 @@ Forth source files that work on both i386 and x86-64.  The solution:
 
 ```
 \ In ff64.boot:
-8 constant cell`
+8 constant cell
 cell 4 - constant [64]`
 
 \ In ff.boot:
-4 constant cell`
+4 constant cell
 cell 4 - constant [64]`
 ```
 
-`cell` is the primary constant — the cell size in bytes (8 on x86-64,
-4 on i386).  It's useful for portable arithmetic:
+`cell` is a **plain constant** (not backtick) — the cell size in bytes
+(8 on x86-64, 4 on i386).  It's useful for portable arithmetic:
 
 ```
 cell allot       \ allocate one cell
@@ -4717,9 +4717,18 @@ addr cell + @    \ fetch next cell
 n cell *         \ convert count to bytes
 ```
 
+**Why `cell` is NOT backtick:** backtick constants push their value
+onto the compile-time data stack (for other macros to consume at
+compile time).  Nothing consumes `cell` at compile time — it's a
+runtime value.  Defining it as `constant cell\`` caused a compile-time
+stack leak: every definition using `cell` left an extra 8 on the
+stack.  Plain `constant cell` hits the normal lookup path (ct=1 →
+`_lit_compile`), which emits the value into the generated code with
+no compile-time residue.
+
 `[64]` is derived from `cell` for conditional compilation: `cell 4 -`
-gives 4 (truthy) on 64-bit and 0 (falsy) on 32-bit.  Both are
-backtick constants so they work with `[IF]`:
+gives 4 (truthy) on 64-bit and 0 (falsy) on 32-bit.  `[64]` IS a
+backtick constant because `[IF]` consumes it at compile time:
 
 ```
 [64] [IF]
@@ -4759,3 +4768,148 @@ Note: ff64's register-based stack means `sp@` does NOT give NOS like
 i386's `sp@` does.  The top 9 items live in registers (rbx, r8–r15
 minus r15), and R15 points to the overflow area.  This is why the sp@
 test uses a nonzero check instead of the i386's `sp@ @ → NOS` test.
+
+---
+
+## Part 16: Library Unification (Experiments 117–123)
+
+With the x86-64 port functionally complete and a growing library of
+Forth files, the next challenge was structural: the same logical
+library (file I/O, console control, time) existed in two copies — one
+in `lib/` (originally i386-only) and one in `lib/x86-64/`.  Most of
+the code was identical Forth.  The differences were syscall numbers
+and a few struct layout constants.
+
+### The problem
+
+Before unification, the directory layout was:
+
+```
+lib/           ← i386-only library files
+lib/x86-64/   ← x86-64-only library files (formerly lib/64/)
+```
+
+Files like `fileops.ff`, `console.ff`, `shell.ff`, and `time.ff`
+existed in both directories with 90%+ identical Forth code.  Bug fixes
+had to be applied twice.  New features diverged silently.
+
+### Phase 1: Directory restructuring (Exp 117)
+
+Reorganized into three tiers:
+
+```
+lib/           ← shared (portable Forth, works on both arches)
+lib/x86/       ← i386-specific files
+lib/x86-64/    ← x86-64-specific files
+```
+
+Moved files that were already pure Forth — `pno.ff`, `ior.ff`,
+`malloc.ff` — into shared `lib/`.  Updated FFPATH on both arches so
+the search order is:
+
+- **x86-64:** `lib/x86-64` → `lib` → `.`
+- **i386:** `.` → `lib/x86` → `lib`
+
+Architecture-specific files shadow shared ones: if `lib/x86-64/foo.ff`
+and `lib/foo.ff` both exist, the arch-specific one wins.
+
+### Phase 2: fixup unification (Exp 119–120)
+
+The `fixup` word (runtime relocation for forward references) had an
+architecture difference: i386 used `rdrop` before `r> 5-` (expecting
+CALL), x86-64 relied on tail-call optimization (JMP, no extra return
+address).  Unified both to use tail-call convention — remove `rdrop`,
+require `;` after fixup in hidden definitions.  Both arches already had
+tail-call optimization (`_semisemi` in ff.asm, `_semisemi` in ff64.asm).
+
+### Phase 3: Syscall number tables (Exp 122)
+
+The key innovation.  Instead of `[64] [IF]` conditionals scattered
+through library files, we created arch-specific syscall tables:
+
+**lib/x86/syscalls.ff:**
+```forth
+ 12 constant _sys.chdir     54 constant _sys.ioctl
+ 19 constant _sys.lseek    142 constant _sys.select
+195 constant _sys.stat       78 constant _sys.gettimeofday
+ 13 constant _sys.time      162 constant _sys.nanosleep
+ 98 constant _stat.sz        44 constant st.size
+```
+
+**lib/x86-64/syscalls.ff:**
+```forth
+ 80 constant _sys.chdir     16 constant _sys.ioctl
+  8 constant _sys.lseek     23 constant _sys.select
+  4 constant _sys.stat      96 constant _sys.gettimeofday
+201 constant _sys.time       35 constant _sys.nanosleep
+144 constant _stat.sz        48 constant st.size
+```
+
+Shared library files just do `needs syscalls.ff` and use symbolic
+names.  FFPATH ensures the correct arch-specific file is loaded.
+
+**Example: shared fileops.ff** (works on both architectures):
+```forth
+needs syscalls.ff
+: lseek _sys.lseek sys3 ?ior ;
+: fstat _sys.stat _stat.sz erase _sys.stat sys2 ?ior ;
+: fsize fstat _stat.sz + st.size + @ ;
+```
+
+The `_stat.sz erase` ensures stat buffers start zeroed — important for
+system interop where stale buffer data could cause subtle bugs.
+
+### Phase 3 result: ff.ff trimmed
+
+The i386 library file `ff.ff` went from ~188 lines to 98.  Inline
+definitions of fileops, console, shell, time, colors, and stack-show
+were replaced with `needs` calls to shared files.  What remains:
+callback (i386 machine code), locals (i386 machine code), and
+FFHIDE/hidepvt.
+
+### The `cell` backtick constant bug (Exp 123)
+
+During unification, a compile-time stack leak was traced to `cell`
+being defined as `8 constant cell\`` (backtick constant).
+
+**How the compiler's two-phase lookup works:**
+
+1. **Backtick lookup** (first): append `` ` `` to the token, search.
+   - ct bit 0 set → push xt onto **compile-time data stack**
+   - ct bit 0 clear → **execute immediately** (macro)
+
+2. **Normal lookup** (fallback):
+   - ct=0 → compile a CALL
+   - ct=1 → compile literal via `_lit_compile`
+   - ct≥2 → execute immediately
+
+Backtick constants with ct bit 0 push their value onto the compile-time
+stack for **other macros to consume**.  `[1]\``, `[0]\``, and `[64]\``
+work this way — `[IF]\`` consumes them.  But `cell` is a runtime value.
+Nothing consumes the compile-time 8.
+
+**Fix:** `8 constant cell` (plain constant, no backtick).  Now the
+compiler's backtick lookup fails, normal lookup finds ct=1, and
+`_lit_compile` emits the value into generated code.  No compile-time
+residue.
+
+### Directory layout after unification
+
+```
+lib/
+  console.ff      ← shared: terminal control, key?, colors
+  fileops.ff      ← shared: lseek, stat, fsize, fexist
+  ior.ff          ← shared: error reporting
+  malloc.ff       ← shared: heap allocation
+  pno.ff          ← shared: pictured numeric output
+  shell.ff        ← shared: chdir, system, getenv, getpid
+  time.ff         ← shared: ms@, ms, .now, .elapsed
+  x86/
+    fixup.ff      ← i386: runtime relocation
+    syscalls.ff   ← i386: Linux syscall numbers
+  x86-64/
+    dis.ff        ← x86-64: disassembler support
+    fixup.ff      ← x86-64: runtime relocation with trampolines
+    see64.ff      ← x86-64: decompiler
+    syscalls.ff   ← x86-64: Linux syscall numbers
+```

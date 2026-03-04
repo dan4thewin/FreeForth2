@@ -9618,3 +9618,49 @@ All three test gates pass:
 - `make -C exp test`: all experiments PASS
 
 Tested manually: .now, ms@, ms, ss, cls, getpid, system on both arches.
+
+---
+
+## Experiment 123: Fix `cell` backtick constant bug
+
+### Goal
+
+Fix the compile-time stack leak caused by `cell` being defined as a
+backtick constant (`constant cell\``). Change it to a plain constant on
+both architectures, and remove the workaround in console.ff.
+
+### Background
+
+The FreeForth compiler's two-phase lookup works like this:
+
+1. **Backtick lookup** (first): append `` ` `` to the word, search.
+   - ct bit 0 set → push xt value onto the **compile-time data stack**
+   - ct bit 0 clear → execute immediately (code-generating macro)
+
+2. **Normal lookup** (fallback):
+   - ct=0 → compile a CALL
+   - ct=1 → compile a literal via `_lit_compile`
+   - ct≥2 → execute immediately
+
+When `cell` was defined as `8 constant cell\``, the compiler found
+`cell\`` on the backtick lookup. Because constants have ct=$21 (bit 0
+set), the compiler pushed 8 onto the compile-time data stack — intended
+for other macros to consume. But nothing consumed it. The 8 lingered on
+the stack, causing a depth=1 leak after any definition using `cell`.
+
+This is correct behavior for `[1]\``, `[0]\``, and `[64]\`` — those ARE
+consumed at compile time by `[IF]\``, `[ELSE]\``, and `[THEN]\``. But
+`cell` is a runtime value (size of a machine word), not a compile-time
+constant for macro consumption.
+
+### Actions
+
+1. Changed `8 constant cell\`` → `8 constant cell` in ff64.boot
+2. Changed `4 constant cell\`` → `4 constant cell` in ff.boot
+3. Removed `_fdtv` workaround from console.ff — `cell +` now works
+   inline in definitions without leaking
+
+### Verification
+
+- `: test cell + ; 5 test . cr` → prints 13, depth=0 (no leak)
+- All three test gates pass
