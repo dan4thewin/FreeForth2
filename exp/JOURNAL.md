@@ -9107,13 +9107,14 @@ The boot `ss` is colorless (no `cyan foreground`/`normal` — those come
 from console.ff which isn't loaded yet at boot). The colored version
 in `ff.ff` will override when loaded.
 
-**2. Create shared lib/pno.ff from Lavarenne's original**
+**2. Create shared lib/pno.ff from DG's original**
 The `lib/64/pno.ff` was written early in the port when char literals
 didn't work, using hex constants (`$30+`, `$7A`, `$2D`, `$3F`) instead
-of Lavarenne's original char literals (`'0'+`, `'z'`, `'-'`, `'?'_`).
+of DG's original char literals (`'0'+`, `'z'`, `'-'`, `'?'_`) from
+`ff.ff`.
 
-Now that char literals work (since exp 040), we use Lavarenne's
-original code verbatim. Tested: identical output on both ff and ff64.
+Now that char literals work (since exp 040), we use DG's original
+code verbatim. Tested: identical output on both ff and ff64.
 
 Key: `'0'+` is char `0` (48) with suffix `+`. Trailing `'` in `'z'`
 is a number-parser grouping separator (like `,` and `.`), ignored.
@@ -9149,7 +9150,7 @@ All three gates pass:
 - `ff64.boot`: added _ss, ss, dd after ds
 - `ff64.help`: added ss, dd entries
 - `fflin64.boot`: FFPATH lib/64 → lib/x86-64 (line 161, comment 121)
-- `lib/pno.ff`: NEW — shared, from Lavarenne's original ff.ff
+- `lib/pno.ff`: NEW — shared, from DG's original ff.ff
 - `lib/ior.ff`: NEW — moved from lib/64/ (portable Forth)
 - `lib/malloc.ff`: NEW — moved from lib/64/ (portable Forth)
 - `lib/64/` → `lib/x86-64/`: renamed (git mv)
