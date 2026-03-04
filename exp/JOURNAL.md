@@ -9717,18 +9717,35 @@ nonzero. The fix: use it directly with `_fmdiv @ ^` instead of doing
 another `over`. This was a subtle stack-effect issue where `0-` tests
 but doesn't consume TOS.
 
-**4. `0;` architecture difference (not used, but documented)**
+**4. `0;` — fall-through, not "left open"**
 
-On ff64, `0;` includes `;THEN` (self-contained). On i386, `0;` leaves
-the IF open. Portable code should use explicit `0- 0= IF drop ;THEN`
-instead of `0;` when the behavior difference matters. In this file,
-`0;` is used only in `findok` and `aligned` where both semantics work.
+On i386 (ff.boot:174–175), `0;` and `;THEN` are consecutive `:` definitions:
+```
+: 0;` 0-` 0=` IF` drop`
+: ;THEN` ;;` dupc@ SC c! _then ;
+```
+Because `:` does NOT close the previous named definition — it merely
+creates a new entry point at the current code position — `0;` falls
+through to `;THEN`. The `;THEN` code emits RET (`;;`), saves SWAPbit
+state (`dupc@ SC c!`), and resolves the forward jump (`_then`). The IF
+is fully resolved. On ff64 (ff64.boot:270), `0;` explicitly calls
+`;THEN` (self-contained). Both architectures produce identical behavior:
+test-zero, conditional-jump, drop, return, with the jump resolved.
 
-**5. `[IF]/[ELSE]/[THEN]` must be single-line**
+**5. `[IF]/[ELSE]/[THEN]` span multiple lines in files**
 
-FreeForth's `[IF]/[ELSE]/[THEN]` scan the input buffer, which on file
-load is line-oriented. Multi-line `[IF]...[THEN]` blocks silently fail.
-All conditional compilation must fit on one line.
+`[IF]`, `[ELSE]`, and `[THEN]` are consecutive `:` definitions that
+fall through (same `:` non-closure principle as `0;`/`;THEN`). In loaded
+files and boot source, the compiler runs in one pass over the entire
+input — line boundaries are just whitespace. Multi-line `[IF]` blocks
+work correctly, as demonstrated by ff.ff lines 62–91 (a 30-line `[1]
+[IF]...[THEN]` block defining local-variable words).
+
+The only context where multi-line `[IF]` fails is interactive REPL use,
+because `_auto` (called by `eval.` after each line) inserts `;` which
+emits RET and breaks the fall-through chain. Use `\` at end of line to
+suppress auto-execution when building multi-line definitions
+interactively.
 
 ### What changed
 
@@ -9741,7 +9758,9 @@ All conditional compilation must fit on one line.
   - `cell+`/`cells` conditional (8 vs 4)
   - `aligned` conditional (8-byte vs 4-byte)
   - fm/mod rewritten with variable instead of register save
-  - Hdrswap section unconditional (ff64 doesn't have dotted comparisons yet)
+  - Hdrswap section unconditional (ff64 will need dotted comparisons
+    before this section can load; multi-line `[IF]` guards can be added
+    when that time comes)
 
 ### Verification
 
