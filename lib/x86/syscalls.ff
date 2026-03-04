@@ -1,0 +1,11 @@
+( syscalls.ff — i386 Linux syscall numbers )
+ 12 constant _sys.chdir
+ 13 constant _sys.time
+ 19 constant _sys.lseek
+ 54 constant _sys.ioctl
+ 78 constant _sys.gettimeofday
+142 constant _sys.select
+162 constant _sys.nanosleep
+195 constant _sys.stat     ( stat64 )
+ 98 constant _stat.sz      ( struct stat64 size )
+ 44 constant st.size       ( offset of st_size )

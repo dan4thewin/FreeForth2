@@ -1,0 +1,11 @@
+( fileops.ff — file operations: lseek, ioctl, select, stat )
+needs ior.ff
+needs syscalls.ff
+
+: lseek  3 _sys.lseek  syscall ; ( whence offset fd -- offset )
+: ioctl  3 _sys.ioctl  syscall ; ( arg request fd -- result )
+: select 5 _sys.select syscall ; ( timeout exceptfds writefds readfds nfds -- result )
+
+: mkst` create` _stat.sz allot` ;
+: stat nip tuck _stat.sz erase 2 _sys.stat syscall ; ( addr len statbuf -- result )
+" fileops" features append ;

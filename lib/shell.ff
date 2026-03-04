@@ -1,6 +1,7 @@
 ( shell.ff — OS interface: getenv, getpid, system, shell, cd, !! )
 needs fixup.ff
 needs ior.ff
+needs syscalls.ff
 
 : zt over+ 0 swap c! ; ( addr len -- addr ; zero-terminate string )
 
@@ -15,7 +16,7 @@ needs ior.ff
 
 : man` >in@ 4- lnparse + over- ( <mantopic> -- ; fallthru )
 : shell system 0; ior! !"shell_call_failed" ( addr len -- )
-: cd` wsparse zt 1 80 syscall ?ior ( <newdir> -- ; x86-64 chdir=80 )
+: cd` wsparse zt 1 _sys.chdir syscall ?ior ( <newdir> -- )
 ;
 : !!` lnparse shell ; ( <line> -- )
 " shell" features append ;

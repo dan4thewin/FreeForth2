@@ -19,8 +19,9 @@ needs fileops.ff
 
 ( --- terminal input --- )
 variable _fdset pvt 0 , 0 ,
+_fdset cell + constant _fdtv pvt
 : key? stdin ( -- ; zFALSE if stdin would block )
-: fdin? 1 swap << _fdset! _fdset 8+ 0 0 _fdset $20 select dup ?ior 0- drop ; ( fd -- )
+: fdin? 1 swap << _fdset! _fdtv 0 0 _fdset $20 select dup ?ior 0- drop ; ( fd -- )
 
 variable _tiosbuf pvt 60 allot
 :. _TCGETS  $5401 SKIP

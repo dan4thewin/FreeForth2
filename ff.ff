@@ -38,17 +38,10 @@ needs fixup.ff
 needs ior.ff
 needs malloc.ff
 
-\ syscall values see /usr/include/asm-i386/unistd.h
-: lseek  3  19 syscall ; \ wh off fd -- off ; wh=0:SET 1:CUR 2:END
-: ioctl  3  54 syscall ; \ int ioctl(int fd, int request, void* arg);
-: select 5 142 syscall ; \ timeval* exceptfds* writefds* readfds* n -- ?
-
-\ st_dev 0 st_ino 12 st_mode 16 st_nlink 20 st_uid 24 st_gid 28 st_rdev 32
-\ st_size 44 st_blksize 48 st_blocks 52 st_atim 56 st_mtim 64 st_ctim 72
-
-: mkst` create` 98 allot` ;
-: stat nip tuck 98 erase 2 195 syscall ; \ stat64
-44 constant st.size
+needs console.ff
+:. _ss 1- 0; swap >r _ss r .x r> ;
+: ss depth cyan foreground ."( " dup .dec\ ."; " 1+ 3 max _ss .")^J" normal ;
+: dd depth TIMES drop REPEAT ;
 
 \ --------------------------------------------------------------------
 \ call back
@@ -62,50 +55,8 @@ needs malloc.ff
   $1C245C89, ,4 $0100C261, ,4  anon:`
 ;
 
-variable fdset pvt  0 , 0 , \ for select, the 2 zeros are a null timeval
-: key? stdin
-: fdin? \ fd -- ; returns zFALSE if file-descriptor fd would wait for input
-  1 swap << fdset! \ fd_set READ; select will return 0 or 1 (or 0<)
-  fdset 4+ 0 0 fdset $20 select dup ?ior 0- drop
-;
-:. _TCGETS  $5401 SKIP \ see termios
-:. _TCSETSW $5403 THEN eob swap stdin ioctl ?ior ;
-: ekey \ -- c ; raw access to keyboard input
-  \ not yet perfect: line-discipline-control-chars still interpreted,
-  \ more to patch in termios structure...
-  _TCGETS eob 12+ dup@ swap &100 over! \ -- n eob+12 ; raw
-  _TCSETSW key -rot ! _TCSETSW
-;
-
-: stopdump? key 10- drop ;
-: ;dump` ;` BEGIN 16 bounds under 2dump stopdump? 0<> UNTIL drop ;  \ @ --
-
 \ --------------------------------------------------------------------
-\ OS shell/command interface
-
-\ Note: literal strings are already zero-terminated.
-\ Note: as wsparse considers the NUL character as whitespace, NUL may replace
-\ any other whitespace (HT,LF,VT,FF,CR,space) without breaking source code.
-: zt  \ @ # -- @ ; append zero-terminator
-  over+ 0 swap c! ;
-
-:. _getenv "getenv" fixup ;
-:  getenv 1_ dup _getenv #call 0- 0= IF 0 ELSE zlen THEN ;
-:. _getpid "getpid" fixup ;
-:  getpid 0 0 _getpid #call ;
-:. _getppid "getppid" fixup ;
-:  getppid 0 0 _getppid #call ;
-:. _system "system" fixup ;
-:  system zt 1 dup _system #call ;
-
-: man` >in@ 4- lnparse + over- \ <mantopic> -- ; 4-:"man_" fallthru
-: shell  \ @ # -- ; send command to shell, command result into ior
-  system 0; ior! !"shell_call_failed"
-: cd`    \ <newdir> -- ; change directory
-  wsparse zt 1 12 syscall ?ior
-;
-: !!`    \ <line> -- ; send command line to shell
-  lnparse shell ;
+needs shell.ff
 
 \ --------------------------------------------------------------------
 [1] [IF] " locals" features append \ Local variables
@@ -140,49 +91,7 @@ r0!` ' alias r!`
 [THEN]
 
 \ --------------------------------------------------------------------
-\ console display control (topleft=0,0)
-
-: cls` ( -- ) ."^[[2J"
-: home ( -- ) 0 dup
-: atxy ( xCol yRow -- ) ."^[[" 1+ .dec\ .";" 1+ .dec\ ."H" ;
-: atx  ( xCol -- ) ."^[[" 1+ .dec\ ."G" ;
-[1] [IF] " normal" features append \ symbolic attributes and color names
-:^ color ( n -- ) ."^[[" .dec\ ."m" ;
-:. _nocolor drop ;
-: nocolor _nocolor ' color !^ ;
-: normal 0 color ;     : bold 1 color ;          : dim 2 color ;
-: underline 4 color ;  : blink 5 color ;         : inverse 7 color ;
-: concealed 8 color ;  : foreground 30+ color ;  : background 40+ color ;
-0 constant black  1 constant red      2 constant green  3 constant yellow
-4 constant blue   5 constant magenta  6 constant cyan   7 constant white
-
-:. _ss 1- 0; swap >r _ss r .x r> ;
-: ss depth cyan foreground ."( " dup .dec\ ."; " 1+ 3 max _ss .")^J" normal ;
-: dd depth TIMES drop REPEAT ;
-[THEN]
-
-\ --------------------------------------------------------------------
-[1] [IF] " .now" features append \ Calendar date and time display
-:. _leap .dec\ ."-2-29" drop ;
-: .d ( n -- ; display days since 0-0-0 as gregorian date )
-  146097 /% 400* swap 146096 = drop IF swap 400+ _leap ;THEN
-  36524 /% 100* rot + swap
-  1461 /% 4* rot + swap 1460 = drop IF swap 4+ _leap ;THEN
-  365 /% rot + swap \ -- y rem
-  dup 31+ 5* 153/ 2+  tuck 1+ 153* 5/ 123- - -rot  \ -- d y m
-  12 > drop IF 12- swap 1+ swap THEN swap \ -- d m y
-  .dec\ ."-" .dec\ ."-" .dec\ ;
-: .wd ( n -- ) 7% 3* "wedthufrisatsunmontue" drop + 3 type ;
-: now  \ -- n ; returns number of seconds since 2000-3-1_0:0:0
-  0 1 13 syscall [ 1970-1-1 2000-3-1- 24:0:0* 1:0:0+ ] lit + ;
-: .now` ( -- ) now dup 24:0:0/ .wd space       \ display current date&time
-: .dt ( n -- ) 24:0:0 /% 2000-3-1+ .d ."\_"    \ display seconds as date&time
-: .t  ( n -- ) 60 /% 60 /% .dec\ .":" .dec\ .":" .dec ; \ display seconds as time
-[THEN]
-: ms@  \ -- n ; get current milliseconds count
-  eob  0 over 2 78 syscall drop  2@ 1000* swap 1000/ + ;
-: ms  \ n -- ; wait n milliseconds
-  1000 /% swap 1'000'000* swap eob 2!  0 eob 2 162 syscall drop ;
+needs time.ff
 
 "FFHIDE" getenv 0- 0<> IF swap c@ $30- 0= IF hide off THEN THEN 2drop ;
 hidepvt " hidepvt" features append ;

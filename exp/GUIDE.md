@@ -4233,17 +4233,25 @@ lib/
 ├── pno.ff                  # Pictured numeric output (shared)
 ├── ior.ff                  # I/O error checking (shared)
 ├── malloc.ff               # Dynamic memory (shared)
+├── shell.ff                # OS interface: getenv, system, cd (shared)
+├── fileops.ff              # File operations: lseek, stat, ioctl (shared)
+├── console.ff              # Terminal control: color, cursor, ekey (shared)
+├── time.ff                 # Date/time: .now, ms@, ms (shared)
+├── x86/                    # i386-specific library files
+│   ├── fixup.ff            # Self-patching libc resolution (rdrop-free)
+│   └── syscalls.ff         # i386 Linux syscall numbers
 ├── x86-64/                 # x86-64-specific library files
-│   ├── fixup.ff            # Self-patching libc resolution
-│   ├── shell.ff            # OS interface (getenv, system, cd)
-│   ├── fileops.ff          # File operations (lseek, stat, ioctl)
-│   ├── console.ff          # Terminal control (color, cursor, ekey)
-│   ├── time.ff             # Date/time (.now, ms@, ms)
+│   ├── fixup.ff            # Self-patching libc resolution (_fixbuf)
+│   ├── syscalls.ff         # x86-64 Linux syscall numbers
 │   ├── see.ff              # Disassembler
 │   ├── help.ff             # Help system
 │   └── mkimage.ff          # Turnkey image dumper
-└── (i386 files)            # see.ff, compat.ff, debug.ff, etc.
+└── (i386 files in x86/)    # see.ff, compat.ff, debug.ff, etc.
 ```
+
+Shared files use `needs syscalls.ff` to get arch-correct constants
+(e.g., `_sys.lseek`, `_sys.stat`). FFPATH resolution ensures the
+right `syscalls.ff` is loaded from the arch-specific directory.
 
 #### FFPATH Resolution
 
@@ -4255,16 +4263,17 @@ take precedence.
 #### Dependency Chain
 
 ```
+syscalls.ff       ← arch-specific syscall number constants
 fixup.ff          ← foundation (self-patching libc calls)
 ├── ior.ff        ← I/O error checking
-│   ├── fileops.ff ← file operations
+│   ├── fileops.ff ← file operations (uses syscalls.ff)
 │   │   └── console.ff ← terminal control
-│   ├── shell.ff  ← OS interface
+│   ├── shell.ff  ← OS interface (uses syscalls.ff)
 │   └── malloc.ff ← dynamic memory
-└── time.ff       ← date/time (uses syscalls directly)
+└── time.ff       ← date/time (uses syscalls.ff)
 ```
 
-Most library files begin with `"dependency.ff" needed ;` to ensure
+Most library files begin with `needs dependency.ff` to ensure
 their prerequisites are loaded.
 
 #### The _fixbuf Trampoline Allocation

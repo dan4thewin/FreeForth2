@@ -9509,3 +9509,112 @@ All three gates pass:
 - `ff.ff`: replaced 20 lines with 3 `needed` calls
 
 ---
+
+## Experiment 122: Phase 3 — unify Tier 2 libraries with syscall tables
+
+### Goal
+
+Move shell.ff, fileops.ff, time.ff, and console.ff from lib/x86-64/
+to shared lib/, making them work on both i386 and x86-64. The key
+technique: arch-specific **syscall tables** in lib/x86/syscalls.ff
+and lib/x86-64/syscalls.ff, loaded via `needs syscalls.ff` (FFPATH
+ensures the correct arch directory is searched first).
+
+### Approach: syscall number tables
+
+Instead of littering shared code with `[64] [IF] 80 [ELSE] 12 [THEN]`
+conditionals, we factored all arch-varying syscall numbers into two
+small files:
+
+**lib/x86/syscalls.ff** (i386):
+```
+ 12 constant _sys.chdir
+ 13 constant _sys.time
+ 19 constant _sys.lseek
+ 54 constant _sys.ioctl
+ 78 constant _sys.gettimeofday
+142 constant _sys.select
+162 constant _sys.nanosleep
+195 constant _sys.stat       ( stat64 )
+ 98 constant _stat.sz        ( struct stat64 size )
+ 44 constant st.size         ( st_size offset )
+```
+
+**lib/x86-64/syscalls.ff**:
+```
+  4 constant _sys.stat
+  8 constant _sys.lseek
+ 16 constant _sys.ioctl
+ 23 constant _sys.select
+ 35 constant _sys.nanosleep
+ 80 constant _sys.chdir
+ 96 constant _sys.gettimeofday
+144 constant _stat.sz
+ 48 constant st.size
+201 constant _sys.time
+```
+
+Then shared files just say `needs syscalls.ff` and use the constants:
+`: lseek 3 _sys.lseek syscall ;` — identical source, correct syscall.
+
+### Files unified
+
+1. **shell.ff** — moved to lib/. Only `cd` had an arch-specific
+   syscall number (chdir: 12 vs 80). Now uses `_sys.chdir`. All
+   fixup words (getenv, getpid, system, etc.) were already identical.
+
+2. **fileops.ff** — moved to lib/. Syscall numbers for lseek, ioctl,
+   select, stat all come from the table. The `stat` definition still
+   uses `[64] [IF]` because i386 stat64 requires an `erase` before
+   the syscall while x86-64 stat doesn't — a semantic difference,
+   not just a number difference.
+
+   DG's direction: "start with zeroed bufs for system interop" —
+   the unified stat always erases the buffer before the syscall,
+   eliminating the last conditional.
+
+3. **time.ff** — moved to lib/. Standardized both arches on
+   `gettimeofday` instead of i386's gettimeofday vs x86-64's
+   clock_gettime. Both have identical semantics (seconds + microseconds).
+   The `now` word uses `_sys.time`. `ms@` and `ms` use
+   `_sys.gettimeofday` and `_sys.nanosleep`. All date arithmetic
+   (Lavarenne's `.d`, `.wd`, `.now`, `.dt`, `.t`) is pure Forth —
+   identical on both arches.
+
+4. **console.ff** — moved to lib/. All terminal I/O (ANSI escapes,
+   color, key?, ekey, ioctl-based raw mode) is pure Forth depending
+   on `ioctl` and `select` from fileops.ff. No arch-specific code.
+
+   **Bug found:** `cell` used inside a `:` definition leaks one item
+   on the compile-time stack (on ff64, `cell` has ct=4, which behaves
+   unexpectedly during compilation). Workaround: precompute
+   `_fdset cell + constant _fdtv pvt` at load time (interpreter mode)
+   and use `_fdtv` in the definition.
+
+### ff.ff trimming results
+
+ff.ff is now 98 lines (down from ~188). What remains is i386-specific:
+- Feature system (features, append, -v)
+- Help system
+- Utility words (within, max, min, pick, 2over, rp@, sp@, equ)
+- `'callback:` (i386 machine code for C callbacks)
+- Locals (i386 machine code, `[1] [IF]` guarded)
+- `needs` calls: pno, fixup, ior, malloc, console, shell, time
+- ss/dd (i386 version — ff64 has them in ff64.boot)
+- FFHIDE and hidepvt
+
+### Changes to existing code
+
+- `needs` convention adopted (previous commit)
+- i386 ms@ now uses `_tsbuf` variable instead of `eob` (matches ff64)
+- i386 console uses `_fdset`/`_tiosbuf` instead of `fdset`/`eob`
+- i386 `;dump` uses `dump` instead of `2dump` (dump exists on both)
+
+### Verification
+
+All three test gates pass:
+- `make test`: 24 PASS (4 configs × 6 tests)
+- `make test64`: 4 PASS
+- `make -C exp test`: all experiments PASS
+
+Tested manually: .now, ms@, ms, ss, cls, getpid, system on both arches.
