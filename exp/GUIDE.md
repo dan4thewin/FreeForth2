@@ -859,8 +859,10 @@ carry flag (JB=$72, JAE=$73) as unary conditions, sharing opcodes with
 `u<\``/`u>=\``:
 
 ```forth
-$72 dup : C1?` lit _?1 ; : u<`  lit _?2 ;
-$73 dup : C0?` lit _?1 ; : u>=` lit _?2 ;
+$72 dup : C1?` lit _?1 ; : C1?.` lit _?1. ;
+$73 dup : C0?` lit _?1 ; : C0?.` lit _?1. ;
+$72 dup : u<`  lit _?2 ; : u<.`  lit _?2. ;
+$73 dup : u>=` lit _?2 ; : u>=.` lit _?2. ;
 ```
 
 The `dup` shares one opcode between both consumers. Each `;` executes
@@ -868,6 +870,39 @@ the preceding anonymous definition, consuming one value. This is the
 same sharing pattern as the signed comparisons — one `dup`, two
 definitions. An early attempt with two `dup`s left extra items on
 the compile-time stack.
+
+**Dotted condition factories (exp 130)**: `_?1.`/`_?2.` produce Forth
+booleans (-1/0) directly in a register, using SETcc. Each factory line
+now defines up to four words — FLAGS and dotted, unary and binary:
+
+```forth
+$74 dup : 0=` lit _?1 ; dup : 0=.` lit _?1. ; dup : =` lit _?2 ; : =.` lit _?2. ;
+```
+
+The dotted factory helpers differ from i386 only in `_?1b.`:
+
+```forth
+\ i386:  :. _?1b. 1^ $20+ 8<< $49C1000F | ,            $CB89, ,1 s1 ;
+\ x64:   :. _?1b. 1^ $20+ 8<< $48C1000F | here d! 4 allot $C9FF, ,2 $48, ,1 $CB89, ,1 s1 ;
+```
+
+Two differences: (1) i386 `dec ecx` is single byte `$49`; x86-64
+`dec rcx` requires `48 FF C9` (REX.W). (2) i386 `,` stores 4 bytes
+(cell=4); ff64 `,` stores 8 bytes (cell=8), so `here d! 4 allot` is
+used for the exact 4-byte store.
+
+**Condition validation (exp 130)**: `?@` fetches and zeroes `?#`;
+`?nn` errors if no condition was set. `cond` chains them:
+
+```forth
+:. ?@ ?# c@ 0 ?#! ;
+:. ?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition"
+: cond ?@ ?nn 1^ ;
+: cond. 0-` drop` 0<>` ;
+```
+
+`cond.` (no backtick — a plain word, not a macro) converts a stack
+boolean to FLAGS for dotted flow control (`IF.``, `WHILE.`` etc.).
 
 As part of exp 092, ff64.boot was comprehensively reordered to match
 ff.boot's logical structure: infrastructure → defining words →

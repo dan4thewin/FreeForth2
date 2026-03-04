@@ -198,31 +198,68 @@
 ( Redefined after _alias to use Lavarenne's create` _alias form. )
 : constant` create` H@ ! $20 H@ ct|! anon:` ;
 
-( FLAGS-based conditionals — ported from ff.boot )
-\ 0- emits test TOS,TOS (48 85 DB) with SWAPbit via s09
+( FLAGS-based conditionals — from ff.boot )
+( 0-` emits test TOS,TOS. i386: 09 DB [or ebx,ebx]. x64: 48 85 DB )
+( [test rbx,rbx] with REX.W prefix. SWAPbit via s09 handles register )
+( alternation — the actual register tested depends on current SB state. )
 : 0-` $48, ,1 $DB85, s09 ;
-\ _?1: unary condition — store Jcc opcode in ?#
+( _?1 stores a Jcc opcode byte in the ?# variable. When IF`/WHILE`/etc )
+( later read ?#, they emit a conditional jump using this opcode. )
 :. _?1 ?# c! ;
-\ _?2: binary condition — store Jcc + emit cmp rdx,rbx (48 39 DA)
+( Dotted condition factories — _?1./_?2. produce a Forth boolean [-1/0] )
+( directly in a register, instead of setting ?#. Used by 0=.` <.` etc. )
+( _?1a.: xor ecx,ecx — zero rcx [32-bit xor zero-extends on x86-64] )
+:. _?1a. $C931, ,2 ;
+( _?1b.: emit SETcc cl / dec rcx / mov rbx,rcx [with SWAPbit] )
+( 1^ inverts Jcc; $20+ converts Jcc [$7x] to SETcc [$9x]; 8<< positions )
+( in dword. i386 uses $49 [single-byte dec ecx]; x64 needs $48 FF C9 )
+( [REX.W dec rcx]. i386 emits dword with , [cell=4]; ff64 uses )
+( here d! 4 allot because , stores 8 bytes [cell=8] on x86-64. )
+:. _?1b. 1^ $20+ 8 << $48C1000F | here d! 4 allot $C9FF, ,2 $48, ,1 $CB89, ,1 s1 ;
+( _?1.: unary dotted — xor ecx, test TOS, SETcc+dec+mov )
+:. _?1. _?1a. 0-` _?1b. ;
+( _?2: binary condition — store Jcc + emit cmp rdx,rbx )
+( i386: $DA39, — 39 DA [cmp edx,ebx]. x64: 48 39 DA with REX.W. )
 :. _?2 _?1 $48, ,1 $DA39, s09 ;
-\ Condition code factory: JE=$74 JNE=$75 JL=$7C JGE=$7D JLE=$7E JG=$7F
-$74 dup : 0=`  lit _?1 ; : =`  lit _?2 ;
-$75 dup : 0<>` lit _?1 ; : <>` lit _?2 ;
-$7C dup : 0<`  lit _?1 ; : <`  lit _?2 ;
-$7D dup : 0>=` lit _?1 ; : >=` lit _?2 ;
-$7E dup : 0<=` lit _?1 ; : <=` lit _?2 ;
-$7F dup : 0>`  lit _?1 ; : >`  lit _?2 ;
-\ Unsigned + carry: JB=$72 JAE=$73 JBE=$76 JA=$77
-( C1?/C0? test CPU carry flag — used by adc, sbb, and low-level code )
-$72 dup : C1?` lit _?1 ; : u<`  lit _?2 ;
-$73 dup : C0?` lit _?1 ; : u>=` lit _?2 ;
-$76 : u<=` lit _?2 ;
-$77 : u>`  lit _?2 ;
+( _?2.: binary dotted — xor ecx, cmp, SETcc+dec+mov, nip )
+:. _?2. _?1a. $48, ,1 $DA39, s09 _?1b. nip` ;
+( Condition code factory: each line defines up to 4 words from one Jcc )
+( opcode. dup shares the opcode between consecutive definitions. )
+( The ; after each definition executes the anonymous body, consuming )
+( one copy of the opcode — so each dup feeds exactly two definitions. )
+$74 dup : 0=`  lit _?1 ; dup : 0=.`  lit _?1. ; dup : =`  lit _?2 ; : =.`  lit _?2. ;
+$75 dup : 0<>` lit _?1 ; dup : 0<>.` lit _?1. ; dup : <>` lit _?2 ; : <>.` lit _?2. ;
+$7C dup : 0<`  lit _?1 ; dup : 0<.`  lit _?1. ; dup : <`  lit _?2 ; : <.`  lit _?2. ;
+$7D dup : 0>=` lit _?1 ; dup : 0>=.` lit _?1. ; dup : >=` lit _?2 ; : >=.` lit _?2. ;
+$7E dup : 0<=` lit _?1 ; dup : 0<=.` lit _?1. ; dup : <=` lit _?2 ; : <=.` lit _?2. ;
+$7F dup : 0>`  lit _?1 ; dup : 0>.`  lit _?1. ; dup : >`  lit _?2 ; : >.`  lit _?2. ;
+( Carry flag + unsigned: C1?/C0? are on separate lines from u</u>= )
+( because they use _?1 [unary] while u</u>= use _?2 [binary]. )
+$72 dup : C1?` lit _?1 ; : C1?.` lit _?1. ;
+$73 dup : C0?` lit _?1 ; : C0?.` lit _?1. ;
+$72 dup : u<`  lit _?2 ; : u<.`  lit _?2. ;
+$73 dup : u>=` lit _?2 ; : u>=.` lit _?2. ;
+$76 dup : u<=` lit _?2 ; : u<=.` lit _?2. ;
+$77 dup : u>`  lit _?2 ; : u>.`  lit _?2. ;
 
 ( Flow control — Forth-defined )
 : d, here d! 4 allot ;
 : _then here over - 4 - swap d! ;
-: cond ?# c@ 0 ?# c! 1 ^ ;
+( ?@: fetch ?# and zero it. ?#! is a cell store — cond_jmp is dq in asm )
+( to make this safe. Matches i386 ff.boot exactly. )
+( ?nn: validate a condition was set — errors if ?# was empty. The )
+( ,"t^AC~" is a string escape that compiles to throw-string bytes. )
+:. ?@ ?# c@ 0 ?#! ;
+:. ?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition"
+( cond: read the condition opcode from ?#, validate, invert bit 0. )
+( The 1^ inversion is because IF/WHILE/UNTIL all jump on the OPPOSITE )
+( condition — IF skips the body when the condition is FALSE. )
+: cond ?@ ?nn 1^ ;
+( cond.: convert a stack boolean to FLAGS for dotted flow control. )
+( Emits 0- [test TOS], drop [consume it], 0<> [set Jcc for nonzero]. )
+( Falls through to IF.` which falls through to IF`, matching i386. )
+: cond. 0-` drop` 0<>` ;
+: IF.` cond.
 : IF` >S0 cond $0F c, $10+ c, here 4 allot ;
 : THEN` >S0 here over - 4- swap d! 0 callmark! ;
 : _jmp_back >S0 $E9 c, dup here 4+ - d, drop ;
@@ -316,6 +353,7 @@ variable mrk 0 mrk 8+ !
 :. _begin mrk 2@ >cs >cs 0 >cs here mrk! ;
 : START` _begin 0 $E9 c, 0 d, here mrk! ;
 : ENTER` >S0 mrk@ 4- _then ;
+: TILL.` cond.
 : TILL` >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
 : BREAK` >S0 $E9 c, 0 d, here 4- >cs _then ;
 :. _resolve_breaks cs> 0; _then _resolve_breaks ;
@@ -328,19 +366,14 @@ variable mrk 0 mrk 8+ !
 :. _cjmpback_mrk >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
 : BEGIN` >S0 _begin 0 ;
 : AGAIN` _jmpback_mrk _end_cs drop ;
+: UNTIL.` cond.
 : UNTIL` _cjmpback_mrk _end_cs drop ;
+: WHILE.` cond.
 : WHILE` IF` ;
 : REPEAT` _jmpback_mrk THEN` _end_cs 0- 0<> drop IF _emit_rdrop THEN ;
 : TIMES` >r`
 : RTIMES` >S0 _begin -1 $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
 : LOOP` >S0 _jmpback_mrk THEN` _end_cs drop rdrop` ;
-
-( Dotted conditionals: for stack-boolean values instead of FLAGS )
-: cond.` 0-` drop` 0<>` ;
-: IF.` cond.` IF` ;
-: WHILE.` cond.` WHILE` ;
-: TILL.` cond.` TILL` ;
-: UNTIL.` cond.` UNTIL` ;
 
 ( FLAGS helpers — set FLAGS from known values )
 : zFALSE 0 0- drop ;
@@ -389,7 +422,7 @@ H@ @ constant _nop pvt
 : x^` -call 6+ lit` >r` ;
 : '` -call lit` ;
 ( ?` converts preceding call to conditional jump )
-:. _?` ?# c@ 0 ?# c! dup 0- 0= drop IF drop $75 THEN
+:. _?` ?@ dup 0- 0= drop IF drop $75 THEN
   $0F c, $10+ c, dup here 4+ - d, drop ;
 : ?` -call 0; _?` ;
 

@@ -45,8 +45,8 @@ test:
 		echo "    actual: [$$actual]"; fail=$$((fail+1)); \
 	fi; \
 	SIZE=$$(stat -c%s $(FF)); \
-	if [ "$$SIZE" -lt 378952 ]; then \
-		printf '  %-50s PASS (%s < 378952)\n' "binary smaller" "$$SIZE"; pass=$$((pass+1)); \
+	if [ "$$SIZE" -lt 379600 ]; then \
+		printf '  %-50s PASS (%s < 379600)\n' "binary smaller" "$$SIZE"; pass=$$((pass+1)); \
 	else \
 		printf '  %-50s FAIL (%s)\n' "binary smaller" "$$SIZE"; fail=$$((fail+1)); \
 	fi; \

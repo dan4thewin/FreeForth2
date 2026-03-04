@@ -82,10 +82,11 @@ ss ( -- ) display stack as ( depth; val1 val2 ... )
 
 dd ( -- ) drain data stack: drop all values
 
-cond.` compile-time macro: convert stack boolean to FLAGS
+cond. ( -- ) convert stack boolean to FLAGS
   Emits: 0- drop 0<>
   Used by IF. WHILE. UNTIL. (dotted conditionals) to bridge
   stack booleans to FreeForth's FLAGS-based control flow.
+  see also: conditionals IF. WHILE. UNTIL.  ff.help
 
 LOOP` compile-time macro: close a TIMES counted loop
   Decrements counter, branches back if nonzero.

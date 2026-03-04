@@ -37,7 +37,8 @@ ff_argv dq 0                    ; pointer to argv[0] (array of char*)
 bootxt  dq 0                    ; xt of _boot (set by ff64.boot)
 hereatexec dq 0                 ; rbp saved by _semi_exec before reset (safe code position)
 SC      db 0                    ; SWAPbit in bit 1: 0=rbx is TOS, 2=rdx is TOS
-cond_jmp db 0                   ; ?# : pending conditional jump opcode (0=none)
+cond_jmp dq 0                   ; ?# : pending conditional jump opcode (0=none)
+                                ; dq (not db) so Forth `0 ?#!` (cell store) is safe
 
 ;; =====================================================================
 ;; Runtime primitives

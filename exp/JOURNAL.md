@@ -10139,3 +10139,133 @@ code that tests for word existence.
 - `make test64`: all pass
 - `make -C exp test`: all pass
 - Binary: 367648 bytes
+
+---
+
+## Experiment 130: Conditional code parity with ff.boot
+
+### Goal
+
+Make the entire conditional-related section of ff64.boot match ff.boot as
+closely as possible — preserving Lavarenne's code structure, adding only
+architecture-forced differences.
+
+### What changed
+
+**1. Dotted condition factories** — ported `_?1a.`, `_?1b.`, `_?1.`, `_?2.`
+to x86-64. These produce Forth booleans (-1/0) directly in a register,
+instead of storing a Jcc opcode in `?#`. Used by `0=.``, `<.`` etc.
+
+The x86-64 encoding differs from i386 in `_?1b.`:
+
+```
+i386:  :. _?1b. 1^ $20+ 8 << $49C1000F | ,            $CB89, ,1 s1 ;
+x64:   :. _?1b. 1^ $20+ 8 << $48C1000F | here d! 4 allot $C9FF, ,2 $48, ,1 $CB89, ,1 s1 ;
+```
+
+Two architecture-forced differences:
+- `$49` → `$48` + `$C9FF, ,2` + `$48, ,1`: on i386, `dec ecx` is the single
+  byte `$49`. On x86-64, `$49` is a REX prefix, not dec. `dec rcx` requires
+  three bytes: `48 FF C9` (REX.W + FF /1 + C9). The `$48` REX prefix ends
+  up packed into the SETcc dword, and `$C9FF` provides the dec opcode + modrm.
+  A second `$48, ,1` adds the REX.W prefix for the final `mov rbx,rcx`.
+- `,` → `here d! 4 allot`: on i386, `,` stores a 4-byte cell. On ff64,
+  `,` stores 8 bytes (cell=8), which emits 4 extra zero bytes. Using
+  `here d! 4 allot` stores exactly 4 bytes, matching i386's `,` behavior.
+
+The `_?2` and `_?2.` also differ by the REX.W prefix `$48, ,1` before
+the compare instruction.
+
+**2. All dotted comparison macros** — added `0=.``, `0<>.``, `0<.``,
+`0>=.``, `0<=.``, `0>.``, `=.``, `<>.``, `<.``, `>=.``, `<=.``, `>.``,
+`C1?.``, `C0?.``, `u<.``, `u>=.``, `u<=.``, `u>.`` — every dotted form
+from ff.boot. The factory lines now match ff.boot exactly.
+
+**3. `?@` and `?nn` helpers** — added `?@` (fetch ?# and zero it) and
+`?nn` (validate condition was set). Rewrote `cond` to use them:
+
+```
+:. ?@ ?# c@ 0 ?# c! ;
+:. ?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition"
+: cond ?@ ?nn 1^ ;
+```
+
+This now matches ff.boot exactly — `0 ?#!` restores the original code.
+The `!` suffix on `?#` performs a cell-sized store; to make this safe,
+`cond_jmp` was widened from `db` to `dq` in ff64.asm (see below).
+
+`_?`` was also simplified to call `?@` instead of inlining `?# c@ 0 ?# c!`.
+
+**4. `cond_jmp` widened to `dq`** — `?#` has ct=1 (data address), so
+the `!` suffix emits a cell (8-byte) store. With `cond_jmp` as `db 0`,
+an 8-byte store would overwrite 7 bytes into the code section (`_add:`).
+Widening to `dq 0` provides room. Only Forth code accesses `cond_jmp`
+(via `c@`/`c!`/`!` — no assembly reads it), so this is safe.
+
+**5. `cond.` renamed from `cond.``** — now a plain word (no backtick)
+matching i386. The dotted flow words (`IF.``, `WHILE.`` etc.) call
+`cond.` then the flow word, rather than using `cond.`` as a macro.
+
+**5. Unsigned comparison layout** — C1?/u< now on separate lines matching
+i386, with dotted forms on each line.
+
+### The `,` vs `d,` discovery
+
+The initial port of `_?1b.` used `,` (comma) to emit the SETcc dword,
+producing a SEGV because `,` on ff64 stores 8 bytes. The generated code
+had 4 extra zero bytes between the SETcc instruction and the dec:
+
+```
+0F 95 C1 48 00 00 00 00 FF C9 48 89 CB   ← broken (8-byte ,)
+0F 95 C1 48 FF C9 48 89 CB               ← correct (4-byte d!)
+```
+
+The first call produced 0xFFFFFFFF (32-bit -1) instead of 0xFFFFFFFFFFFFFFFF
+because the `dec` executed at the wrong offset. The second call crashed.
+
+This is a fundamental i386→x64 pitfall: anywhere ff.boot uses bare `,`
+(the word, not the litcomma suffix) to emit machine code, ff64 must use
+`here d! 4 allot` or a similar 4-byte store.
+
+### Lines identical to ff.boot
+
+```
+:. _?1 ?# c! ;
+:. _?1a. $C931, ,2 ;
+:. _?1. _?1a. 0-` _?1b. ;
+:. ?@ ?# c@ 0 ?#! ;
+:. ?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition"
+: cond ?@ ?nn 1^ ;
+: cond. 0-` drop` 0<>` ;
+```
+
+All factory lines ($74 through $77) are character-for-character identical.
+
+### Lines with architecture-forced differences
+
+```
+_?1b.: $49C1000F|,  →  $48C1000F| here d! 4 allot + $C9FF,,2 $48,,1
+_?2:   $DA39, s09   →  $48,,1 $DA39, s09
+_?2.:  $DA39, s09   →  $48,,1 $DA39, s09
+IF.`:  cond. [fall-through to IF`]  →  cond. IF` [explicit call]
+```
+
+### Results
+
+- `make test`: all 5 i386 configurations pass
+- `make test64`: all pass
+- `make -C exp test`: all pass (updated exp 113 size threshold for new words)
+- Binary: 379560 bytes (+11912 from added dotted comparison definitions)
+
+**Late additions:**
+
+**6. Restored `0 ?#!`** — `cond_jmp` was widened from `db` to `dq` in
+ff64.asm so the cell-sized `!` suffix store is safe. This lets `?@` use
+the original `0 ?#!` instead of `0 ?# c!`. `_?`` now calls `?@` instead
+of inlining the fetch-and-zero.
+
+**7. Restored dotted fall-throughs** — `cond.` → `IF.`` → `IF``,
+`WHILE.`` → `WHILE``, `TILL.`` → `TILL``, `UNTIL.`` → `UNTIL`` now
+use Lavarenne's fall-through pattern. The dotted words were moved next to
+their targets. `IF.`` and `cond.` moved earlier (before `IF``);
+`WHILE.``, `TILL.``, `UNTIL.`` placed before the mrk-based redefinitions.
