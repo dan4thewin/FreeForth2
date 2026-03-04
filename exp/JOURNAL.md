@@ -9427,3 +9427,85 @@ they work on both ff and ff64. This unblocks further ff.ff trimming.
 - `lib/x86/fixup.ff`: removed `rdrop`, updated comment
 
 ---
+
+## Experiment 121: Trim ff.ff — fixup, ior, malloc via needed
+
+### Goal
+Replace inline fixup/ior/malloc definitions in ff.ff with `needed`
+calls, now that the tail-call convention is unified (exp 120).
+
+### Provenance audit
+
+| Shared file | Origin | ff.ff original |
+|-------------|--------|----------------|
+| lib/x86/fixup.ff | Lavarenne (one-line) | ff.ff line 41 — identical minus rdrop |
+| lib/ior.ff | DG | ff.ff lines 43–48 — identical (with ; after fixup) |
+| lib/malloc.ff | DG | ff.ff lines 50–53 — identical (with ; after fixup) |
+
+All three shared files match the ff.ff originals exactly (after exp 120
+unified the `;` convention).
+
+### Actions
+Replaced 20 lines in ff.ff (fixup definition + 4 fixup-consuming defs +
+ior + malloc) with three `needed` calls:
+```forth
+"fixup.ff" needed ;
+"ior.ff" needed ;
+"malloc.ff" needed ;
+```
+
+### Verification — turnkey programs (per DG's direction)
+
+The real test for fixup is in turnkey binaries built via mkimage.
+Tested with a dedicated program exercising all fixup-based words:
+
+```forth
+: main
+  ."strerror:  " 2 strerror
+  ."malloc:    " 100 malloc dup 0- 0<> drop IF ."ok " free ELSE drop ."FAIL " THEN cr
+  ."getenv:    " "HOME" getenv dup 0- 0<> drop IF type ELSE 2drop ."(unset)" THEN cr
+  ."getpid:    " getpid . cr
+  ."system:    " "echo ok" system drop cr
+;
+```
+
+**Results — ff (non-turnkey), before and after:**
+```
+strerror:  Unknown error -2     ← fixup resolves libc strerror
+malloc:    ok                   ← fixup resolves libc malloc/free
+getenv:    /home/dangood        ← fixup resolves libc getenv
+getpid:    <pid>                ← fixup resolves libc getpid
+system:    ok                   ← fixup resolves libc system
+```
+Identical before and after.
+
+**Results — fftk (turnkey), before and after:**
+```
+strerror:  Unknown error -2     ← works
+malloc:    ok                   ← works
+getenv:    SEGV                 ← pre-existing bug (both before and after)
+```
+getenv SEGVs in turnkey on both old and new code — confirmed
+pre-existing, not related to the fixup convention change.
+
+**cat.ff turnkey (the canonical test from README.md):**
+```
+$ ./ff -f cat.ff -f lib/x86/mkimage.ff && make fftk
+$ ./fftk cat.ff          → prints cat.ff source (correct)
+$ ./fftk /nonexistent    → "No such file or directory" (strerror works)
+```
+Identical output before and after.
+
+**Pre-existing bug:** `getenv` SEGVs in i386 turnkey. Documented for
+future triage — this is a turnkey-specific issue, not a fixup issue.
+
+### Test results
+All three gates pass:
+- `make test`: 24 PASS
+- `make test64`: 4 PASS, 3 SKIPPED
+- `make -C exp test`: 0 failures
+
+### Files changed
+- `ff.ff`: replaced 20 lines with 3 `needed` calls
+
+---
