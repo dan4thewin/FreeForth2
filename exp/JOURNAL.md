@@ -10269,3 +10269,59 @@ of inlining the fetch-and-zero.
 use Lavarenne's fall-through pattern. The dotted words were moved next to
 their targets. `IF.`` and `cond.` moved earlier (before `IF``);
 `WHILE.``, `TILL.``, `UNTIL.`` placed before the mrk-based redefinitions.
+
+---
+
+## Experiment 131: Eliminate word redefinitions in ff64.boot
+
+### Goal
+
+i386 ff.boot has zero word redefinitions. ff64.boot had 14 words defined
+twice. Reduce to the minimum — ideally zero, or one if unavoidable.
+
+### What changed
+
+**1. `<<` `>>`** — first definition (line 77) was missing `$48, ,1` (REX.W
+prefix for `mov ecx,ebx` → `mov rcx,rbx`). Fixed the first definition,
+deleted the second. This was a latent bug — shifts of values > 32 bits
+would have been wrong with the early definitions.
+
+**2. `constant`** — moved `alias`/`_alias`/`constant` up to where the
+early `constant` was. `_alias` only needs `H@`, `!`, `ct|!`, `anon:``
+which are all defined earlier. One definition now, with Lavarenne's
+`create` _alias` form.
+
+**3. `;;` `;THEN`** — the simple `;;`` (`$C3, ,1`) existed because the
+tail-call version needs ELSE, which wasn't defined yet. Fix: move
+SKIP/ELSE before `;;``. Now one `;;`` with tail-call from the start.
+
+**4. Flow control (BEGIN AGAIN UNTIL WHILE REPEAT TIMES RTIMES LOOP)** —
+all were defined twice: simple versions first (for `type`/`fill`), then
+mrk+cstack versions. Fix: moved `mrk`, `_begin`, `_jmpback_mrk`,
+`_cjmpback_mrk`, `_resolve_breaks`, `_end_cs`, and all loop words up,
+before `type`/`fill`. One definition each.
+
+This required moving `;;``/`0;``/`;THEN``/SKIP/ELSE/CASE before the mrk
+block, since `_resolve_breaks` uses `0;`.
+
+**5. `type`** — the only remaining redefinition. The early `type` (char-
+by-char via `emit`) is needed because `."` compiles a call to `type` at
+compile time. The late `type` (syscall via `stdout write`) replaces it
+when OS I/O is available. This mirrors i386's pattern where early boot
+has simple I/O that gets upgraded.
+
+### Results
+
+- Redefinitions: 14 → 1 (`type` only)
+- `make -C exp test`: all pass
+- Binary: 378936 bytes (down from 379520, -584 bytes from eliminated duplicates)
+
+**Late addition: `type` redefinition eliminated too.** `."` doesn't use
+Forth `type` — it calls `_dotstr_rt` in assembly which does its own
+`sys_write` syscall. The only code needing `type` before line 577 was
+`h.name`/`words``/`.hdr+` (compiled ~line 506-526). Moved `stdout`,
+`write`, and `type` (syscall version) up to just before `h.name`.
+Deleted the early char-by-char `type`.
+
+Final result: zero word redefinitions in ff64.boot.
+Binary: 378872 bytes.

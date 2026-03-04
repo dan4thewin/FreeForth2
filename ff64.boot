@@ -74,8 +74,8 @@
 : flip` $FB86, s09 ;
 : 8+` $48, ,1 $C383, s01 $08, ,1 ;
 : 8-` $48, ,1 $EB83, s01 $08, ,1 ;
-: <<` $D989, s08 $48, ,1 $E2D3, s01 drop` ;
-: >>` $D989, s08 $48, ,1 $EAD3, s01 drop` ;
+: <<` $48, ,1 $D989, s08 $48, ,1 $E2D3, s01 drop` ;
+: >>` $48, ,1 $D989, s08 $48, ,1 $EAD3, s01 drop` ;
 
 \ Memory load
 : @` $48, ,1 $1B8B, s09 ;
@@ -127,10 +127,6 @@
 : >rswapr>` $49, ,1 $1787, s08 ;
 : rot` >rswapr>` swap` ;
 : 2xchg` swap` >rswapr>` swap` ;
-
-\ Shift ops
-: <<` $48, ,1 $D989, s08 $48, ,1 $E2D3, s01 drop` ;
-: >>` $48, ,1 $D989, s08 $48, ,1 $EAD3, s01 drop` ;
 
 \ Compilation helpers
 : here` over` $48, ,1 $EB89, s01 ;
@@ -194,9 +190,13 @@
 ( Dictionary defining words )
 : create` :` 1 H@ ct|! anon:` ;
 : variable` create` 0 , anon:` ;
-( constant` — initial definition, before _alias is available. )
-( Redefined after _alias to use Lavarenne's create` _alias form. )
-: constant` create` H@ ! $20 H@ ct|! anon:` ;
+( alias` falls through to _alias — :` creates the header, )
+( then _alias stores the value, sets the constant flag, and closes. )
+: alias` :`
+: _alias H@ ! $20 H@ ct|! anon:` ;
+( constant` reuses _alias: create` makes a ct=1 header, then _alias )
+( overwrites the xt with the value and adds the $20 alias flag. )
+: constant` create` _alias ;
 
 ( FLAGS-based conditionals — from ff.boot )
 ( 0-` emits test TOS,TOS. i386: 09 DB [or ebx,ebx]. x64: 48 85 DB )
@@ -262,17 +262,66 @@ $77 dup : u>`  lit _?2 ; : u>.`  lit _?2. ;
 : IF.` cond.
 : IF` >S0 cond $0F c, $10+ c, here 4 allot ;
 : THEN` >S0 here over - 4- swap d! 0 callmark! ;
-: _jmp_back >S0 $E9 c, dup here 4+ - d, drop ;
-: _cjmp_back >S0 cond $0F c, $10+ c, dup here 4+ - d, drop ;
 : _emit_rdrop $48 c, $83 c, $C4 c, $08 c, ;
-: BEGIN` >S0 0 here ;
-: AGAIN` >S0 _jmp_back drop ;
-: UNTIL` >S0 _cjmp_back drop ;
+
+( Flow control macros — composable backtick versions )
+: SKIP` >S0 $E9, ,1 here 4 allot ;
+: ELSE` SKIP` swap THEN` ;
+( ;;` with tail-call optimization: if last emitted instruction was a CALL, )
+( convert it to JMP [change E8 opcode to E9]. Otherwise emit RET. )
+: ;;` >S0 callmark@ here - 0= drop IF $E9 callmark@ 5- c! ELSE $C3, ,1 THEN ;
+( 0;` falls through to ;THEN` — Lavarenne's fall-through pattern. )
+( 0;` emits: test-zero, conditional-jump, drop. If TOS was nonzero, )
+( execution continues past ;THEN. If zero, ;THEN emits RET and )
+( resolves the forward jump from IF`. )
+: 0;` 0-` 0=` IF` drop`
+: ;THEN` ;;` THEN` ;
+: 0<>;` 0-` 0<>` IF` drop` ;THEN` ;
+: ?dup` 0-` 0<>` IF` dup` THEN` ;
+: BOOL` 0 lit` IF` ~` THEN` ;
+: CASE` =` drop` IF` drop` ;
+
+( Loop infrastructure: mrk, cstack, START/ENTER/BREAK/END )
+\ mrk is a 2-cell compiler variable:
+\   cell 0: loop body address (backward jump target for AGAIN/UNTIL etc.)
+\   cell 1: reserved
+\ All loop openers (BEGIN, START, TIMES/RTIMES) save old mrk to cstack,
+\ push a 0 break-sentinel, and set mrk[0] = loop body address.
+\ All loop closers resolve breaks from cstack and restore mrk.
+\
+\ Data stack layout from loop openers:
+\   BEGIN:  ( -- 0 )     flag=0 means no rdrop needed
+\   RTIMES: ( -- -1 js ) flag=-1 triggers rdrop in REPEAT; js=fixup
+\
+\ END does NOT emit a backward jump — it only resolves forward refs
+\ (WHILE/BREAK). Use AGAIN/UNTIL/REPEAT for backward jumps.
+\ Pattern: BEGIN ... CASE ... BREAK ... END (multi-way dispatch)
+\
+\ >cs ( x -- ) pushes to compile-time stack
+\ cs> ( -- x ) pops from compile-time stack
+variable mrk 0 mrk 8+ !
+: align` $90909090, here negate 3& allot ;
+:. _begin mrk 2@ >cs >cs 0 >cs here mrk! ;
+:. _jmpback_mrk >S0 $E9 c, mrk@ here 4+ - d, ;
+:. _cjmpback_mrk >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
+:. _resolve_breaks cs> 0; _then _resolve_breaks ;
+:. _end_cs _resolve_breaks cs> cs> mrk 2! ;
+: START` _begin 0 $E9 c, 0 d, here mrk! ;
+: ENTER` >S0 mrk@ 4- _then ;
+: BEGIN` >S0 _begin 0 ;
+: AGAIN` _jmpback_mrk _end_cs drop ;
+: TILL.` cond.
+: TILL` >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
+: UNTIL.` cond.
+: UNTIL` _cjmpback_mrk _end_cs drop ;
+: WHILE.` cond.
 : WHILE` IF` ;
-: REPEAT` swap _jmp_back THEN` 0- 0<> drop IF _emit_rdrop THEN ;
+: BREAK` >S0 $E9 c, 0 d, here 4- >cs _then ;
+: END` >S0 _end_cs drop ;
+: REPEAT` _jmpback_mrk THEN` _end_cs 0- 0<> drop IF _emit_rdrop THEN ;
 : TIMES` >r`
-: RTIMES` >S0 -1 here $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
-: LOOP` >S0 swap _jmp_back THEN` drop rdrop` ;
+: RTIMES` >S0 _begin -1 $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
+: LOOP` >S0 _jmpback_mrk THEN` _end_cs drop rdrop` ;
 
 ( Stack manipulation )
 : 2swap rot >r rot r> ;
@@ -300,80 +349,15 @@ $77 dup : u>`  lit _?2 ; : u>.`  lit _?2. ;
 ( for emit. On ff64, emit is assembly; putc is just an alias. )
 : space 32 emit ;
 : putc emit ;
-: type BEGIN 0- 0> WHILE swap dup c@ emit 1+ swap 1- REPEAT 2drop ;
 
 ( Memory )
 : fill rot rot BEGIN 0- 0> WHILE 1- -rot 2dup c! 1+ rot REPEAT drop 2drop ;
 : erase 0 fill ;
 : zlen ( addr -- addr len ) dup BEGIN dup c@ 0- 0<> WHILE drop 1+ REPEAT drop over - ;
 
-( Flow control macros — composable backtick versions )
-: ;;` >S0 $C3, ,1 ;
-( 0;` falls through to ;THEN` — Lavarenne's fall-through pattern. )
-( 0;` emits: test-zero, conditional-jump, drop. If TOS was nonzero, )
-( execution continues past ;THEN. If zero, ;THEN emits RET and )
-( resolves the forward jump from IF`. )
-: 0;` 0-` 0=` IF` drop`
-: ;THEN` ;;` THEN` ;
-: 0<>;` 0-` 0<>` IF` drop` ;THEN` ;
-: ?dup` 0-` 0<>` IF` dup` THEN` ;
-: BOOL` 0 lit` IF` ~` THEN` ;
-: SKIP` >S0 $E9, ,1 here 4 allot ;
-: ELSE` SKIP` swap THEN` ;
-: CASE` =` drop` IF` drop` ;
-
-\ Tail-call optimization: redefine ;;` now that IF/ELSE/THEN are available
-: ;;` >S0 callmark@ here - 0= drop IF $E9 callmark@ 5- c! ELSE $C3, ,1 THEN ;
-: ;THEN` ;;` THEN` ;
-
 ( Inline macros — miscellaneous )
 \ reverse` pops return address and calls it (turns call into jmp)
 : reverse` $D1FF59, ,3 ;
-
-( Advanced loop infrastructure: mrk, cstack, START/ENTER/BREAK/END )
-\ mrk is a 2-cell compiler variable:
-\   cell 0: loop body address (backward jump target for AGAIN/UNTIL etc.)
-\   cell 1: reserved
-\ All loop openers (BEGIN, START, TIMES/RTIMES) save old mrk to cstack,
-\ push a 0 break-sentinel, and set mrk[0] = loop body address.
-\ All loop closers resolve breaks from cstack and restore mrk.
-\
-\ Data stack layout from loop openers:
-\   BEGIN:  ( -- 0 )     flag=0 means no rdrop needed
-\   RTIMES: ( -- -1 js ) flag=-1 triggers rdrop in REPEAT; js=fixup
-\
-\ END does NOT emit a backward jump — it only resolves forward refs
-\ (WHILE/BREAK). Use AGAIN/UNTIL/REPEAT for backward jumps.
-\ Pattern: BEGIN ... CASE ... BREAK ... END (multi-way dispatch)
-\
-\ >cs ( x -- ) pushes to compile-time stack
-\ cs> ( -- x ) pops from compile-time stack
-variable mrk 0 mrk 8+ !
-: align` $90909090, here negate 3& allot ;
-:. _begin mrk 2@ >cs >cs 0 >cs here mrk! ;
-: START` _begin 0 $E9 c, 0 d, here mrk! ;
-: ENTER` >S0 mrk@ 4- _then ;
-: TILL.` cond.
-: TILL` >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
-: BREAK` >S0 $E9 c, 0 d, here 4- >cs _then ;
-:. _resolve_breaks cs> 0; _then _resolve_breaks ;
-:. _end_cs _resolve_breaks cs> cs> mrk 2! ;
-: END` >S0 _end_cs drop ;
-
-\ Redefine BEGIN et al. with mrk+cstack support for BREAK/END compat.
-\ Earlier definitions (used by type/fill) remain compiled as-is.
-:. _jmpback_mrk >S0 $E9 c, mrk@ here 4+ - d, ;
-:. _cjmpback_mrk >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
-: BEGIN` >S0 _begin 0 ;
-: AGAIN` _jmpback_mrk _end_cs drop ;
-: UNTIL.` cond.
-: UNTIL` _cjmpback_mrk _end_cs drop ;
-: WHILE.` cond.
-: WHILE` IF` ;
-: REPEAT` _jmpback_mrk THEN` _end_cs 0- 0<> drop IF _emit_rdrop THEN ;
-: TIMES` >r`
-: RTIMES` >S0 _begin -1 $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
-: LOOP` >S0 _jmpback_mrk THEN` _end_cs drop rdrop` ;
 
 ( FLAGS helpers — set FLAGS from known values )
 : zFALSE 0 0- drop ;
@@ -428,14 +412,6 @@ H@ @ constant _nop pvt
 
 ( Range check — uses FLAGS tail-call pattern )
 : within over- -rot - u> 2drop nzTRUE ? zFALSE ;
-
-( alias` falls through to _alias — :` creates the header, )
-( then _alias stores the value, sets the constant flag, and closes. )
-: alias` :`
-: _alias H@ ! $20 H@ ct|! anon:` ;
-( constant` reuses _alias: create` makes a ct=1 header, then _alias )
-( overwrites the xt with the value and adds the $20 alias flag. )
-: constant` create` _alias ;
 
 \ Locals — direct access to call stack cells and bulk data↔call transfers
 \ r0/r0! alias r/r! — call stack top; r1..r5 access deeper cells
@@ -523,6 +499,11 @@ variable base
 ( cr — print newline, as a vector for overridability )
 :^ cr ."^J" ;
 
+( I/O — stdout, write, type needed before dictionary listing )
+1 constant stdout
+: write ( addr # fd -- n ) >r swap r> 3 1 syscall ;
+: type stdout write drop ;
+
 ( Dictionary listing — Lavarenne's original uses START/ENTER/UNTIL )
 ( words` is a backtick macro: START iterates headers, printing name, )
 ( ENTER advances to next header, UNTIL terminates on zero-length name. )
@@ -569,9 +550,8 @@ variable base
 : marker 2dup + dup c@ >r dup >r '`' swap c! 1+
   here 0 header 2r> c! _mark ' call, anon:` ;
 
-( I/O constants )
+( I/O constants — stdout/write/type defined earlier [before h.name] )
 0 constant stdin
-1 constant stdout
 2 constant stderr
 
 ( noauto — variable controlling auto-semicolon in REPL )
@@ -593,12 +573,6 @@ variable noauto pvt
 
 ( key — read a single character from stdin )
 : key tib 1 accept drop tib c@ ;
-
-( write — output bytes to file descriptor: addr # fd -- n )
-: write ( addr # fd -- n ) >r swap r> 3 1 syscall ;
-
-( type — output a counted string: addr len -- )
-: type stdout write drop ;
 
 ( features — buffer for tracking loaded features )
 ( append — append counted string to a counted-string buffer )
