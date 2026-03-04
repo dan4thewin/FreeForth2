@@ -177,6 +177,24 @@ helper with mrk + cstack, and removing END's backward jump.
 - **within**: Not broken — needs `0<> IF` pattern, not bare `IF`.
   `within` returns FLAGS, and `IF` requires a compile-time condition.
 
+## Bug policy: zero tolerance
+
+Finding a bug in the compiler or runtime is a **stop-everything** event.
+Never work around a bug — fix it immediately. A workaround masks the
+problem and lets it compound: tests pass but don't test what they claim
+to, and everything built on top rests on a false floor.
+
+- **Clear bug** (wrong behavior): drop current task and fix it now.
+- **i386/ff64 behavioral difference**: document it and bring it to DG
+  for triage — it may be a bug or it may be acceptable divergence
+  (like the missing-semicolon-at-EOF behavior). Don't silently route
+  around it.
+- **The n^ bug as a cautionary tale**: the compile-time n^ bug was
+  present since the port began. Every test that used `-f` was actually
+  testing nothing — _postboot was silently dead, doargv never fired.
+  Dozens of experiments piped stdin as a workaround. One fix to n^
+  (one line) unlocked argv, -f, and the make test64 target.
+
 ## Completion checklist
 
 Every task must end with:
@@ -196,9 +214,12 @@ Do not mark the task complete until all steps are done.
 ## Build and test
 
 - `make all` builds both `ff` (32-bit) and `ff64` (64-bit)
-- `make -C exp test` runs all experiments (currently 49, all PASS).
-   The test runner exits nonzero if any experiment fails — never
-   commit with failing tests.
+- Three test gates — **all must pass before commit**:
+  - `make test` — i386: 4 configs (ff, ff+longconds, fftk, fftk+longconds)
+    × test/* (excludes test64.ff)
+  - `make test64` — ff64: test/* via `-f` (skips core1/core2/mmap which
+    need compat.ff)
+  - `make -C exp test` — all experiment Makefiles
 - `./ff64 -f ff64.boot` loads the standard library (via ff64.boot.min
   which includes fflin64.boot)
 - Assembler is FASM (flat assembler, version 1.73.32)
