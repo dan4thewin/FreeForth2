@@ -3,6 +3,7 @@ needs fixup.ff
 needs ior.ff
 needs syscalls.ff
 
+[64] [IF]
 ( Native getenv — walks envp directly, no libc dependency.        )
 ( Works in turnkey binaries where libc getenv SEGVs.              )
 ( envp is a NULL-terminated array of "KEY=VALUE" C-string ptrs.   )
@@ -17,11 +18,13 @@ variable _gk pvt variable _gl pvt
     THEN
     8+
   REPEAT drop 0 0 ;
-
+[ELSE]
 :. _getpid "getpid" fixup ;
 :  getpid 0 0 _getpid #call ; ( -- pid )
 :. _getppid "getppid" fixup ;
 :  getppid 0 0 _getppid #call ; ( -- ppid )
+[THEN]
+
 :. _system "system" fixup ;
 :  system zt 1 dup _system #call ; ( addr len -- status )
 
