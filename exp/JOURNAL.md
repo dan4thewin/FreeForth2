@@ -10553,3 +10553,117 @@ preserved elsewhere.
   - HOME found, USER found, nonexistent returns 0 0, partial key no match
 - `make -C exp test`: all pass (exp 073 turnkey failures are pre-existing)
 - ff64.help updated with getenv, ff_envp entries and shell library section
+
+---
+
+## Experiment 135: Loop+Conditional Audit
+
+### Goal
+
+Systematically test every combination of loop construct × jump/conditional
+construct to identify which patterns work on ff64 and which are broken.
+This audit was motivated by DG's native getenv (exp 134), which uses
+complex loop+;THEN+>r patterns that SEGV on ff64. Before debugging, we
+need to know exactly what's broken.
+
+### Survey
+
+**Loop types tested (8):** BEGIN/AGAIN (BA), BEGIN/UNTIL (BU),
+BEGIN/WHILE/REPEAT (BWR), TIMES/REPEAT (TR), nested TR, START/ENTER (SE),
+RTIMES/REPEAT (RT), BEGIN/CASE/BREAK/END (BCBE).
+
+**Jump constructs tested (16):** IF/THEN, IF/ELSE/THEN, ;THEN, 0;, 0<>;,
+;;, IF AGAIN (commented — known bug), IF BREAK, CASE dispatch, >r..r>,
+rdrop in conditional, helper ;THEN (non-inline), helper ;THEN (inline),
+exit-through-caller (commented — known bug), nested loops, compound
+patterns (multiple jumps per loop).
+
+### What Works (84 tests, all pass)
+
+**Everything except IF AGAIN and rdrop ;THEN.** The comprehensive audit
+revealed that the vast majority of loop+conditional combinations work
+correctly on ff64. The bugs that plagued earlier experiments were
+overwhelmingly **test design errors** (wrong stack accounting), not ff64
+compiler bugs.
+
+Key findings:
+
+1. **IF/ELSE/THEN works in all loop types** — including BWR, BU, BA, TR.
+   The earlier "ELSE crashes in loops" belief was wrong. The tests had
+   binary comparison stack bugs (`drop` instead of `2drop`).
+
+2. **;THEN works in all loop types** — including TIMES (with `rdrop`
+   before `;THEN` to clean the TIMES rstack frame). Direct `;THEN` in
+   BA, BU, BWR, SE all work. Helper words with `;THEN` called from
+   loops also work (both inline `:. ` and non-inline `:`).
+
+3. **0; works in all tested loop types** — 0; recursive (classic pattern),
+   0; in BA, 0; in BWR (with fresh condition after 0;), 0; in BU.
+   Key insight: 0; consumes the IF condition state, so WHILE/UNTIL after
+   0; needs its own explicit condition.
+
+4. **;; (unconditional early return) works in BWR, BU, BA.**
+
+5. **IF BREAK works in BA, BWR, BU.** For TIMES, use `rdrop ;THEN`
+   instead of `rdrop BREAK` (the latter is broken).
+
+6. **>r..r> inside loops works** — BWR, BU, BA, and around TIMES.
+
+7. **Nested loops work** — nested BWR in BWR, nested TR in TR.
+
+8. **Compound patterns work** — multiple ;THEN in one loop, helper +
+   IF/ELSE in TIMES, ;THEN + >r in BWR.
+
+### Known ff64 Bugs (2 confirmed, 1 workaround-needed)
+
+1. **IF AGAIN → SEGV at compile time.** The `IF ... AGAIN` pattern
+   (conditional restart without THEN, where IF's forward ref is resolved
+   by the loop closer) crashes the compiler. This pattern is used in
+   Lavarenne's `dbgc` (lib/x86/debug.ff:44-45). All loop types affected.
+
+2. **rdrop ;THEN → SEGV at compile time.** The sequence `rdrop` followed
+   by `;THEN` crashes the compiler. This blocks the exit-through-caller
+   pattern (`2rdrop rdrop ;THEN`) used in DG's factored getenv.
+
+3. **rdrop BREAK in TIMES doesn't work** (hangs/no output). Workaround:
+   use `rdrop ;THEN` for early exit from TIMES — but this also crashes
+   (bug #2). For TIMES early exit, use `drop r rdrop ;THEN` which works.
+
+### Lessons Learned: FreeForth Stack Discipline
+
+The single biggest source of test failures was incorrect stack accounting
+with FreeForth's FLAGS-based comparisons:
+
+- **Binary comparisons (`=`, `<`, `>`, `>=`) do NOT consume operands.**
+  After `a b =`, the stack still has `(a b)`. Use `2drop` to clean up.
+  Using `drop` (removes only one) leaves an extra item that accumulates
+  across loop iterations.
+
+- **Unary tests (`0-`, `0=`, `0>`) do NOT consume TOS.** After `n 0-`,
+  stack still has `(n)`. Use `drop` if TOS is no longer needed.
+
+- **`drop` preserves FLAGS.** So `a b >= 2drop IF` and `a b >= drop drop IF`
+  both work — drop doesn't clobber the comparison result.
+
+- **`0;` drops TOS when it fires** (via its internal `IF drop`). On the
+  non-firing path, TOS is unchanged. `0;` also consumes the condition
+  state (its internal IF), so subsequent WHILE/UNTIL needs a fresh
+  condition.
+
+- **`;THEN` in TIMES requires `rdrop`** to clean the TIMES rstack frame
+  before returning. Without it, `;THEN`'s RET pops the TIMES counter as
+  a return address → crash.
+
+- **Helper words called from loops work fine** — but if the helper
+  modifies TOS and TOS is the loop counter, the loop may never terminate
+  (not a bug, just a design issue).
+
+### Files
+
+- `exp/135-loop-cond-audit/test.ff` — 84 t{ tests, 16 groups (A-P)
+- `exp/135-loop-cond-audit/Makefile` — test runner
+
+### Results
+
+- `make -C exp/135-loop-cond-audit test`: 84/84 pass
+- `make -C exp test`: all pass (exp 073 turnkey failures are pre-existing)

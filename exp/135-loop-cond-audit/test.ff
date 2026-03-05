@@ -1,0 +1,426 @@
+\ exp 135: loop+conditional audit
+\ Uses t{ -> }t framework. REPEAT closes TIMES.
+\
+\ Stack discipline:
+\   = < > >= — set FLAGS, do NOT consume. 2drop both args after.
+\   0- 0= 0> 0< 0<> — set FLAGS on TOS, do NOT consume. drop after.
+\   r — pushes loop counter (new stack item). Must be consumed.
+\   0; — if TOS==0: drop TOS, return. Else: continue (no consume).
+\   ;THEN — ;; THEN. Returns from current word.
+\   drop preserves FLAGS.
+\
+\ Test naming: _XN where X=group letter, N=sequence number.
+
+needs test.ff
+84 >plan
+
+\ ============================================================
+\ Group A: Plain loops — sanity baseline
+\ ============================================================
+
+testing BA: BEGIN/AGAIN countdown
+: _a1 5 BEGIN 1- dup 0- 0= drop IF BREAK AGAIN ;
+t{ _a1 -> 0 }t
+
+testing BU: BEGIN/UNTIL countdown
+: _a2 5 BEGIN 1- dup 0- 0= drop UNTIL ;
+t{ _a2 -> 0 }t
+
+testing BWR: BEGIN/WHILE/REPEAT countdown
+: _a3 5 BEGIN dup 0- 0> drop WHILE 1- REPEAT ;
+t{ _a3 -> 0 }t
+
+testing TR: TIMES/REPEAT sum
+: _a4 0 5 TIMES 1+ REPEAT ;
+t{ _a4 -> 5 }t
+
+testing TR: TIMES r sum
+: _a5 0 5 TIMES r + REPEAT ;
+t{ _a5 -> 10 }t
+
+testing TR nested
+: _a6 0 3 TIMES 2 TIMES 1+ REPEAT REPEAT ;
+t{ _a6 -> 6 }t
+
+testing SE: START/ENTER/WHILE/REPEAT
+: _a7 0 START 1+ ENTER 5 < drop WHILE REPEAT ;
+t{ _a7 -> 5 }t
+
+testing RT: RTIMES/REPEAT sum
+: _a8 0 5 >r RTIMES r + REPEAT ;
+t{ _a8 -> 10 }t
+
+testing BCBE: CASE dispatch
+: _a9 BEGIN 1 CASE 10 BREAK 2 CASE 20 BREAK drop 99 END ;
+t{ 1 _a9 -> 10 }t
+t{ 2 _a9 -> 20 }t
+t{ 7 _a9 -> 99 }t
+
+\ ============================================================
+\ Group B: IF/THEN in loops (no ELSE)
+\ ============================================================
+
+testing IF/THEN in BA
+\ accumulate: +99 when counter==3 on the way down, then BREAK at 0
+: _b1 0 5 BEGIN 1- dup 3 = 2drop IF 99 -rot THEN
+  dup 0- 0= drop IF BREAK AGAIN 2drop ;
+t{ _b1 -> 99 }t
+
+testing IF/THEN in BU
+: _b2 0 5 BEGIN 1- dup 3 = 2drop IF 99 -rot THEN
+  dup 0- 0= drop UNTIL 2drop ;
+t{ _b2 -> 99 }t
+
+testing IF/THEN in BWR
+: _b3 0 5 BEGIN dup 0- 0> drop WHILE
+  dup 3 = 2drop IF 99 -rot THEN 1- REPEAT 2drop ;
+t{ _b3 -> 99 }t
+
+testing IF/THEN in TR
+\ sum r values, +10 bonus when r==3
+: _b4 0 5 TIMES r dup 3 = 2drop IF 10 + THEN + REPEAT ;
+t{ _b4 -> 20 }t
+
+testing IF/THEN in SE
+: _b5 0 5 START dup 3 = 2drop IF 99 -rot THEN
+  swap 1+ swap 1- ENTER 0- 0> WHILE REPEAT 2drop ;
+t{ _b5 -> 99 }t
+
+testing IF/THEN in RT
+: _b6 0 5 >r RTIMES r dup 3 = 2drop IF 10 + THEN + REPEAT ;
+t{ _b6 -> 20 }t
+
+\ ============================================================
+\ Group C: IF/ELSE/THEN in loops
+\ 5 TIMES: r=4,3,2,1,0. r>2 → +10 (3 hits=30), r<=2 → +1 (2 hits=2). Total=32.
+\ ============================================================
+
+testing IF/ELSE/THEN in TR
+\ 5 TIMES: r=4,3,2,1,0. r>2 → +10 (2 hits=20), r<=2 → +1 (3 hits=3). Total=23.
+: _c1 0 5 TIMES r 2 > 2drop IF 10 ELSE 1 THEN + REPEAT ;
+t{ _c1 -> 23 }t
+
+testing IF/ELSE/THEN in BWR (counter on rstack)
+: _c2 0 5 BEGIN dup 0- 0> drop WHILE >r
+  r 2 > 2drop IF 10 ELSE 1 THEN + r> 1- REPEAT drop ;
+t{ _c2 -> 32 }t
+
+testing IF/ELSE/THEN in BU (counter on rstack)
+: _c3 0 5 BEGIN >r r 2 > 2drop IF 10 ELSE 1 THEN + r> 1-
+  dup 0- 0= drop UNTIL drop ;
+t{ _c3 -> 32 }t
+
+testing IF/ELSE/THEN in BA (counter on rstack)
+: _c4 0 5 BEGIN >r r 2 > 2drop IF 10 ELSE 1 THEN + r> 1-
+  dup 0- 0= drop IF BREAK AGAIN drop ;
+t{ _c4 -> 32 }t
+
+testing IF/ELSE/THEN in BWR simple
+: _c5 3 BEGIN dup 0- 0> drop WHILE
+  dup 2 = 2drop IF 10 ELSE 20 THEN . cr 1- REPEAT drop ;
+t{ _c5 -> }t
+
+\ ============================================================
+\ Group D: ;THEN (early return from word)
+\ ============================================================
+
+testing ;THEN baseline
+: _d0 dup 0- 0= drop IF drop 42 ;THEN ;
+t{ 0 _d0 -> 42 }t
+t{ 5 _d0 -> 5 }t
+
+testing ;THEN in BA
+: _d1 5 BEGIN dup 3 = 2drop IF ;THEN 1- AGAIN ;
+t{ _d1 -> 3 }t
+
+testing ;THEN in BU
+: _d2 5 BEGIN dup 3 = 2drop IF ;THEN 1- dup 0- 0= drop UNTIL ;
+t{ _d2 -> 3 }t
+
+testing ;THEN in BWR
+: _d3 5 BEGIN dup 3 = 2drop IF ;THEN dup 0- 0> drop WHILE 1- REPEAT ;
+t{ _d3 -> 3 }t
+
+testing ;THEN in TR (rdrop needed)
+: _d4 10 TIMES r 7 = 2drop IF r rdrop ;THEN REPEAT -1 ;
+t{ _d4 -> 7 }t
+
+testing ;THEN in TR no match
+: _d5 3 TIMES r 7 = 2drop IF r rdrop ;THEN REPEAT -1 ;
+t{ _d5 -> -1 }t
+
+testing ;THEN in SE
+: _d6 5 START 1- dup 3 = 2drop IF ;THEN ENTER 0- 0> WHILE REPEAT ;
+t{ _d6 -> 3 }t
+
+testing ;THEN in RT (rdrop needed)
+: _d7 5 >r RTIMES r 3 = 2drop IF r rdrop ;THEN REPEAT -1 ;
+t{ _d7 -> 3 }t
+
+\ ============================================================
+\ Group E: 0; (return if TOS==0, dropping the zero)
+\ ============================================================
+
+testing 0; baseline
+: _e0 0; drop 99 ;
+t{ 0 _e0 -> }t
+t{ 5 _e0 -> 99 }t
+
+testing 0; recursive (classic pattern)
+: _e1 0; dup 1- _e1 ;
+t{ 3 _e1 -> 3 2 1 }t
+
+testing 0; in BA
+: _e3 5 BEGIN dup 0; drop 1- AGAIN ;
+t{ _e3 -> 0 }t
+
+testing 0; in BWR (condition after 0;)
+: _e4 3 BEGIN dup 0; drop dup 0- 0> drop WHILE 1- REPEAT ;
+t{ _e4 -> 0 }t
+
+testing 0; in BU (condition after 0;)
+: _e5 3 BEGIN dup 0; drop 1- dup 0- 0= drop UNTIL ;
+t{ _e5 -> 0 }t
+
+\ ============================================================
+\ Group F: 0<>; (return if TOS nonzero)
+\ ============================================================
+
+testing 0<>; baseline
+: _f0 0<>; 99 nip ;
+t{ 5 _f0 -> }t
+t{ 0 _f0 -> 99 }t
+
+\ ============================================================
+\ Group G: ;; (unconditional early return)
+\ ============================================================
+
+testing ;; baseline
+: _g0 42 ;; 99 ;
+t{ _g0 -> 42 }t
+
+testing ;; in BWR
+: _g1 5 BEGIN dup 0- 0> drop WHILE
+  dup 3 = 2drop IF drop 99 ;; THEN 1- REPEAT ;
+t{ _g1 -> 99 }t
+
+testing ;; in BU
+: _g2 5 BEGIN dup 3 = 2drop IF drop 99 ;; THEN
+  1- dup 0- 0= drop UNTIL ;
+t{ _g2 -> 99 }t
+
+testing ;; in BA
+: _g3 5 BEGIN dup 3 = 2drop IF drop 99 ;; THEN
+  1- dup 0- 0= drop IF BREAK AGAIN ;
+t{ _g3 -> 99 }t
+
+\ ============================================================
+\ Group H: IF AGAIN — conditional restart (no THEN)
+\ NOTE: IF AGAIN causes SEGV at COMPILE time on ff64.
+\ These tests document the bug. Uncomment when fixed.
+\ ============================================================
+
+\ KNOWN BUG: IF AGAIN segfaults during compilation
+\ testing IF AGAIN in BWR
+\ : _h1 0 5 BEGIN dup 0- 0> drop WHILE
+\   dup 3 = 2drop IF swap 1+ swap 1- AGAIN
+\   swap 10 + swap 1- REPEAT nip ;
+\ t{ _h1 -> 41 }t
+
+\ testing IF AGAIN in BU
+\ : _h2 0 5 BEGIN dup 3 = 2drop IF swap 1+ swap 1- AGAIN
+\   swap 10 + swap 1- dup 0- 0= drop UNTIL nip ;
+\ t{ _h2 -> 41 }t
+
+\ ============================================================
+\ Group I: BREAK / IF BREAK
+\ ============================================================
+
+testing IF BREAK in BA
+: _i1 0 BEGIN 1+ dup 5 = 2drop IF BREAK AGAIN ;
+t{ _i1 -> 5 }t
+
+testing IF BREAK in BWR
+: _i2 10 BEGIN 1- dup 5 = 2drop IF BREAK dup 0- 0> drop WHILE REPEAT ;
+t{ _i2 -> 5 }t
+
+testing IF BREAK in BU + END
+: _i3 0 BEGIN 1+ dup 3 = 2drop IF BREAK dup 10 = 2drop UNTIL ;
+t{ _i3 -> 3 }t
+
+testing IF rdrop ;THEN in TR (early exit)
+: _i4 -1 10 TIMES r 5 = 2drop IF drop r rdrop ;THEN REPEAT ;
+t{ _i4 -> 5 }t
+
+testing IF rdrop ;THEN in TR (no match)
+: _i4b -1 3 TIMES r 5 = 2drop IF drop r rdrop ;THEN REPEAT ;
+t{ _i4b -> -1 }t
+
+testing dispatch with ;THEN
+: _i5 dup 1 = 2drop IF drop 10 ;THEN
+  dup 2 = 2drop IF drop 20 ;THEN drop 99 ;
+t{ 1 _i5 -> 10 }t
+t{ 2 _i5 -> 20 }t
+t{ 7 _i5 -> 99 }t
+
+\ ============================================================
+\ Group J: >r..r> inside loops
+\ ============================================================
+
+testing >r..r> in BWR
+: _j1 0 5 BEGIN dup 0- 0> drop WHILE >r 1+ r> 1- REPEAT drop ;
+t{ _j1 -> 5 }t
+
+testing >r..r> in BU
+: _j2 0 5 BEGIN >r 1+ r> 1- dup 0- 0= drop UNTIL drop ;
+t{ _j2 -> 5 }t
+
+testing >r..r> in BA
+: _j3 0 5 BEGIN >r 1+ r> 1- dup 0- 0= drop IF BREAK AGAIN drop ;
+t{ _j3 -> 5 }t
+
+testing >r outside TR
+: _j4 42 >r 0 5 TIMES 1+ REPEAT r> + ;
+t{ _j4 -> 47 }t
+
+\ ============================================================
+\ Group K: helper with ;THEN (non-inline :)
+\ ============================================================
+
+testing helper ;THEN baseline
+: _kh 3 = drop IF drop 99 ;THEN ;
+t{ 3 _kh -> 99 }t
+t{ 5 _kh -> 5 }t
+
+testing helper ;THEN from BWR
+\ dup copies counter, _kh operates on copy, drop discards result
+: _k1 5 BEGIN dup 0- 0> drop WHILE dup _kh drop 1- REPEAT ;
+t{ _k1 -> 0 }t
+
+testing helper ;THEN from BU
+: _k2 5 BEGIN dup _kh drop 1- dup 0- 0= drop UNTIL ;
+t{ _k2 -> 0 }t
+
+testing helper ;THEN from BA
+: _k3 5 BEGIN dup _kh drop 1- dup 0- 0= drop IF BREAK AGAIN ;
+t{ _k3 -> 0 }t
+
+testing helper ;THEN from TR (sum)
+\ r=4→4, r=3→99, r=2→2, r=1→1, r=0→0. Sum=106
+: _k4 0 5 TIMES r _kh + REPEAT ;
+t{ _k4 -> 106 }t
+
+testing helper multi-;THEN baseline
+: _k5h 1 = drop IF drop 10 ;THEN
+  2 = drop IF drop 20 ;THEN
+  3 = drop IF drop 30 ;THEN ;
+t{ 1 _k5h -> 10 }t
+t{ 2 _k5h -> 20 }t
+t{ 3 _k5h -> 30 }t
+t{ 5 _k5h -> 5 }t
+
+testing multi-;THEN helper from TR
+\ r=4→4, r=3→30, r=2→20, r=1→10, r=0→0. Sum=64
+: _k6 0 5 TIMES r _k5h + REPEAT ;
+t{ _k6 -> 64 }t
+
+\ ============================================================
+\ Group L: inline helper with ;THEN (:.)
+\ ============================================================
+
+testing inline helper ;THEN baseline
+:. _lh 3 = drop IF drop 99 ;THEN ;
+t{ 3 _lh -> 99 }t
+t{ 5 _lh -> 5 }t
+
+testing inline ;THEN from BWR
+: _l1 5 BEGIN dup 0- 0> drop WHILE dup _lh drop 1- REPEAT ;
+t{ _l1 -> 0 }t
+
+testing inline ;THEN from TR
+: _l2 0 5 TIMES r _lh + REPEAT ;
+t{ _l2 -> 106 }t
+
+\ ============================================================
+\ Group M: exit-thru-caller (2rdrop rdrop ;THEN)
+\ NOTE: This is an advanced pattern. rdrop ;THEN alone
+\ causes compile-time SEGV. These test the non-rdrop variant.
+\ ============================================================
+
+\ KNOWN BUG: rdrop ;THEN segfaults during compilation
+\ testing exit-thru-caller
+\ :. _nh over = 2drop IF drop 99 2rdrop rdrop ;THEN ;
+
+\ ============================================================
+\ Group N: nested loops
+\ ============================================================
+
+testing nested BWR in BWR
+: _n1 0 3 BEGIN dup 0- 0> drop WHILE
+  swap 3 BEGIN dup 0- 0> drop WHILE swap 1+ swap 1- REPEAT drop
+  swap 1- REPEAT drop ;
+t{ _n1 -> 9 }t
+
+testing nested TR in TR
+: _n2 0 3 TIMES 2 TIMES 1+ REPEAT REPEAT ;
+t{ _n2 -> 6 }t
+
+\ ============================================================
+\ Group O: miscellaneous ops in loops
+\ ============================================================
+
+testing >= comparison
+:. _o1 over over >= 2drop IF 2drop -1 ;THEN drop ;
+t{ 5 3 _o1 -> -1 }t
+t{ 3 5 _o1 -> 3 }t
+
+testing $- match
+t{ "ABCD" drop "ABCD" drop 4 $- -> 0 }t
+
+testing $- mismatch
+: _o3 "ABCD" drop "XBCD" drop 4 $- 0- 0<> drop IF 1 ELSE 0 THEN ;
+t{ _o3 -> 1 }t
+
+testing zlen ( addr -- addr len )
+t{ "hello" drop zlen nip -> 5 }t
+
+testing c@+
+t{ "AB" drop c@+ swap drop -> 'A' }t
+
+testing c@+ sum loop
+: _o6 0 >r BEGIN dup 0- 0> drop WHILE 1- swap c@+ r> + >r swap REPEAT 2drop r> ;
+t{ "ABC" drop 3 _o6 -> $C6 }t
+
+\ ============================================================
+\ Tier 2: compound patterns (two jumps per loop)
+\ ============================================================
+
+testing ;THEN + >r in BWR match
+: _p1 5 BEGIN dup 0- 0> drop WHILE
+  >r r 3 = 2drop IF r> ;THEN r> 1- REPEAT ;
+t{ _p1 -> 3 }t
+
+testing ;THEN + >r in BWR no match
+: _p2 0 5 BEGIN dup 0- 0> drop WHILE dup >r + r> 1- REPEAT drop ;
+t{ _p2 -> 15 }t
+
+testing IF/ELSE + >r in BWR
+\ counter 10→1, r>2→+10 (8 hits=80), r<=2→+1 (2 hits=2). Total=82.
+: _p3 0 10 BEGIN dup 0- 0> drop WHILE >r
+  r 2 > 2drop IF 10 ELSE 1 THEN + r> 1- REPEAT drop ;
+t{ _p3 -> 82 }t
+
+testing multiple ;THEN in BWR
+: _p4 5 BEGIN dup 3 = 2drop IF ;THEN
+  dup 1 = 2drop IF ;THEN
+  dup 0- 0> drop WHILE 1- REPEAT ;
+t{ _p4 -> 3 }t
+
+testing helper + IF/ELSE in TR
+\ r=4→4, r=3→99, r=2→2, r=1→1, r=0→0. Match(99)→+10, else→+r. Total=17.
+: _p5 0 5 TIMES r _kh 99 = 2drop IF 10 ELSE r THEN + REPEAT ;
+t{ _p5 -> 17 }t
+
+\ ============================================================
+
+tally-exit bye ;
