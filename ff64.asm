@@ -34,6 +34,7 @@ filebuf_ptr dq 0
 xfp     dq 0                    ; exception frame pointer for catch/throw
 ff_argc dq 0                    ; command-line argument count
 ff_argv dq 0                    ; pointer to argv[0] (array of char*)
+ff_envp dq 0                    ; pointer to envp[0] (array of char*)
 bootxt  dq 0                    ; xt of _boot (set by ff64.boot)
 hereatexec dq 0                 ; rbp saved by _semi_exec before reset (safe code position)
 SC      db 0                    ; SWAPbit in bit 1: 0=rbx is TOS, 2=rdx is TOS
@@ -2186,6 +2187,7 @@ WORD64 "anon", anon, 1, 4
 WORD64 "H", H, 1, 1
 WORD64 "ff_argc", ff_argc, 1, 7
 WORD64 "ff_argv", ff_argv, 1, 7
+WORD64 "ff_envp", ff_envp, 1, 7
 WORD64 "_bootxt", bootxt, 1, 7
 WORD64 "sigrestorer", _segv_restorer, 1, 11
 WORD64 ">in", tin, 1, 3
@@ -2253,11 +2255,15 @@ _start:
         lea rax, [filebuf]
         mov [filebuf_ptr], rax
 
-        ;; Save argc/argv for Forth access
+        ;; Save argc/argv/envp for Forth access
         mov rax, [rsp]          ; argc
         mov [ff_argc], rax
         lea rax, [rsp+8]        ; argv[0]
         mov [ff_argv], rax
+        ;; envp follows argv: rsp + 8 + (argc+1)*8
+        mov rcx, [rsp]          ; argc
+        lea rax, [rsp+16+rcx*8] ; skip argc word + argv[0..argc-1] + NULL
+        mov [ff_envp], rax
 
         ;; Compile embedded boot source
         lea rax, [boot64]

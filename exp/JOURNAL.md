@@ -10462,3 +10462,94 @@ entry in ff64.help or ff.help.
 
 - `make -C exp test`: all pass
 - No code changes — help files only
+
+---
+
+## Experiment 134: Native getenv via envp walking
+
+### Goal
+
+Replace the libc-based `getenv` with a native Forth implementation that
+walks the kernel-provided `envp` array directly. This eliminates the
+long-standing turnkey SEGV where `getenv()` crashes because libc is
+uninitialized in turnkey (statically linked) binaries.
+
+### Background
+
+The `envp` array is placed on the process stack by the Linux kernel at
+`_start` time, immediately after the NULL-terminated `argv` array. Its
+layout: `[rsp]=argc`, `[rsp+8..]=argv[0..argc-1]`, NULL, then
+`envp[0..]`, NULL. Each `envp` entry is a pointer to a NUL-terminated
+`"KEY=VALUE"` C string.
+
+The previous `getenv` in shell.ff called libc's `getenv()` via `fixup`
+(dlsym). This worked for dynamically-linked ff64 but SEGVed in turnkey
+(ff64s) binaries because libc wasn't initialized through its normal
+startup path.
+
+### Actions
+
+**1. Assembly: save envp at `_start`**
+
+Added `ff_envp dq 0` to ff64.asm's data section, alongside `ff_argc`
+and `ff_argv`. At `_start`, after saving argc and argv, computed envp
+as `rsp + 16 + argc*8` (skipping argc, argv entries, and the NULL
+terminator) and stored it in `ff_envp`. Added a `WORD64 "ff_envp"`
+dictionary entry with ct=1 (data address), following the existing
+pattern of `ff_argc` and `ff_argv`.
+
+**2. Forth: native getenv in shell.ff**
+
+The core algorithm:
+
+```forth
+variable _gk pvt variable _gl pvt
+: getenv ( addr len -- vaddr vlen | 0 0 )
+  _gl ! _gk !
+  ff_envp@ BEGIN dup @ 0- 0<> WHILE drop
+    _gk @ over @ _gl @ $-
+    0- 0= drop IF
+      dup @ _gl @ + c@ '= = drop drop IF
+        @ _gl @ + 1+ zlen ;THEN
+    THEN
+    8+
+  REPEAT drop 0 0 ;
+```
+
+This walks envp as an array of 8-byte pointers. For each entry:
+- Compare the first `len` bytes of the key against the env string
+  using `$-` (FreeForth's built-in string compare)
+- If the bytes match AND the next byte is `=`, we've found our var
+- Return the value (after `=`) with its length via `zlen`
+- Otherwise advance to the next envp entry (+8 bytes)
+
+**3. Key lessons learned during development**
+
+**Variables vs return stack in loops.** Cannot use `>r`/`r` inside
+BEGIN/WHILE/REPEAT loops — the return stack holds loop bookkeeping.
+Used private variables `_gk`/`_gl` instead.
+
+**`=` is a comparison, not a function.** In FreeForth, `=` compiles
+`cmp rdx,rbx` and sets cond_jmp — it does NOT push a boolean.
+The correct pattern is `a b = drop IF`, NOT `a b = 0- 0= drop IF`.
+The latter overwrites FLAGS from `=` with FLAGS from `0-` (testing
+the wrong value). This caused a SEGV that was traced via GDB to
+dereferencing a byte value (0x45 = 'E') as an address.
+
+**Nested IF/THEN works.** FreeForth supports `IF ... IF ... ;THEN
+... THEN` — the inner `;THEN` resolves the inner IF (compiles ret +
+patches forward ref), the outer `THEN` resolves the outer IF. Stack
+depths must match on all paths through each IF.
+
+**`$-` consumes 3, leaves 1.** `$- ( @1 @2 # -- diff )` takes
+two addresses and a count, returns the byte difference (0=match).
+This consumes NOS and the memory stack top, leaving only the diff
+on TOS. The caller's context (like the envp pointer) must be
+preserved elsewhere.
+
+### Results
+
+- `make -C exp/134-native-getenv test`: 4/4 pass
+  - HOME found, USER found, nonexistent returns 0 0, partial key no match
+- `make -C exp test`: all pass (exp 073 turnkey failures are pre-existing)
+- ff64.help updated with getenv, ff_envp entries and shell library section

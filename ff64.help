@@ -109,8 +109,9 @@ loadfile ( addr len -- ) load and compile a Forth source file
 
 ff_argc ( -- addr ) variable: command-line argument count
 ff_argv ( -- addr ) variable: pointer to argv array
-  Set by assembly at startup.
-  see also: ff_argc ff_argv argv doargv
+ff_envp ( -- addr ) variable: pointer to envp array (environment)
+  Set by assembly at startup from the kernel-provided stack layout.
+  see also: ff_argc ff_argv ff_envp argv doargv getenv
 
 helpbuf ( -- addr ) 128KB buffer used by the help system
   Used by lib/64/help.ff to read ff.help into memory.
@@ -334,6 +335,23 @@ time ( tloc -- time ) seconds since epoch
 times ( buf -- ticks ) get process times
   buf: 32-byte struct tms.
   see also: uname gettimeofday getrandom nanosleep time times
+
+\ === Shell / environment library (lib/shell.ff) ===
+\ Load with: needs shell.ff
+
+getenv ( addr len -- vaddr vlen | 0 0 ) look up environment variable
+  Native implementation — walks kernel envp array directly.
+  No libc dependency; works in turnkey binaries.
+  Returns value address and length, or 0 0 if not found.
+  Example: "HOME" getenv type cr
+getpid ( -- pid ) get process ID
+getppid ( -- ppid ) get parent process ID
+system ( addr len -- status ) execute shell command
+shell ( addr len -- ) execute shell command, abort on error
+man` ( <topic> -- ) display man page for topic
+cd` ( <dir> -- ) change current directory
+!!` ( <line> -- ) execute rest of line as shell command
+  see also: getenv getpid getppid system shell
 
 \ === Networking library (lib/64/net.ff) ===
 \ Load with: needs net.ff

@@ -1,0 +1,24 @@
+( Test native getenv — walks envp directly, no libc )
+needs shell.ff
+
+( Test 1: HOME should return a non-empty path )
+"HOME" getenv 0- 0<> drop IF
+  ."PASS:_HOME" cr
+ELSE ."FAIL:_HOME" cr THEN
+
+( Test 2: USER should return a non-empty string )
+"USER" getenv 0- 0<> drop IF
+  ."PASS:_USER" cr
+ELSE ."FAIL:_USER" cr THEN
+
+( Test 3: nonexistent var returns 0 0 )
+"ZZNONEXIST" getenv + 0- 0= drop IF
+  ."PASS:_NOVAR" cr
+ELSE ."FAIL:_NOVAR" cr THEN
+
+( Test 4: partial key should NOT match — HOM != HOME )
+"HOM" getenv + 0- 0= drop IF
+  ."PASS:_PARTIAL" cr
+ELSE ."FAIL:_PARTIAL" cr THEN
+
+t bye ;

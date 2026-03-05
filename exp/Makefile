@@ -64,7 +64,8 @@ EXPERIMENTS = 023-forthmacros64 \
               099-see64-improvements \
               110-perl-parity \
               112-file-tests \
-              113-asm-reduction
+              113-asm-reduction \
+              134-native-getenv
 
 test:
 	@fail=0; for d in $(EXPERIMENTS); do \

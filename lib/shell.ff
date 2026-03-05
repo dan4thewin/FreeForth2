@@ -3,8 +3,21 @@ needs fixup.ff
 needs ior.ff
 needs syscalls.ff
 
-:. _getenv "getenv" fixup ;
-:  getenv 1_ dup _getenv #call 0- 0= IF 0 ELSE zlen THEN ; ( addr -- addr len | 0 0 )
+( Native getenv — walks envp directly, no libc dependency.        )
+( Works in turnkey binaries where libc getenv SEGVs.              )
+( envp is a NULL-terminated array of "KEY=VALUE" C-string ptrs.   )
+variable _gk pvt variable _gl pvt
+: getenv ( addr len -- vaddr vlen | 0 0 )
+  _gl ! _gk !
+  ff_envp@ BEGIN dup @ 0- 0<> WHILE drop
+    _gk @ over @ _gl @ $-
+    0- 0= drop IF
+      dup @ _gl @ + c@ '= = drop drop IF
+        @ _gl @ + 1+ zlen ;THEN
+    THEN
+    8+
+  REPEAT drop 0 0 ;
+
 :. _getpid "getpid" fixup ;
 :  getpid 0 0 _getpid #call ; ( -- pid )
 :. _getppid "getppid" fixup ;
