@@ -1,15 +1,15 @@
-\ exp 135: loop+conditional audit
+\ loops.ff — loop+conditional pattern test matrix
+\ Cross-referenced with Lavarenne source code.
 \ Uses t{ -> }t framework. REPEAT closes TIMES.
 \
-\ Stack discipline:
+\ Stack discipline reminders:
 \   = < > >= — set FLAGS, do NOT consume. 2drop both args after.
 \   0- 0= 0> 0< 0<> — set FLAGS on TOS, do NOT consume. drop after.
 \   r — pushes loop counter (new stack item). Must be consumed.
 \   0; — if TOS==0: drop TOS, return. Else: continue (no consume).
 \   ;THEN — ;; THEN. Returns from current word.
+\   CASE — = drop IF drop. Match: both consumed. Miss: comparison consumed.
 \   drop preserves FLAGS.
-\
-\ Test naming: _XN where X=group letter, N=sequence number.
 
 needs test.ff
 90 >plan
@@ -18,14 +18,17 @@ needs test.ff
 \ Group A: Plain loops — sanity baseline
 \ ============================================================
 
+\ ff.boot: : words ... BEGIN ... 0<> UNTIL ... ;
 testing BU: BEGIN/UNTIL countdown
 : _a2 5 BEGIN 1- dup 0- 0= drop UNTIL ;
 t{ _a2 -> 0 }t
 
+\ fflin.boot: : _type BEGIN zlen 0<> WHILE 2dup+ -rot type cr 1+ REPEAT 2drop ;
 testing BWR: BEGIN/WHILE/REPEAT countdown
 : _a3 5 BEGIN dup 0- 0> drop WHILE 1- REPEAT ;
 t{ _a3 -> 0 }t
 
+\ ff.boot: : .# ... TIMES dup r 4* >> $F& .digit REPEAT drop ;
 testing TR: TIMES/REPEAT sum
 : _a4 0 5 TIMES 1+ REPEAT ;
 t{ _a4 -> 5 }t
@@ -34,18 +37,22 @@ testing TR: TIMES r sum
 : _a5 0 5 TIMES r + REPEAT ;
 t{ _a5 -> 10 }t
 
+\ hanoi:36-38 — triple nested TIMES
 testing TR nested
 : _a6 0 3 TIMES 2 TIMES 1+ REPEAT REPEAT ;
 t{ _a6 -> 6 }t
 
+\ see.ff: : nexth START h.sz+ c@+ + 1+ skip? 0<> WHILE ENTER stop? REPEAT ;
 testing SE: START/ENTER/WHILE/REPEAT
 : _a7 0 START 1+ ENTER 5 < drop WHILE REPEAT ;
 t{ _a7 -> 5 }t
 
+\ ff.boot: : RTIMES` >C1 BEGIN` ... ;
 testing RT: RTIMES/REPEAT sum
 : _a8 0 5 >r RTIMES r + REPEAT ;
 t{ _a8 -> 10 }t
 
+\ see.ff: BEGIN 4 CASE "shl" BREAK 7 CASE "sar" BREAK 2drop ??? 0 ;; END
 testing BCBE: CASE dispatch
 : _a9 BEGIN 1 CASE 10 BREAK 2 CASE 20 BREAK drop 99 END ;
 t{ 1 _a9 -> 10 }t
@@ -53,9 +60,10 @@ t{ 2 _a9 -> 20 }t
 t{ 7 _a9 -> 99 }t
 
 \ ============================================================
-\ Group B: IF/THEN in loops (no ELSE)
+\ Group B: IF/THEN in loops
 \ ============================================================
 
+\ hanoi:38 — IF ... THEN inside TIMES body
 testing IF/THEN in BU
 : _b2 0 5 BEGIN 1- dup 3 = 2drop IF 99 -rot THEN
   dup 0- 0= drop UNTIL 2drop ;
@@ -66,8 +74,8 @@ testing IF/THEN in BWR
   dup 3 = 2drop IF 99 -rot THEN 1- REPEAT 2drop ;
 t{ _b3 -> 99 }t
 
+\ ff.boot: ... r 4* >> $F& ... IF ... THEN ...
 testing IF/THEN in TR
-\ sum r values, +10 bonus when r==3
 : _b4 0 5 TIMES r dup 3 = 2drop IF 10 + THEN + REPEAT ;
 t{ _b4 -> 20 }t
 
@@ -82,11 +90,10 @@ t{ _b6 -> 20 }t
 
 \ ============================================================
 \ Group C: IF/ELSE/THEN in loops
-\ 5 TIMES: r=4,3,2,1,0. r>2 → +10 (3 hits=30), r<=2 → +1 (2 hits=2). Total=32.
 \ ============================================================
 
+\ hanoi:54 — u< IF drop c! drop ELSE nip nip c! THEN
 testing IF/ELSE/THEN in TR
-\ 5 TIMES: r=4,3,2,1,0. r>2 → +10 (2 hits=20), r<=2 → +1 (3 hits=3). Total=23.
 : _c1 0 5 TIMES r 2 > 2drop IF 10 ELSE 1 THEN + REPEAT ;
 t{ _c1 -> 23 }t
 
@@ -109,6 +116,7 @@ t{ _c5 -> }t
 \ Group D: ;THEN (early return from word)
 \ ============================================================
 
+\ ff.boot:228 — BEGIN _[] 0<> UNTIL _[] ;THEN 1+ THEN drop ;
 testing ;THEN baseline
 : _d0 dup 0- 0= drop IF drop 42 ;THEN ;
 t{ 0 _d0 -> 42 }t
@@ -122,6 +130,7 @@ testing ;THEN in BWR
 : _d3 5 BEGIN dup 3 = 2drop IF ;THEN dup 0- 0> drop WHILE 1- REPEAT ;
 t{ _d3 -> 3 }t
 
+\ ff.boot:265 — rdrop ;THEN pattern in TIMES
 testing ;THEN in TR (rdrop needed)
 : _d4 10 TIMES r 7 = 2drop IF r rdrop ;THEN REPEAT -1 ;
 t{ _d4 -> 7 }t
@@ -142,15 +151,18 @@ t{ _d7 -> 3 }t
 \ Group E: 0; (return if TOS==0, dropping the zero)
 \ ============================================================
 
+\ ff.boot: : 0;` 0-` 0=` IF` drop` ;THEN` ;
 testing 0; baseline
 : _e0 0; drop 99 ;
 t{ 0 _e0 -> }t
 t{ 5 _e0 -> 99 }t
 
+\ ff.boot: : 0; ... ; (recursive usage in .#s etc.)
 testing 0; recursive (classic pattern)
 : _e1 0; dup 1- _e1 ;
 t{ 3 _e1 -> 3 2 1 }t
 
+\ test.ff:28 — chkvals: BEGIN depth 0; dropr> <> ...
 testing 0; in BWR (condition after 0;)
 : _e4 3 BEGIN dup 0; drop dup 0- 0> drop WHILE 1- REPEAT ;
 t{ _e4 -> 0 }t
@@ -163,6 +175,7 @@ t{ _e5 -> 0 }t
 \ Group F: 0<>; (return if TOS nonzero)
 \ ============================================================
 
+\ ff.boot: : 0<>;` 0-` 0<>` IF` ;THEN` ;
 testing 0<>; baseline
 : _f0 0<>; 99 nip ;
 t{ 5 _f0 -> }t
@@ -176,6 +189,7 @@ testing ;; baseline
 : _g0 42 ;; 99 ;
 t{ _g0 -> 42 }t
 
+\ see.ff:237 — ;; as fallthrough exit in CASE/BREAK/END
 testing ;; in BWR
 : _g1 5 BEGIN dup 0- 0> drop WHILE
   dup 3 = 2drop IF drop 99 ;; THEN 1- REPEAT ;
@@ -189,11 +203,11 @@ t{ _g2 -> 99 }t
 
 \ ============================================================
 \ Group H: IF AGAIN — conditional restart (no THEN)
-\ NOTE: IF AGAIN causes SEGV at COMPILE time on ff64.
-\ These tests document the bug. Uncomment when fixed.
+\ KNOWN BUG: SEGV at compile time on ff64.
 \ ============================================================
 
-\ KNOWN BUG: IF AGAIN segfaults during compilation
+\ debug.ff: BEGIN wsparse ... 0= IF ct AGAIN  ... REPEAT
+\ see.ff: ... 0- 0= IF rdrop AGAIN ... REPEAT
 testing IF AGAIN in BWR
 \ : _h1 0 5 BEGIN dup 0- 0> drop WHILE
 \   dup 3 = 2drop IF swap 1+ swap 1- AGAIN
@@ -206,17 +220,20 @@ testing IF AGAIN in BU
 skip t{ _h2 -> 41 }t
 
 \ ============================================================
-\ Group I: BREAK / IF BREAK
+\ Group I: BREAK / IF BREAK / dispatch
 \ ============================================================
 
+\ fflin.boot: BEGIN zlen 0- 0= IF BREAK 2dup+ 1+ >r _getenv r> REPEAT
 testing IF BREAK in BWR
 : _i2 10 BEGIN 1- dup 5 = 2drop IF BREAK dup 0- 0> drop WHILE REPEAT ;
 t{ _i2 -> 5 }t
 
+\ fpu.ff:156 — CASE...BREAK inside BEGIN/UNTIL
 testing IF BREAK in BU + END
 : _i3 0 BEGIN 1+ dup 3 = 2drop IF BREAK dup 10 = 2drop UNTIL ;
 t{ _i3 -> 3 }t
 
+\ ff.boot:265 — rdrop ;THEN for early exit from TIMES
 testing IF rdrop ;THEN in TR (early exit)
 : _i4 -1 10 TIMES r 5 = 2drop IF drop r rdrop ;THEN REPEAT ;
 t{ _i4 -> 5 }t
@@ -225,6 +242,7 @@ testing IF rdrop ;THEN in TR (no match)
 : _i4b -1 3 TIMES r 5 = 2drop IF drop r rdrop ;THEN REPEAT ;
 t{ _i4b -> -1 }t
 
+\ see.ff:102,115 — chained ;THEN dispatch (no loop)
 testing dispatch with ;THEN
 : _i5 dup 1 = 2drop IF drop 10 ;THEN
   dup 2 = 2drop IF drop 20 ;THEN drop 99 ;
@@ -236,6 +254,7 @@ t{ 7 _i5 -> 99 }t
 \ Group J: >r..r> inside loops
 \ ============================================================
 
+\ fflin.boot:22 — >r ... r> around loop body
 testing >r..r> in BWR
 : _j1 0 5 BEGIN dup 0- 0> drop WHILE >r 1+ r> 1- REPEAT drop ;
 t{ _j1 -> 5 }t
@@ -258,7 +277,6 @@ t{ 3 _kh -> 99 }t
 t{ 5 _kh -> 5 }t
 
 testing helper ;THEN from BWR
-\ dup copies counter, _kh operates on copy, drop discards result
 : _k1 5 BEGIN dup 0- 0> drop WHILE dup _kh drop 1- REPEAT ;
 t{ _k1 -> 0 }t
 
@@ -266,8 +284,8 @@ testing helper ;THEN from BU
 : _k2 5 BEGIN dup _kh drop 1- dup 0- 0= drop UNTIL ;
 t{ _k2 -> 0 }t
 
-testing helper ;THEN from TR (sum)
 \ r=4→4, r=3→99, r=2→2, r=1→1, r=0→0. Sum=106
+testing helper ;THEN from TR (sum)
 : _k4 0 5 TIMES r _kh + REPEAT ;
 t{ _k4 -> 106 }t
 
@@ -280,8 +298,8 @@ t{ 2 _k5h -> 20 }t
 t{ 3 _k5h -> 30 }t
 t{ 5 _k5h -> 5 }t
 
-testing multi-;THEN helper from TR
 \ r=4→4, r=3→30, r=2→20, r=1→10, r=0→0. Sum=64
+testing multi-;THEN helper from TR
 : _k6 0 5 TIMES r _k5h + REPEAT ;
 t{ _k6 -> 64 }t
 
@@ -304,24 +322,23 @@ t{ _l2 -> 106 }t
 
 \ ============================================================
 \ Group M: exit-thru-caller (2rdrop rdrop ;THEN)
-\ NOTE: This is an advanced pattern. rdrop ;THEN alone
-\ causes compile-time SEGV. These test the non-rdrop variant.
+\ KNOWN BUG: rdrop ;THEN segfaults during compilation.
 \ ============================================================
 
-\ KNOWN BUG: rdrop ;THEN segfaults during compilation
-\ testing exit-thru-caller
 \ :. _nh over = 2drop IF drop 99 2rdrop rdrop ;THEN ;
 
 \ ============================================================
 \ Group N: nested loops
 \ ============================================================
 
+\ ff.boot:284-286 — nested START/ENTER inside words/dump
 testing nested BWR in BWR
 : _n1 0 3 BEGIN dup 0- 0> drop WHILE
   swap 3 BEGIN dup 0- 0> drop WHILE swap 1+ swap 1- REPEAT drop
   swap 1- REPEAT drop ;
 t{ _n1 -> 9 }t
 
+\ hanoi:36-38 — triple nested TIMES
 testing nested TR in TR
 : _n2 0 3 TIMES 2 TIMES 1+ REPEAT REPEAT ;
 t{ _n2 -> 6 }t
@@ -383,54 +400,56 @@ testing helper + IF/ELSE in TR
 t{ _p5 -> 17 }t
 
 \ ============================================================
-\ Group Q: START/ENTER/UNTIL — ff.boot:275 (words), fflin.boot:34
+\ Group Q: START/ENTER/UNTIL
 \ ============================================================
 
+\ ff.boot:275 — START 2dup+ 1+ -rot type space ENTER h.sz+ c@+ 0- 0= UNTIL
 testing START/ENTER/UNTIL countdown
 : _q1 5 START 1- ENTER 0- 0= UNTIL ;
 t{ _q1 -> 0 }t
 
-testing START/ENTER/UNTIL with IF/THEN — fflin.boot:34
+\ fflin.boot:34 — START ... IF ... THEN ... ENTER ... UNTIL
+testing START/ENTER/UNTIL with IF/THEN
 : _q2 0 5 START dup 3 = 2drop IF swap 10 + swap THEN 1-
   ENTER dup 0- 0= drop UNTIL drop ;
 t{ _q2 -> 10 }t
 
-testing START/ENTER/UNTIL with ;THEN — ff.boot:265
+\ ff.boot:265 — ;THEN inside START/ENTER/UNTIL
+testing START/ENTER/UNTIL with ;THEN
 : _q3 5 START dup 3 = 2drop IF ;THEN 1- ENTER 0- 0= UNTIL ;
 t{ _q3 -> 3 }t
 
 \ ============================================================
-\ Group R: TIMES + WHILE early exit — hanoi:49 (top)
+\ Group R: TIMES + WHILE early exit
+\ KNOWN BUG: REPEAT resolves WHILE instead of RTIMES js fixup.
 \ ============================================================
 
+\ hanoi:49 — TIMES tuck c@ <> drop swap 0<> WHILE 1+ REPEAT nip ;
 testing TIMES + WHILE early exit (match)
-\ KNOWN BUG on ff64: TIMES+WHILE broken. REPEAT's THEN resolves WHILE
-\ instead of RTIMES js fixup → TIMES counter ignored, rstack not cleaned.
-\ Works on i386 where END iterates all forward refs.
 \ : _r1 0 10 TIMES 1+ dup 3 <> 2drop WHILE REPEAT ;
 skip t{ _r1 -> 3 }t
 
 testing TIMES + WHILE early exit (no match — full TIMES)
-\ Same bug: TIMES counter ignored on ff64.
 \ : _r2 0 3 TIMES 1+ dup 99 <> 2drop WHILE REPEAT ;
 skip t{ _r2 -> 3 }t
 
 \ ============================================================
-\ Group S: ;; in CASE/BREAK/END — see.ff:237
-\ ;; is just an unconditional return, used as fallthrough exit
+\ Group S: ;; in CASE/BREAK/END
 \ ============================================================
 
-testing ;; in CASE/BREAK/END dispatch — see.ff:237
+\ see.ff:237 — BEGIN 4 CASE "shl" BREAK 7 CASE "sar" BREAK 2drop ??? 0 ;; END
+testing ;; in CASE/BREAK/END dispatch
 : _s1 BEGIN 4 CASE 10 BREAK 7 CASE 20 BREAK drop 99 ;; END ;
 t{ 4 _s1 -> 10 }t
 t{ 7 _s1 -> 20 }t
 t{ 3 _s1 -> 99 }t
 
 \ ============================================================
-\ Group T: CASE/BREAK + UNTIL hybrid — fpu.ff:155-160
+\ Group T: CASE/BREAK + UNTIL hybrid
 \ ============================================================
 
-testing CASE/BREAK + UNTIL (match) — fpu.ff:155-160
+\ fpu.ff:155 — BEGIN c@+ BEGIN '.' CASE ... BREAK 'e' CASE ... BREAK
+testing CASE/BREAK + UNTIL (match)
 : _t1 0 BEGIN 1+ 3 CASE 30 BREAK dup 5 = 2drop UNTIL ;
 t{ _t1 -> 30 }t
 
@@ -439,22 +458,24 @@ testing CASE/BREAK + UNTIL (no match, UNTIL exits)
 t{ _t2 -> 3 }t
 
 \ ============================================================
-\ Group U: Multiple WHILE — hanoi:58,98 (triple WHILE)
-\ NOTE: ff64 bug — second WHILE's exit path doesn't return.
+\ Group U: Multiple WHILE
+\ KNOWN BUG: second WHILE exit path doesn't return.
 \ ============================================================
 
-\ KNOWN BUG: multiple WHILE broken on ff64
+\ hanoi:58 — BEGIN 1- 0<> WHILE d b` 1- 0<> WHILE d c` 1- 0<> WHILE d a` REPEAT
 testing double WHILE countdown
 \ : _u1 10 BEGIN 1- 0- 0<> WHILE 1- 0- 0<> WHILE REPEAT ;
 skip t{ _u1 -> 0 }t
-testing triple WHILE countdown — hanoi:58
+testing triple WHILE countdown
 \ : _u2 30 BEGIN 1- 0- 0<> WHILE 1- 0- 0<> WHILE 1- 0- 0<> WHILE REPEAT ;
 skip t{ _u2 -> 0 }t
 
 \ ============================================================
-\ Group V: Nested START/ENTER — hid-m.ff:4-6, ff.boot:284-286
+\ Group V: Nested START/ENTER
 \ ============================================================
 
+\ ff.boot:284 — nested START/ENTER in dump
+\ hid-m.ff:4-6 — START ... START ... ENTER ... UNTIL ... ENTER ... UNTIL
 testing nested START/ENTER/UNTIL
 \ 3 START = 2 body passes (START skips first). 2 outer × 2 inner = 4.
 : _v1 0 >r 3 START 3 START r> 1+ >r

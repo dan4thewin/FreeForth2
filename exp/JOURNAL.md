@@ -10663,7 +10663,90 @@ with FreeForth's FLAGS-based comparisons:
 - `exp/135-loop-cond-audit/test.ff` — 84 t{ tests, 16 groups (A-P)
 - `exp/135-loop-cond-audit/Makefile` — test runner
 
+### Revision: Cross-Platform Validation
+
+DG asked to run the test matrix against the i386 `ff` binary (Lavarenne's
+original) and cross-reference every pattern with real Lavarenne code.
+
+#### Invalid Patterns Removed
+
+**`IF BREAK AGAIN` (6 tests removed).** DG questioned whether this makes sense.
+Searched the entire codebase — the pattern only exists in our experiments, never
+in Lavarenne's code. It's nonsensical: BREAK = `THEN ahead,` which resolves IF's
+forward ref AND pushes a new forward ref for END. AGAIN then tries to backward
+jump but finds BREAK's unresolved forward ref on the compile stack. Both platforms
+fail: i386 SEGVs, ff64 passed by accident (undefined behavior).
+
+**Standalone AGAIN as loop closer (3 tests removed).** AGAIN on i386 =
+`$EB -jmp THEN` — it emits a backward jump AND resolves one forward ref. As
+the sole closer of a BEGIN loop containing internal branches (0;, ;THEN, ;;),
+the THEN resolves whatever's on the compile stack — which may not be the intended
+forward ref. Lavarenne never used standalone AGAIN as a loop closer in ff.boot
+or fflin.boot — only UNTIL, REPEAT, TILL.
+
+#### Corrected Conclusions
+
+**IF AGAIN works on i386 (corrected).** My original conclusion that IF AGAIN
+crashes on i386 was WRONG — the test had a stack cleanup bug (`nip` instead of
+`drop`). `IF ... AGAIN` (conditional restart, no THEN, where AGAIN's embedded
+THEN resolves IF's forward ref) is a legitimate pattern used in:
+- `lib/x86/debug.ff:43-46` — `dbgc` (DG: "a pattern I rely upon")
+- `lib/x86/see.ff:61` — IF rdrop AGAIN
+
+**0;, ;THEN, ;; work in BEGIN/UNTIL on i386 (corrected).** Earlier tests that
+SEGVed were using standalone AGAIN, not UNTIL. The constructs themselves are fine.
+
+#### New Groups Added (cross-referenced with Lavarenne code)
+
+**Group Q: START/ENTER/UNTIL** (3 tests) — ff.boot `words`(line 237), 
+ff.boot `_auto`(235). Tests: basic countdown, nested conditions, 
+helper word inside loop.
+
+**Group R: TIMES + WHILE** (commented — ff64 bug) — hanoi:49.
+KNOWN BUG: REPEAT's embedded THEN resolves WHILE's forward ref instead of
+RTIMES's `js` fixup → TIMES counter ignored, never decremented. Root cause:
+WHILE and RTIMES both push forward refs on the compile-time DATA stack. REPEAT
+does one THEN (resolves TOS = WHILE's ref), leaving RTIMES's `js` fixup
+orphaned. On i386, END iterates ALL forward refs in a loop, resolving both.
+
+**Group S: ;; in CASE/BREAK/END** (3 tests) — lib/x86/see.ff:237,255,262,268.
+Tests: match first CASE, match second CASE, no match (fall through to ;;).
+Fix: removed `2drop` after failed CASEs — CASE consumes the comparison value
+on mismatch, tested value survives.
+
+**Group T: CASE/BREAK + UNTIL** (2 tests) — lib/x86/fpu.ff:155-160.
+Tests: CASE match exits via BREAK, no match continues UNTIL. Fix: removed
+`dup` before CASE — CASE already preserves tested value on mismatch.
+
+**Group U: Multiple WHILE** (commented — ff64 bug) — hanoi:58,98.
+KNOWN BUG: Second WHILE's exit path doesn't return properly. Word executes
+correctly but the WHILE exit jumps somewhere that prevents return to caller.
+
+**Group V: Nested START/ENTER** (1 test) — ff.boot dump(250), ff.boot .hdrs(260).
+Tests: nested START/ENTER/UNTIL inside outer START/ENTER/UNTIL.
+
+#### Updated Bug List (4 confirmed ff64 bugs)
+
+1. **IF AGAIN → SEGV at compile time** (was already known)
+2. **rdrop ;THEN → SEGV at compile time** (was already known)
+3. **TIMES + WHILE → counter ignored** (NEW — hanoi:49)
+4. **Multiple WHILE → no return from word** (NEW — hanoi:58,98)
+
+#### CASE Stack Discipline (corrected understanding)
+
+`CASE` = `= drop IF drop`. When CASE **matches**: both the comparison value
+AND the tested value are consumed (match handler runs). When CASE **doesn't
+match**: only the comparison value is consumed, tested value survives for the
+next CASE. Therefore: don't `dup` before CASE, and don't `2drop` after failed
+CASEs — the tested value is already there, and only one item needs cleaning
+when all CASEs miss.
+
+### Files
+
+- `exp/135-loop-cond-audit/test.ff` — 84 t{ tests, 22 groups (A-V)
+- `exp/135-loop-cond-audit/Makefile` — test runner
+
 ### Results
 
-- `make -C exp/135-loop-cond-audit test`: 84/84 pass
+- `make -C exp/135-loop-cond-audit test`: 84/84 pass on both ff64 and ff
 - `make -C exp test`: all pass (exp 073 turnkey failures are pre-existing)
