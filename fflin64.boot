@@ -169,10 +169,15 @@ variable _dlen pvt
 ( needed — load file if not already loaded )
 ( Checks if word with backtick suffix exists in dictionary. )
 ( If found, file already loaded — skip. If not, search FFPATH and load. )
+( Adapted from i386: openlib returns path, so we open before read/eval. )
 : needed 2dup + dup c@ >r dup >r $60 swap c! 1+
   find 2r> c! 0= IF 2drop ;THEN 1-
   2dup openlib 0- 0< IF 2drop type !"_not_found" ;THEN
-  >r >r 2dup marker pvtmargin 2drop r> r> loadfile ;
+  openr 0- 0< IF type !"_not_found" ;THEN
+  >r 2dup marker pvtmargin 2drop
+  tp@ eob over- under r read r> close drop
+  over w@ [ "#!" drop w@ ] lit = 2drop
+  IF bounds BEGIN c@+ 10- 0= drop UNTIL swap over- THEN eval 0 noauto! ;
 
 ( needexec — load file via needed, then execute its last definition )
 :. needexec needed H@ @ execute ;

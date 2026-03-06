@@ -36,7 +36,6 @@ EXPERIMENTS = 023-forthmacros64 \
 060-rtimes-dump \
 061-peephole \
 062-fileio \
-063-loadfile \
 064-segv \
 065-needed \
 066-doargv \
@@ -67,7 +66,8 @@ EXPERIMENTS = 023-forthmacros64 \
               113-asm-reduction \
               134-native-getenv \
               139-eval-fileload \
-              140-tib-eob
+              140-tib-eob \
+              141-rm-loadfile
 
 test:
 	@fail=0; for d in $(EXPERIMENTS); do \

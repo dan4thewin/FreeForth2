@@ -30,13 +30,11 @@ anon    dq 0
 callmark dq 0
 tin     dq 0
 tp      dq 0
-filebuf_ptr dq 0
 xfp     dq 0                    ; exception frame pointer for catch/throw
 ff_argc dq 0                    ; command-line argument count
 ff_argv dq 0                    ; pointer to argv[0] (array of char*)
 ff_envp dq 0                    ; pointer to envp[0] (array of char*)
 bootxt  dq 0                    ; xt of _boot (set by ff64.boot)
-hereatexec dq 0                 ; rbp saved by _semi_exec before reset (safe code position)
 SC      db 0                    ; SWAPbit in bit 1: 0=rbx is TOS, 2=rdx is TOS
 cond_jmp dq 0                   ; ?# : pending conditional jump opcode (0=none)
                                 ; dq (not db) so Forth `0 ?#!` (cell store) is safe
@@ -1014,11 +1012,10 @@ _semi_exec:
         call _rst               ; reconcile SWAPbit before closing anonymous block
         mov byte [rbp], $C3
         inc rbp
-        mov [hereatexec], rbp   ; save safe code position past anonymous code
         mov rax, [anon]
         mov rbp, rax            ; reset rbp to anon start (for execution)
         call rax                ; execute anonymous code (may advance rbp via allot)
-        ;; After execution, rbp reflects any allot changes.
+        ;; After execution, rbp reflects any allot/eval changes.
         ;; Fall through to _anon to set [anon]=rbp, preserving allotted space.
         ;; This matches i386 behavior where _semi falls through to _anon.
         mov [anon], rbp
@@ -1894,114 +1891,6 @@ _segv_restorer:
         mov rax, 15             ; sys_rt_sigreturn
         syscall
 
-;; loadfile ( addr len -- ) load and compile file from data stack
-;; Like _include but takes filename string from stack instead of parsing.
-;; Uses filebuf for storage and saves/restores input state.
-_loadfile:
-        ;; Copy filename to namebuf and NUL-terminate (avoid corrupting code buffer)
-        ;; addr=NOS=rdx, len=TOS=rbx
-        mov rcx, rbx            ; rcx = len
-        push rdi
-        push rsi
-        lea rdi, [namebuf]      ; dest = namebuf
-        mov rsi, rdx            ; source = addr (NOS)
-        rep movsb               ; copy filename
-        mov byte [rdi], 0       ; NUL-terminate
-        pop rsi
-        pop rdi
-        ;; Pop both args from data stack
-        mov rbx, [r15+8]       ; restore TOS from stack
-        mov rdx, [r15]         ; restore NOS from stack
-        add r15, 16             ; pop addr + len
-        ;; Save current input state and filebuf position
-        push qword [tin]
-        push qword [tp]
-        push qword [filebuf_ptr]
-        ;; Open file (sys_open=2, O_RDONLY=0)
-        push rdx
-        push rbx
-        lea rdi, [namebuf]     ; filename from scratch buffer
-        xor esi, esi            ; O_RDONLY
-        xor edx, edx            ; mode (ignored for read)
-        mov rax, 2              ; sys_open
-        syscall
-        pop rbx
-        pop rdx
-        test rax, rax
-        js .lf_err_open
-        mov r12, rax            ; save fd in r12
-        ;; Read file into current filebuf position
-        push rdx
-        xor eax, eax            ; sys_read
-        mov rdi, r12            ; fd
-        mov rsi, [filebuf_ptr]  ; buffer
-        mov rdx, 65536          ; max 64KB per file
-        syscall
-        pop rdx
-        test rax, rax
-        js .lf_err_read
-        ;; Close file
-        push rax
-        push rdx
-        mov rax, 3              ; sys_close
-        mov rdi, r12
-        syscall
-        pop rdx
-        pop rax
-        ;; Set up input from file buffer, advance filebuf_ptr
-        mov rcx, [filebuf_ptr]
-        mov [tin], rcx
-        lea rcx, [rcx + rax]
-        mov [tp], rcx
-        lea rcx, [rcx + 16]
-        mov [filebuf_ptr], rcx
-        ;; Save code generation state. Use hereatexec (saved by _semi_exec)
-        ;; as safe rbp position past the executing anonymous code.
-        ;; After compilation, leave rbp past loaded definitions so
-        ;; _semi_exec's `mov [anon], rbp` preserves the space.
-        mov qword [callmark], 0
-        mov rbp, [hereatexec]   ; safe position past anonymous code
-        mov [anon], rbp         ; set anon for new definitions
-        push rbx
-        push rdx
-        call _compiler
-        pop rdx
-        pop rbx
-        ;; rbp is now past all loaded definitions — do NOT restore it.
-        ;; Update hereatexec so next loadfile won't overwrite this code.
-        mov [hereatexec], rbp
-        ;; Restore input state
-        pop qword [filebuf_ptr]
-        pop qword [tp]
-        pop qword [tin]
-
-        ret
-.lf_err_open:
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [err_open_msg]
-        mov rdx, err_open_len
-        syscall
-        pop qword [filebuf_ptr]
-        pop qword [tp]
-        pop qword [tin]
-        ret
-.lf_err_read:
-        push rdx
-        mov rax, 3              ; close fd
-        mov rdi, r12
-        syscall
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [err_read_msg]
-        mov rdx, err_read_len
-        syscall
-        pop rdx
-        pop qword [filebuf_ptr]
-        pop qword [tp]
-        pop qword [tin]
-        ret
-
 ;; =====================================================================
 ;; Dynamic library interface — dlopen/dlsym/dlerror wrappers
 ;; =====================================================================
@@ -2233,7 +2122,6 @@ WORD64 "throw", _throw, 0, 5
 WORD64 "find", _find_forth, 0, 4
 WORD64 "accept", _accept, 0, 6
 WORD64 "syscall", _syscall, 0, 7
-WORD64 "loadfile", _loadfile, 0, 8
 WORD64 "#lib", _dllib, 0, 4
 WORD64 "#fun", _dlfun, 0, 4
 WORD64 "#call", _dlcall, 0, 5
@@ -2252,9 +2140,6 @@ _start:
 
         lea rbp, [codebuf]
         mov [anon], rbp
-
-        lea rax, [filebuf]
-        mov [filebuf_ptr], rax
 
         ;; Save argc/argv/envp for Forth access
         mov rax, [rsp]          ; argc
@@ -2294,10 +2179,6 @@ errmsg:       db "error: "
 err_noname:   db "error: : without name"
               db 10
 err_noname_len = $ - err_noname
-err_open_msg: db "error: cannot open file", 10
-err_open_len = $ - err_open_msg
-err_read_msg: db "error: cannot read file", 10
-err_read_len = $ - err_read_msg
 err_nocond_msg: db "error: requires preceding condition", 10
 err_nocond_len = $ - err_nocond_msg
 segv_msg:     db 10, "*** SEGV (segmentation fault) ***", 10
@@ -2325,8 +2206,6 @@ boot64_end:
 
 tib        rb 1024*256             ; terminal input and file-stack buffer (i386 layout)
 eob        rb 1024                 ; end-of-buffer scratch area
-namebuf    rb 256                  ; scratch buffer for NUL-terminated filenames
-filebuf    rb 65536                ; loaded file contents (used by _loadfile, to be removed)
 helpbuf    rb 131072             ; 128KB buffer for help file reading
 dstack     rb 8192
 dstack_top:

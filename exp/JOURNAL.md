@@ -11259,3 +11259,114 @@ Binary size: 367736 → 638072 (grew ~264KB = 256KB tib + 1KB eob + alignment).
 - 3/3 exp/140-tib-eob tests pass (buffer size, tp in range, eval with eob)
 - `make test64`: all PASSED
 - `make -C exp test`: all pass (exp 073 pre-existing only)
+
+---
+
+## Experiment 141: Remove \_loadfile, adopt i386 eval-based needed
+
+### Date: 2025-07-18
+
+### Goal
+
+Delete the ~107-line assembly `_loadfile` from ff64.asm and replace ff64's
+`needed` with the i386 version that uses `read`/`eval`. This is the
+culmination of experiments 139–140: we proved `eval` works for file loading
+(exp 139), unified the buffer layout (exp 140), and now we can remove the
+assembly file-loader entirely.
+
+### Background: Why \_loadfile existed
+
+ff64's `_loadfile` was an invention of the x86-64 port — it didn't exist in
+the i386 original. It managed its own `filebuf` (64KB), tracked a code pointer
+(`hereatexec`), and redirected `tin`/`tp` to point into the file buffer. This
+created three separate bugs during development:
+
+1. **rbp preservation bug**: `_loadfile` called `_compiler` which advanced
+   rbp, but the caller expected rbp to be preserved.
+2. **hereatexec overwrite bug**: When loading a file during compilation,
+   `hereatexec` could point into code being overwritten.
+3. **hereatexec advancement bug**: `hereatexec` wasn't advanced after
+   `_semi_exec` ran anonymous code, causing definitions to compile over
+   each other.
+
+The i386 avoids all three by having no `_loadfile` at all — file loading is
+done entirely in Forth via `eval`, which saves/restores `>in`/`tp` around a
+call to `compiler`.
+
+### The key insight: `needs` vs `needed`
+
+Through GDB experiments on the i386 binary (detailed investigation before
+this experiment), we discovered the fundamental safety mechanism:
+
+- **`needed`** (internal word): opens file, reads into tib at `tp`, calls
+  `eval`. If called from inside anonymous code, the inner compilation writes
+  at `[anon]` which IS the anonymous code — overwriting it. This causes
+  crashes for large inner files.
+
+- **`needs`** (user-facing backtick macro): defined as `` ; wsparse needed ;` ``
+  The leading `;` **flushes anonymous code first**. After flush, `[anon]` =
+  rbp (fresh start), so `needed`'s inner compilation can't overwrite anything.
+
+- ALL practical usage goes through `needs`: `needs fixup.ff` in lib files,
+  `-f` handler does `` ; wsparse needed ... `` etc.
+
+This is identical between i386 and ff64 — both have the same theoretical
+vulnerability if `needed` is called directly from anonymous code, and both
+are protected by `needs` doing `;` first. No special mechanism needed.
+
+### Changes
+
+**ff64.asm** (the big deletion):
+- Deleted `_loadfile` and all supporting code (~107 lines of assembly)
+- Removed `filebuf_ptr dq 0` variable
+- Removed `filebuf rb 65536` from BSS
+- Removed `namebuf rb 256` from BSS
+- Removed `loadfile` dictionary entry and error message strings
+- Removed `hereatexec dq 0` variable (was added then reverted this session)
+- Cleaned `_semi_exec`: no hereatexec save/clear
+
+**ff64.boot**:
+- `eval` restored to simple i386 form:
+  `: eval >in@ tp@ 2>r over+ tp! >in! compiler 2r> tp! >in! ;`
+
+**fflin64.boot**:
+- `needed` replaced with i386-style read/eval version:
+  ```forth
+  : needed 2dup + dup c@ >r dup >r $60 swap c! 1+
+    find 2r> c! 0= IF 2drop ;THEN 1-
+    2dup openlib 0- 0< IF 2drop type !"_not_found" ;THEN
+    openr 0- 0< IF type !"_not_found" ;THEN
+    >r 2dup marker pvtmargin 2drop
+    tp@ eob over- under r read r> close drop
+    over w@ [ "#!" drop w@ ] lit = 2drop
+    IF bounds BEGIN c@+ 10- 0= drop UNTIL swap over- THEN eval 0 noauto! ;
+  ```
+
+**exp/Makefile**:
+- Removed `063-loadfile` (tests the removed `loadfile` word — archived)
+- Added `141-rm-loadfile`
+
+**exp/141-rm-loadfile/**:
+- 5 tests: needs-simple, needs-nested, needs-guard, eval-basic, loadfile-removed
+
+### Binary size
+
+560,760 bytes (down from 638,072 in exp 140). Removing `filebuf` (64KB) and
+`namebuf` (256B) saves ~64KB.
+
+### Results
+
+- 5/5 exp/141 tests pass
+- Full test suite: same pre-existing failures only (073-turnkey, 078-ffpath,
+  079-fixup, 080-lib64)
+- No new failures introduced
+- REPL works, nested `needs` works, `needs malloc.ff` works
+
+### Reflection
+
+This experiment completes a three-step arc (139→140→141) that replaced 107
+lines of assembly with ~10 lines of Forth. The i386 design was right all
+along: file loading belongs in Forth, not assembly. The `needs` macro's
+leading `;` is the safety mechanism — elegant, minimal, and invisible unless
+you know to look for it. Lavarenne's philosophy of "assembly is intentionally
+minimal — most things are implemented in Forth" is vindicated once more.
