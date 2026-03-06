@@ -11370,3 +11370,74 @@ along: file loading belongs in Forth, not assembly. The `needs` macro's
 leading `;` is the safety mechanism — elegant, minimal, and invisible unless
 you know to look for it. Lavarenne's philosophy of "assembly is intentionally
 minimal — most things are implemented in Forth" is vindicated once more.
+
+---
+
+## Experiment 142: Add BSS section for uninitialized buffers
+
+### Date: 2025-07-18
+
+### Goal
+
+Reduce ff64 binary size by moving uninitialized `rb` buffers from `.flat`
+(PROGBITS — stored as zeros in the file) to a `.bss` section (NOBITS —
+not stored in the file, demand-allocated by the kernel at runtime).
+
+### Background
+
+DG observed that adding tib (256KB) and eob (1KB) in experiment 140 grew
+the binary by ~270KB. He asked whether BSS pages are allocated on demand
+at runtime (as in C programs). Yes — but ff64 had no `.bss` section.
+
+The i386 FreeForth (`ff.asm:1335`) has:
+```
+section '.bss'
+bss     rb 1024*512   ; 512KB heap
+tib     rb 1024*256   ; 256KB terminal input buffer
+eob     rb 1024       ; scratch
+```
+Result: i386 binary is 28KB on disk, maps 784KB at runtime. The 769KB of
+BSS costs zero bytes in the file.
+
+The ff64 had everything in `section '.flat' writeable executable` — a
+PROGBITS section where FASM fills `rb` reservations with literal zeros.
+All 521KB of buffers were stored as 521KB of zeros on disk.
+
+### How ELF BSS works
+
+In an ELF LOAD segment, `FileSiz` is bytes on disk and `MemSiz` is bytes
+in memory. When `MemSiz > FileSiz`, the kernel zero-fills the extra pages
+on demand — they consume no disk space and no physical RAM until touched.
+This is the BSS mechanism. A section of type `NOBITS` tells the linker to
+create this gap. A section of type `PROGBITS` stores all its bytes in the
+file.
+
+### Changes
+
+**ff64.asm**: Added `section '.bss'` (inside `if defined ffdl`) between
+`boot64_end:` (last initialized data) and the trailing `rb` buffers:
+- `tib rb 1024*256` (256KB)
+- `eob rb 1024` (1KB)
+- `helpbuf rb 131072` (128KB)
+- `dstack rb 8192` (8KB)
+- `codebuf rb 65536` (64KB)
+
+Total: ~457KB moved from file to BSS.
+
+`headbuf rb 65536` stays in `.flat` because it's interleaved with
+initialized data (`heads64: GENWORDS64` immediately follows it).
+
+**exp/086-shrink/Makefile**: Size threshold 640000 → 120000.
+**exp/113-asm-reduction/Makefile**: Size threshold 640000 → 120000.
+
+### Results
+
+```
+Before: 572,000 bytes (558.6KB) — all buffers as zeros on disk
+After:  104,096 bytes (101.7KB) — 457KB moved to BSS
+```
+
+RWE LOAD segment: FileSiz=88.4KB, MemSiz=545.4KB. The 457KB difference
+is demand-allocated by the kernel.
+
+All tests pass (same pre-existing failures only: 073, 078, 079, 080).

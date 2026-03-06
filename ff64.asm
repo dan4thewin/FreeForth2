@@ -2204,9 +2204,17 @@ boot64:    file "ff64.boot.min"
 boot64_end:
     boot64_size = boot64_end - boot64
 
+;; BSS: uninitialized buffers — NOBITS section, not stored in file.
+;; Mirrors i386 pattern (ff.asm:1335): section '.bss' after last initialized data.
+;; The linker merges .flat (WAX) + .bss (WA) into one RWE LOAD segment,
+;; with MemSiz > FileSiz — the kernel zero-fills BSS pages on demand.
+if defined ffdl
+section '.bss'
+end if
+
 tib        rb 1024*256             ; terminal input and file-stack buffer (i386 layout)
 eob        rb 1024                 ; end-of-buffer scratch area
-helpbuf    rb 131072             ; 128KB buffer for help file reading
+helpbuf    rb 131072               ; 128KB buffer for help file reading
 dstack     rb 8192
 dstack_top:
 codebuf    rb 65536
