@@ -203,21 +203,21 @@ t{ _g2 -> 99 }t
 
 \ ============================================================
 \ Group H: IF AGAIN — conditional restart (no THEN)
-\ KNOWN BUG: SEGV at compile time on ff64.
+\ debug.ff: BEGIN wsparse ... 0= IF ct AGAIN  ... REPEAT
 \ ============================================================
 
-\ debug.ff: BEGIN wsparse ... 0= IF ct AGAIN  ... REPEAT
-\ see.ff: ... 0- 0= IF rdrop AGAIN ... REPEAT
+\ count how many times counter equals 3 during 5→0 countdown
+\ IF body: increment accumulator, decrement counter, restart loop
 testing IF AGAIN in BWR
-\ : _h1 0 5 BEGIN dup 0- 0> drop WHILE
-\   dup 3 = 2drop IF swap 1+ swap 1- AGAIN
-\   swap 10 + swap 1- REPEAT nip ;
-skip t{ _h1 -> 41 }t
+: _h1 0 5 BEGIN dup 0- 0> drop WHILE
+  dup 3 = 2drop IF swap 1+ swap 1- AGAIN 1- REPEAT drop ;
+t{ _h1 -> 1 }t
 
+\ same pattern with BEGIN/UNTIL
 testing IF AGAIN in BU
-\ : _h2 0 5 BEGIN dup 3 = 2drop IF swap 1+ swap 1- AGAIN
-\   swap 10 + swap 1- dup 0- 0= drop UNTIL nip ;
-skip t{ _h2 -> 41 }t
+: _h2 0 5 BEGIN dup 3 = 2drop IF swap 1+ swap 1-
+  AGAIN 1- dup 0- 0= drop UNTIL drop ;
+t{ _h2 -> 1 }t
 
 \ ============================================================
 \ Group I: BREAK / IF BREAK / dispatch

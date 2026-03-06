@@ -309,7 +309,7 @@ variable mrk 0 mrk 8+ !
 : START` _begin 0 $E9 c, 0 d, here mrk! ;
 : ENTER` >S0 mrk@ 4- _then ;
 : BEGIN` >S0 _begin 0 ;
-: AGAIN` _jmpback_mrk _end_cs drop ;
+: AGAIN` _jmpback_mrk 0- 0<> IF THEN` ELSE _end_cs drop THEN ;
 : TILL.` cond.
 : TILL` >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
 : UNTIL.` cond.

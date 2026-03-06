@@ -193,17 +193,22 @@ t{ _g2 -> 99 }t
 \ These tests document the bug. Uncomment when fixed.
 \ ============================================================
 
-\ KNOWN BUG: IF AGAIN segfaults during compilation
+\ ============================================================
+\ Group H: IF AGAIN — conditional restart (no THEN)
+\ debug.ff: BEGIN wsparse ... 0= IF ct AGAIN  ... REPEAT
+\ ============================================================
+
+\ count how many times counter equals 3 during 5→0 countdown
+\ IF body: increment accumulator, decrement counter, restart loop
 testing IF AGAIN in BWR
-\ : _h1 0 5 BEGIN dup 0- 0> drop WHILE
-\   dup 3 = 2drop IF swap 1+ swap 1- AGAIN
-\   swap 10 + swap 1- REPEAT nip ;
-skip t{ _h1 -> 41 }t
+: _h1 0 5 BEGIN dup 0- 0> drop WHILE
+  dup 3 = 2drop IF swap 1+ swap 1- AGAIN 1- REPEAT drop ;
+t{ _h1 -> 1 }t
 
 testing IF AGAIN in BU
-\ : _h2 0 5 BEGIN dup 3 = 2drop IF swap 1+ swap 1- AGAIN
-\   swap 10 + swap 1- dup 0- 0= drop UNTIL nip ;
-skip t{ _h2 -> 41 }t
+: _h2 0 5 BEGIN dup 3 = 2drop IF swap 1+ swap 1-
+  AGAIN 1- dup 0- 0= drop UNTIL drop ;
+t{ _h2 -> 1 }t
 
 \ ============================================================
 \ Group I: BREAK / IF BREAK
