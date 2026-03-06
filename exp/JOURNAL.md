@@ -10619,7 +10619,7 @@ Key findings:
 1. **IF AGAIN → SEGV at compile time.** The `IF ... AGAIN` pattern
    (conditional restart without THEN, where IF's forward ref is resolved
    by the loop closer) crashes the compiler. This pattern is used in
-   Lavarenne's `dbgc` (lib/x86/debug.ff:44-45). All loop types affected.
+   DG's `dbgc` (lib/x86/debug.ff:44-45). All loop types affected.
 
 2. **rdrop ;THEN → SEGV at compile time.** The sequence `rdrop` followed
    by `;THEN` crashes the compiler. This blocks the exit-through-caller
@@ -10750,3 +10750,212 @@ when all CASEs miss.
 
 - `make -C exp/135-loop-cond-audit test`: 84/84 pass on both ff64 and ff
 - `make -C exp test`: all pass (exp 073 turnkey failures are pre-existing)
+
+## Experiment 136: Fixing IF AGAIN — The Compile-Time Data Stack
+
+### Goal
+
+Fix the `IF ... AGAIN` compile-time SEGV on ff64. This pattern — conditional
+restart inside a loop — is used in `lib/x86/debug.ff:43–46` (`dbgc`) and
+`lib/x86/see.ff:61`, both written by DG. On i386 it works correctly; on
+ff64 it crashes the compiler.
+
+### Background: What IF AGAIN Means
+
+In FreeForth, `IF ... AGAIN` inside a BEGIN/WHILE/REPEAT loop means: "if
+condition is true, execute this code then restart the loop from BEGIN."
+It's a conditional restart without a THEN — AGAIN's embedded THEN resolves
+IF's forward reference, so the false path skips past AGAIN to the next
+statement.
+
+DG's `dbgc` (the compiler's core word-processing loop) uses this:
+
+```
+:. dbgc  BEGIN wsparse 0- 0> WHILE  dbg,
+    '`'  endc! 1+ xtct 0- 0= IF    ct AGAIN
+    1- 0 endc!    xtct 0- 0= IF 1_ ct AGAIN
+    litcomp REPEAT 2drop ;
+```
+
+Two `IF ... AGAIN` patterns in one loop: when a word is found to be a
+backtick macro (`xtct 0= IF`), compile it (`ct`) and restart the loop
+(`AGAIN`) to process the next word. The false path (not a backtick macro)
+falls through to the next test or to `litcomp`.
+
+### The Bug
+
+On ff64, typing `: foo BEGIN ... IF ... AGAIN ... REPEAT ;` caused a
+SEGV during compilation, never reaching execution. The crash occurred
+inside `REPEAT`, not `AGAIN`.
+
+### Root Cause: AGAIN as Indiscriminate Loop Closer
+
+The original ff64 AGAIN was:
+
+```
+: AGAIN` _jmpback_mrk _end_cs drop ;
+```
+
+This always performed full loop teardown: emit backward jump, resolve all
+break forward references, restore the saved `mrk` variable from the compile
+stack, and drop the loop flag from the data stack. This is correct when
+AGAIN is the sole loop closer (as in `BEGIN ... AGAIN`), but catastrophic
+when AGAIN appears inside an IF body with REPEAT coming later.
+
+In `BEGIN ... WHILE ... IF ... AGAIN ... REPEAT`:
+
+1. `BEGIN` saves mrk to the compile stack (cstack), pushes flag `0` to
+   the data stack, sets mrk to the loop body address.
+2. `WHILE` (= `IF`) pushes a forward reference address to the data stack.
+3. `IF` pushes another forward reference address.
+4. `AGAIN` emits the backward jump — then **tears down the entire loop**.
+   It resolves all breaks (consuming the cstack frame), restores mrk to
+   the outer scope's value, and drops one data stack item.
+5. `REPEAT` now runs in a destroyed environment: mrk points to the wrong
+   address, the cstack frame is gone, and the data stack has orphaned
+   forward references. The result is a SEGV.
+
+### How i386 Gets It Right
+
+On i386, AGAIN is simpler:
+
+```
+: AGAIN` $EB -jmp THEN` ;
+```
+
+Just two operations: `-jmp` emits an unconditional backward jump to mrk,
+and `THEN` resolves the most recent forward reference (IF's). Critically,
+**it does not touch the compile stack or mrk variable**. The loop
+infrastructure remains intact for REPEAT to use.
+
+The difference reflects a deeper architectural choice. The i386 flow
+control uses a secondary compile counter (`SC`) alongside the data stack,
+and THEN resolves forward references through byte-offset patching. The
+ff64 port replaced this with an explicit compile stack (`>cs`/`cs>`) and
+a `_end_cs` teardown operation. The ff64 AGAIN was given the teardown
+operation but didn't need it when used inside an IF body.
+
+### The Fix: Checking the Compile-Time Data Stack
+
+DG's hint: "consider the conditional variable." This pointed toward using
+the compile-time state to distinguish the two AGAIN use cases.
+
+The key insight: the value on top of the data stack at the point AGAIN runs
+tells us everything we need:
+
+- After `BEGIN ... AGAIN` (loop closer): TOS = `0` — the flag pushed by
+  BEGIN that tells REPEAT whether to emit `rdrop`.
+- After `BEGIN ... IF ... AGAIN` (conditional restart): TOS = a nonzero
+  forward reference address pushed by IF (something like `$450ABC`).
+
+The fix uses FreeForth's compile-time conditional idiom to test this:
+
+```
+: AGAIN` _jmpback_mrk 0- 0<> IF THEN` ELSE _end_cs drop THEN ;
+```
+
+When AGAIN executes at compile time:
+
+1. `_jmpback_mrk` — emits `jmp` backward to the loop start. Always needed.
+2. `0- 0<>` — tests TOS in the register. Sets CPU FLAGS at compile time.
+3. `IF ... ELSE ... THEN` — compile-time conditional branch within AGAIN's
+   own machine code body.
+4. **If TOS is nonzero** (forward ref from IF): `THEN\`` resolves the
+   forward reference, patching IF's conditional jump to land here.
+   The loop infrastructure (mrk, cstack) is left intact for REPEAT.
+5. **If TOS is zero** (flag from BEGIN): `_end_cs drop` performs full
+   loop teardown — resolve breaks, restore mrk, drop the flag.
+
+### Compile-Time Conditionals in Backtick Definitions
+
+Understanding how `0- 0<> IF ... ELSE ... THEN` works inside a backtick
+definition was itself a discovery.
+
+A backtick definition (`: AGAIN\` ... ;`) compiles to native machine code
+like any other word. During compilation of AGAIN's body, the backtick words
+`0-`, `0<>`, `IF`, `ELSE`, `THEN` all **execute** (they're immediate),
+emitting machine code instructions into AGAIN's body:
+
+- `0-` emits `or reg,reg` — a register self-test that sets CPU FLAGS
+- `0<>` sets the condition variable `?#` to the JNE opcode
+- `IF` reads `?#` and emits a conditional forward jump
+- `ELSE` emits an unconditional jump and resolves IF
+- `THEN` resolves the ELSE jump
+
+The result: AGAIN's compiled body contains native conditional branches.
+When AGAIN later **executes** (at the user's compile time), these branches
+test the actual CPU register holding TOS — which contains the compile-time
+data stack value (0 or forward-ref address) — and take the appropriate
+path.
+
+This is the same mechanism REPEAT uses to conditionally emit `rdrop`:
+
+```
+: REPEAT` _jmpback_mrk THEN` _end_cs 0- 0<> drop IF _emit_rdrop THEN ;
+```
+
+After `_end_cs` leaves the flag (0 from BEGIN, -1 from TIMES), `0- 0<>`
+tests it at compile time, and `IF _emit_rdrop THEN` conditionally emits
+the rdrop instruction into the user's code. REPEAT uses `drop` before
+`IF` because it doesn't need the flag value afterward; AGAIN omits the
+`drop` because THEN needs TOS to be the forward reference address.
+
+### Experimental Validation
+
+Small experiments drove the debugging process:
+
+1. **Confirming `?#` state** — backtick macros that print `?# c@` showed
+   it's 0 after both BEGIN and IF, ruling out `?#` as a discriminator.
+
+2. **Confirming TOS values** — backtick macros that print `dup` showed
+   TOS = 0 after BEGIN, TOS = large address after IF.
+
+3. **Confirming compile-time branching** — `0- 0<> IF ."Y" THEN` in a
+   backtick definition printed "Y" only when TOS was nonzero, verifying
+   the mechanism works.
+
+4. **Discovering hidden-word visibility** — trying to redefine AGAIN from
+   the REPL failed because `_jmpback_mrk` is a `:. ` (private inline)
+   word hidden by `hidepvt`. The fix had to be made in ff64.boot directly.
+
+5. **Catching the extra `drop`** — the first attempt (`0- 0<> drop IF
+   THEN\` ELSE _end_cs drop THEN`) crashed because `drop` consumed the
+   forward reference that THEN needed. The second attempt removed the
+   pre-THEN drop but left an extra `drop` in the ELSE branch, causing
+   a `-1` stack leak visible at boot. The third attempt got it right.
+
+### The Test
+
+The test uses the simplest possible IF AGAIN pattern: count how many times
+a counter equals 3 during a 5→0 countdown.
+
+```
+: _h1 0 5 BEGIN dup 0- 0> drop WHILE
+  dup 3 = 2drop IF swap 1+ swap 1- AGAIN 1- REPEAT drop ;
+t{ _h1 -> 1 }t
+```
+
+Stack trace: `(acc=0 ctr=5)` → decrement, test, when ctr=3: increment
+acc and restart loop without executing the normal decrement path. Counter
+3 is hit exactly once → result 1.
+
+### Files Changed
+
+- `ff64.boot:312` — one-line AGAIN fix
+- `test/loops.ff` — Group H tests promoted from `skip` to active
+- `exp/135-loop-cond-audit/test.ff` — same
+
+### Remaining ff64 Compiler Bugs
+
+Three of the four known bugs are now fixed or were already fixed:
+
+1. ~~IF AGAIN → SEGV at compile time~~ **FIXED** (this experiment)
+2. **rdrop ;THEN → SEGV at compile time** — still open
+3. **TIMES + WHILE → counter ignored** — still open (hanoi:49)
+4. **Multiple WHILE → no return from word** — still open (hanoi:58,98)
+
+### Results
+
+- `make test64`: all PASSED (including loops.ff with IF AGAIN active)
+- `make test`: all PASSED (ff, ff+longconds, fftk, fftk+longconds)
+- `make -C exp test`: all pass (exp 073 pre-existing failures only)
