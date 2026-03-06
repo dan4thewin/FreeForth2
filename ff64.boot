@@ -632,9 +632,10 @@ variable saved_here pvt
   here saved_here! tib swap eval. ' catch dup 0- 0<> drop IF _recover ELSE drop THEN
 AGAIN
 
-( Command-line arguments — ff_argc and ff_argv set by assembly at startup )
-: argc ff_argc@ ;
-:. _argv 8* ff_argv@ + @ ;
+( Command-line arguments — derived from CS0, set by assembly at startup )
+( Linux x86-64 stack at _start: [rsp]=argc, [rsp+8]=argv[0], ... )
+: argc CS0@ @ ;
+:. _argv 1+ 8* CS0@ + @ ;
 : argv _argv zlen ;
 
 ( Hex memory dump — 16 bytes per line with address header )

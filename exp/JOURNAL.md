@@ -11441,3 +11441,39 @@ RWE LOAD segment: FileSiz=88.4KB, MemSiz=545.4KB. The 457KB difference
 is demand-allocated by the kernel.
 
 All tests pass (same pre-existing failures only: 073, 078, 079, 080).
+
+## Experiment 142: CS0/getenv/envp — port from i386
+
+**Goal**: Replace ff64's separate `ff_argc`/`ff_argv`/`ff_envp` assembly
+variables with `CS0` (initial RSP), matching the i386 pattern. Port
+`envp`, `env`, `getenv`, and `_getenv` from i386's fflin.boot.
+
+**Actions**:
+- **ff64.asm**: Replaced `ff_argc`/`ff_argv`/`ff_envp` (3 dq + 3 headers
+  + startup code that derived them) with single `CS0 dq 0` + `mov [CS0], rsp`.
+  This is exactly what the i386 does: save the initial stack pointer, derive
+  argc/argv/envp in Forth.
+- **ff64.boot**: Changed `argc` from `ff_argc@` to `CS0@ @` (read argc
+  directly from saved RSP). Changed `_argv` from `8* ff_argv@ + @` to
+  `1+ 8* CS0@ + @` (skip argc word, index into argv array).
+- **fflin64.boot**: Added `envp`, `env`, `_getenv`, `getenv` — verbatim
+  from i386 fflin.boot with `8*` replacing `4*` (cell size). These walk
+  the Linux process stack layout: `[argc][argv...][NULL][envp...][NULL]`.
+- **lib/shell.ff**: Removed the `[64]` getenv block (now in boot code).
+  Added comment noting getenv's new location.
+- **Makefile**: Added `"` to boot.min grep pattern — fflin64.boot now has
+  lines starting with `"` (string literals in getenv/ffpath init code).
+- **exp/134-native-getenv**: Updated tests to not require `needs shell.ff`
+  (getenv is now boot-level), and fixed not-found tests to check length
+  only (getenv returns `( stale_ptr 0 )` not `( 0 0 )` — same as i386).
+- **zlen stack effect**: Discovered `zlen ( addr -- addr len )` preserves
+  the address — crucial for understanding `env` and `getenv` iteration.
+
+**Key insight**: The i386 `getenv` return value for "not found" is
+`( stale_addr 0 )`, not `( 0 0 )`. The address is the last envp entry
+pointer. This matches on both i386 and x86-64.
+
+**What's NOT done yet**: The i386 openlib/ffpath uses a counted-string
+chain format (colons converted to count bytes). The existing ff64 openlib
+uses NUL-separated entries and works. Porting the i386 openlib will be a
+separate experiment to add FFPATH environment variable support.

@@ -18,16 +18,16 @@ test:
 		fi; \
 	} && \
 	run "HOME found" \
-		'needs shell.ff "HOME" getenv 0- 0<> drop IF ."PASS" ELSE ."FAIL" THEN cr bye' \
+		'"HOME" getenv 0- 0<> drop IF ."PASS" ELSE ."FAIL" THEN cr 0 exit' \
 		'PASS' && \
 	run "USER found" \
-		'needs shell.ff "USER" getenv 0- 0<> drop IF ."PASS" ELSE ."FAIL" THEN cr bye' \
+		'"USER" getenv 0- 0<> drop IF ."PASS" ELSE ."FAIL" THEN cr 0 exit' \
 		'PASS' && \
-	run "nonexistent returns 0 0" \
-		'needs shell.ff "ZZNONEXIST" getenv + 0- 0= drop IF ."PASS" ELSE ."FAIL" THEN cr bye' \
+	run "nonexistent returns length 0" \
+		'"ZZNONEXIST" getenv 0- 0= drop IF ."PASS" ELSE ."FAIL" THEN nip cr 0 exit' \
 		'PASS' && \
 	run "partial key no match" \
-		'needs shell.ff "HOM" getenv + 0- 0= drop IF ."PASS" ELSE ."FAIL" THEN cr bye' \
+		'"HOM" getenv 0- 0= drop IF ."PASS" ELSE ."FAIL" THEN nip cr 0 exit' \
 		'PASS' && \
 	echo "  ----" && \
 	echo "  $$pass passed, $$fail failed" && \

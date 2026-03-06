@@ -63,7 +63,8 @@ EXPERIMENTS = 023-forthmacros64 \
               134-native-getenv \
               139-eval-fileload \
               140-tib-eob \
-              141-rm-loadfile
+              141-rm-loadfile \
+              142-cs0-getenv
 
 # Known-broken experiments — listed so we know they exist.
 # Fix and move back to EXPERIMENTS when passing.

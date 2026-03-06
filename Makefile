@@ -11,7 +11,7 @@ ff: ff.o
 	$(LD) -o $@ $<
 
 ff64.boot.min: ff64.boot fflin64.boot
-	grep -h '^[: _$$A-Za-z0-9]' $^ > $@
+	grep -h '^[: _$$A-Za-z0-9"]' $^ > $@
 
 ff64.o: fflin64.asm ff64.asm ff64.boot.min
 	fasm $< $@

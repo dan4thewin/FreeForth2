@@ -121,6 +121,17 @@ sigrestorer _ksa 16+ !
 :. SEGVthrow 8 0 _ksa 11 4 13 syscall drop ;
 SEGVthrow ;
 
+( envp/getenv — ported from i386 fflin.boot )
+( CS0 holds initial RSP; Linux puts [argc][argv...][NULL][envp...][NULL] there )
+: envp CS0@ dup @ 2+ 8* + ;
+: env envp @ BEGIN zlen 0<> WHILE 2dup+ -rot type cr 1+ REPEAT 2drop ;
+:. _getenv swap -rot >= drop IF nip ;THEN
+  >r 2dup r $- drop 0<> IF drop r> ;THEN
+  r + c@+ '=- drop 0<> IF drop r> ;THEN
+  nip zlen 2rdrop rdrop ;
+: getenv envp @ BEGIN zlen 0- 0= IF BREAK 2dup+ 1+ >r _getenv
+  r> REPEAT drop nip nip 0 ;
+
 ( FFPATH — search path for needed/openlib )
 ( Default: lib/x86-64:lib:. — overridable via FFPATH env var )
 ( Path stored as NUL-separated directory entries; double-NUL terminates )
