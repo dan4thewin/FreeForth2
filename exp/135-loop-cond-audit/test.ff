@@ -12,7 +12,7 @@
 \ Test naming: _XN where X=group letter, N=sequence number.
 
 needs test.ff
-90 >plan
+91 >plan
 
 \ ============================================================
 \ Group A: Plain loops — sanity baseline
@@ -217,6 +217,11 @@ t{ _h2 -> 1 }t
 testing IF BREAK in BWR
 : _i2 10 BEGIN 1- dup 5 = 2drop IF BREAK dup 0- 0> drop WHILE REPEAT ;
 t{ _i2 -> 5 }t
+
+\ test.ff:28 — chkvals: BEGIN depth 0; dropr> <> 2drop IF depth +r BREAK REPEAT
+testing IF BREAK in BR (no WHILE)
+: _i2b 0 BEGIN dup 9 > 2drop IF BREAK 1+ REPEAT ;
+t{ _i2b -> 10 }t
 
 testing IF BREAK in BU + END
 : _i3 0 BEGIN 1+ dup 3 = 2drop IF BREAK dup 10 = 2drop UNTIL ;

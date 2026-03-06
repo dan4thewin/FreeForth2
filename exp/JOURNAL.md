@@ -10959,3 +10959,85 @@ Three of the four known bugs are now fixed or were already fixed:
 - `make test64`: all PASSED (including loops.ff with IF AGAIN active)
 - `make test`: all PASSED (ff, ff+longconds, fftk, fftk+longconds)
 - `make -C exp test`: all pass (exp 073 pre-existing failures only)
+
+---
+
+## Experiment 137 — Fix REPEAT for BEGIN...IF BREAK...REPEAT (No WHILE)
+
+**Date:** 2026-03-06
+**Branch:** exp64-1
+**Status:** PASS
+
+### Goal
+
+Fix a compile-time SEGV when REPEAT appears without a preceding WHILE.
+The pattern `BEGIN ... IF BREAK ... REPEAT` is legitimate — it appears in
+DG's `chkvals` (test.ff:28) and Lavarenne's `\`emu?` (ff43.ff:700) — but
+crashed ff64 because REPEAT unconditionally called `THEN\`` to resolve a
+WHILE forward reference that didn't exist.
+
+### Background
+
+DG tested: `: t1 BEGIN dup 9 > 2drop IF BREAK 1+ REPEAT ;` — SEGV at
+compile time. This is the same class of bug as the IF AGAIN fix from
+experiment 136: a loop closer assumes something is on the compile-time
+data stack that isn't there.
+
+The chain of events:
+1. BREAK's `_then` resolves IF's forward reference, leaving only the 0
+   flag from BEGIN on the data stack
+2. REPEAT calls `_jmpback_mrk` (backward jump — fine)
+3. REPEAT then calls `THEN\`` unconditionally — but TOS is 0 (no WHILE
+   forward ref to resolve) → attempts to patch address 0 → SEGV
+
+### The Fix
+
+Same compile-time TOS check used in AGAIN (exp 136):
+
+```forth
+\ Before (crashes without WHILE):
+: REPEAT` _jmpback_mrk THEN` _end_cs 0- 0<> drop IF _emit_rdrop THEN ;
+
+\ After (checks TOS before THEN):
+: REPEAT` _jmpback_mrk 0- 0<> IF THEN` THEN _end_cs 0- 0<> drop IF _emit_rdrop THEN ;
+```
+
+The `0- 0<>` tests TOS without consuming it:
+- **TOS = nonzero** (WHILE's forward ref): execute `THEN\`` to resolve it
+- **TOS = 0** (no WHILE): skip `THEN\``, proceed to `_end_cs`
+
+This doesn't affect TIMES...REPEAT because RTIMES pushes a nonzero JS
+fixup address — the THEN resolves the JS that RTIMES uses internally.
+
+### Provenance
+
+Two real-world uses found in the codebase:
+
+1. **test.ff:28** (DG's `chkvals`):
+   `BEGIN depth 0; dropr> <> 2drop IF depth +r BREAK REPEAT`
+   — Loop checking expected values; breaks on first mismatch.
+
+2. **ff43.ff:700** (Lavarenne's `\`emu?`):
+   `TIMES w@+ >rswapr> = drop swap IF 4 \`type 0 BREAK 4+ REPEAT nip 0-`
+   — Scan emulated-opcode table; break on match.
+
+### Files Changed
+
+- `ff64.boot:321` — one-line REPEAT fix (added `0- 0<> IF ... THEN` guard)
+- `test/loops.ff` — added `_i2b` test for BEGIN...IF BREAK...REPEAT
+- `exp/135-loop-cond-audit/test.ff` — same
+- `exp/GUIDE.md` — updated loop closer descriptions and added pattern example
+
+### Results
+
+- `make test64`: all PASSED (loops.ff: 87 ok + 4 skip = 91)
+- `make test`: all PASSED (ff, ff+longconds, fftk, fftk+longconds)
+- `make -C exp test`: all pass (exp 073 pre-existing failures only)
+
+### Remaining ff64 Compiler Bugs
+
+1. ~~IF AGAIN → SEGV~~ **FIXED** (exp 136)
+2. ~~BEGIN...IF BREAK...REPEAT → SEGV~~ **FIXED** (this experiment)
+3. **rdrop ;THEN → SEGV at compile time** — still open
+4. **TIMES + WHILE → counter ignored** — still open
+5. **Multiple WHILE → no return** — still open

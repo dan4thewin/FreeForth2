@@ -318,7 +318,7 @@ variable mrk 0 mrk 8+ !
 : WHILE` IF` ;
 : BREAK` >S0 $E9 c, 0 d, here 4- >cs _then ;
 : END` >S0 _end_cs drop ;
-: REPEAT` _jmpback_mrk THEN` _end_cs 0- 0<> drop IF _emit_rdrop THEN ;
+: REPEAT` _jmpback_mrk 0- 0<> IF THEN` THEN _end_cs 0- 0<> drop IF _emit_rdrop THEN ;
 : TIMES` >r`
 : RTIMES` >S0 _begin -1 $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
 : LOOP` >S0 _jmpback_mrk THEN` _end_cs drop rdrop` ;

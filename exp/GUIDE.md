@@ -2136,10 +2136,14 @@ pushes a 0 break-sentinel, stores `here` in mrk[0].
 - `RTIMES`: pushes -1 (rdrop needed) + JS fixup address
 
 **3. Loop closers use mrk for backward jumps and cstack for breaks:**
-- `AGAIN`: backward E9 to mrk, resolve breaks, restore mrk, drop flag
+- `AGAIN`: backward E9 to mrk. If TOS is nonzero (forward ref from IF),
+  resolves it via THEN instead of tearing down loop infrastructure.
+  Otherwise: resolve breaks, restore mrk, drop flag.
 - `UNTIL`: conditional backward to mrk, resolve breaks, restore mrk
-- `REPEAT`: backward E9, resolve WHILE, resolve breaks, conditional
-  rdrop based on flag (-1 means TIMES loop needs rdrop)
+- `REPEAT`: backward E9. If TOS is nonzero, resolves WHILE's forward
+  ref via THEN; if TOS is zero (no WHILE — e.g., `BEGIN...IF BREAK...
+  REPEAT`), skips the THEN. Then: resolve breaks, restore mrk,
+  conditional rdrop based on flag (-1 means TIMES loop needs rdrop).
 - `END`: resolve breaks ONLY (no backward jump!), drop flag
 
 **4. BREAK pushes to cstack, not mrk chain:**
@@ -2174,6 +2178,10 @@ not tangled into the generated code.
 
 \ Loop with early exit (AGAIN provides the backward jump):
 : countdown 5 BEGIN 1- dup . space 0- 0= IF BREAK AGAIN drop cr ;
+
+\ Loop with IF BREAK but no WHILE (REPEAT skips THEN resolution):
+\ test.ff:28 — chkvals:  BEGIN depth 0; dropr> <> 2drop IF depth +r BREAK REPEAT
+: countup 0 BEGIN dup 9 > 2drop IF BREAK 1+ REPEAT ;
 
 \ START skips body on first entry (ENTER patches the forward jmp):
 : repl START eval ENTER ok WHILE REPEAT ;
