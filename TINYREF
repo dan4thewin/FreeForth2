@@ -1,0 +1,311 @@
+\ TINYREF — FreeForth2 Core Quick Reference (x86 + x86-64)
+\
+\ Core words only. See QUICKREF for full list (libs, OS, FPU, etc).
+\ One line per word: name, stack effect, short description.
+\ Derived from ff.help (x86) and ff64.help (x86-64 additions).
+\
+\ Notation:
+\   n=number  @=address  #=count  c=char/byte  ?=boolean
+\   xx=double-cell (PNO accumulator)  f:x=FP stack item
+\   ( == ) = return stack effect
+\   Backtick words (e.g. dup`) are compile-time macros.
+\   Without the backtick: inline at compile time. With it: call at runtime.
+\   FLAGS-based: comparisons set CPU flags, NOT a stack boolean.
+\   [x86-64]    = x86-64 only or differs from x86
+\   [x86 only]  = x86 only, not present on x86-64
+\
+
+\ ===================== STACK OPERATIONS =====================
+
+dup`		( x -- x x )			duplicate TOS (macro: register rename)
+2dup`		( x y -- x y x y )		duplicate top two cells
+3dup`		( x y z -- x y z x y z )	triplicate top three cells
+?dup		( 0 -- 0 | x -- x x )		dup only if TOS nonzero
+swap`		( x y -- y x )			exchange TOS/NOS (register rename)
+2swap`		( w x y z -- y z w x )		exchange top two pairs
+over`		( x y -- x y x )		copy NOS over TOS
+2over`		( a b c d -- a b c d a b)	copy 3rd/4th over top pair
+under`		( x y -- x x y )		copy NOS under TOS
+tuck`		( x y -- y x y )		copy TOS under NOS
+nipdup`		( x y -- y y )			overwrite NOS with TOS
+pick`		( xn..x0 n -- xn..x0 xn)	copy nth item to TOS (n is literal)
+drop`		( n -- )			discard TOS
+2drop`		( x y -- )			discard top two cells
+nip`		( x y -- y )			discard NOS
+rot`		( x y z -- y z x )		rotate 3rd to top
+-rot`		( x y z -- z x y )		rotate top to 3rd
+>rswapr>`	( x y z -- y x z )		exchange 2nd and 3rd cells
+2xchg`		( x y z -- z y x )		exchange 1st and 3rd cells
+bounds`		( @ # -- @+# @ )		convert addr+count to limit+start
+depth		( -- n )			net cells pushed since startup
+
+\ =================== RETURN STACK OPS ======================
+
+>r`		( x -- | == x )			move TOS to return stack
+2>r`		( x y -- | == x y )		move two cells to return stack
+dup>r`		( x -- x | == x )		copy TOS to return stack
+2dup>r`		( x y -- x y | == x y )		copy two cells to return stack
+r>`		( -- x | x == )			move return stack top to data stack
+2r>`		( -- x y | x y == )		move two cells from return stack
+dropr>`		( x -- y | y == )		replace TOS with return stack top
+r`		( -- x | x == x )		copy return stack top (no pop)
+2r`		( -- x y | x y == x y )		copy top two return cells (no pop)
+rdrop`		( -- | x == )			discard return stack top
+2rdrop`		( -- | x y == )			discard top two return cells
+>>r`		( xn..x1 n -- | == xn..x1)	move n cells to return stack
+>>rr`		( xn..x1 n -- | == x1..xn)	move n cells, reversed order
+sp@`		( -- @ )			push data stack pointer [ff64:R15]
+
+\ ================ INTEGER ARITHMETIC =======================
+
++`		( x y -- x+y )			add
+-`		( x y -- x-y )			subtract
+*`		( x y -- x*y )			multiply (signed)
+/`		( x y -- x/y )			divide (signed, rounds toward zero)
+%`		( x y -- x%y )			modulo (sign = x sign)
+&`		( x y -- x&y )			bitwise AND
+|`		( x y -- x|y )			bitwise OR
+^`		( x y -- x^y )			bitwise XOR
+over+`		( x y -- x y+x )		add NOS into TOS
+over-`		( x y -- x y-x )		subtract NOS from TOS
+over*`		( x y -- x x*y )		multiply NOS into TOS
+over&`		( x y -- x y&x )		AND NOS into TOS
+over|`		( x y -- x y|x )		OR NOS into TOS
+over^`		( x y -- x y^x )		XOR NOS into TOS
+2dup+`		( x y -- x y x+y )		push sum of TOS and NOS
+~`		( u -- ~u )			bitwise complement (no flag change!)
+negate`		( n -- -n )			two's complement negate
+bswap`		( n -- n' )			reverse byte order
+flip`		( n -- n' )			swap low two bytes
+1+`		( n -- n+1 )			increment
+1-`		( n -- n-1 )			decrement
+2+`		( n -- n+2 )			add 2
+4+`		( n -- n+4 )			add 4 (x86 cell+)
+8+`		( n -- n+8 )			add 8 (ff64 cell+) [ff64]
+
+\ =========== COMPARISONS / CONDITIONALS (FLAGS) ============
+\ These set CPU FLAGS and store a jump opcode. No boolean pushed.
+\ Use before IF, WHILE, UNTIL, TILL, ?.
+
+0-`		( -- )				test TOS (or ebx,ebx) — set FLAGS
+0=`		( -- )				select: jump if zero
+0<>`		( -- )				select: jump if nonzero
+0<`		( -- )				select: jump if negative
+0>=`		( -- )				select: jump if non-negative
+0>`		( -- )				select: jump if positive
+0<=`		( -- )				select: jump if non-positive
+C1?`		( -- )				select: jump if carry set
+C0?`		( -- )				select: jump if carry clear
+=`		( -- )				compare NOS vs TOS, jump if equal
+<>`		( -- )				compare NOS vs TOS, jump if not equal
+<`		( -- )				compare NOS vs TOS, jump if less
+>`		( -- )				compare NOS vs TOS, jump if greater
+<=`		( -- )				compare NOS vs TOS, jump if <=
+>=`		( -- )				compare NOS vs TOS, jump if >=
+u<`		( -- )				unsigned: jump if below
+u>`		( -- )				unsigned: jump if above
+u<=`		( -- )				unsigned: jump if not above
+u>=`		( -- )				unsigned: jump if not below
+
+\ =================== MEMORY ACCESS =========================
+
+@`		( @ -- n )			fetch cell (64-bit on ff64)
+c@`		( @ -- c )			fetch byte, zero-extend
+cs@`		( @ -- c )			fetch byte, sign-extend
+w@`		( @ -- w )			fetch 16-bit, zero-extend
+ws@`		( @ -- w )			fetch 16-bit, sign-extend
+2@`		( @ -- lo hi )			fetch double-cell (x86: 64-bit)
+d@`		( @ -- n )			fetch 64-bit value [ff64: same as @]
+dup@`		( @ -- @ n )			fetch cell, keep address
+dupc@`		( @ -- @ c )			fetch byte, keep address
+dupw@`		( @ -- @ w )			fetch 16-bit, keep address
+@+`		( @ -- @+cell n )		fetch cell and advance address
+c@+`		( @ -- @+1 c )			fetch byte and advance address
+w@+`		( @ -- @+2 w )			fetch 16-bit and advance address
+!`		( n @ -- )			store cell
+c!`		( c @ -- )			store byte
+w!`		( w @ -- )			store 16-bit
+2!`		( lo hi @ -- )			store double-cell
+d!`		( n @ -- )			store 64-bit [ff64: same as !]
++!`		( n @ -- )			add n to cell at @
+-!`		( n @ -- )			subtract n from cell at @
+over!`		( @ n -- @ )			store n at @, keep @
+overc!`		( @ c -- @ )			store byte, keep address
+overw!`		( @ w -- @ )			store 16-bit, keep address
+over+!`		( @ n -- @ )			add n at @, keep address
+over-!`		( @ n -- @ )			sub n from @, keep address
+tuck!`		( n @ -- @ )			store n at @, keep @ on top
+tuckc!`		( c @ -- @ )			store byte, keep @ on top
+tuckw!`		( w @ -- @ )			store 16-bit, keep @ on top
+tuck+!`		( n @ -- @ )			add n at @, keep @ on top
+tuck-!`		( n @ -- @ )			sub n at @, keep @ on top
+tuckd!`		( n @ -- @ )			store 64-bit, keep @ [ff64]
+2dup!`		( n @ -- n @ )			store NOS at TOS, keep both
+2dupc!`		( c @ -- c @ )			store byte, keep both
+2dupw!`		( w @ -- w @ )			store 16-bit, keep both
+2dup+!`		( n @ -- n @ )			add NOS to [TOS], keep both
+2dup-!`		( n @ -- n @ )			sub NOS from [TOS], keep both
+2dupd!`		( n @ -- n @ )			store 64-bit, keep both [ff64]
+on`		( @ -- )			store -1 (all bits set) at @
+off`		( @ -- )			store 0 at @
+
+\ ================== COMPILATION ============================
+
+here`		( -- @ )			current compilation pointer (macro)
+allot`		( n -- )			advance compilation pointer by n
+align`		( -- )				align here to 4-byte boundary
+,`		( n -- )			compile 32-bit value at here
+c,`		( c -- )			compile byte at here
+w,`		( w -- )			compile 16-bit at here
+d,`		( n -- )			compile 64-bit at here [ff64]
+,1`		( -- )				advance compilation ptr by 1
+,2`		( -- )				advance compilation ptr by 2
+,3`		( -- )				advance compilation ptr by 3
+,4`		( -- )				advance compilation ptr by 4
+nop`		( -- )				compile NOP ($90) [ff64]
+lit`		( n -- ; -- n )			compile literal push
+'`		( -- )				convert preceding call to literal
+-call		( -- @ )			uncall: extract call target addr
+call,		( @ -- )			compile a call to @
+callmark	( -- @ )			var: addr after last compiled call
+;;`		( -- )				compile ret (or tail-call optimize)
+tailrec		( -- @ )			var: enable/disable tail-call opt
+
+\ --- Compiler loop ---
+
+compiler	( -- )				main compiler loop (vectorized)
+eval		( @ # -- )			compile source string
+[`		( -- anon SC )			suspend def, start anonymous
+]`		( anon SC -- )			end anonymous, resume outer def
+anon		( -- @ )			var: anonymous def entry point
+anon:`		( -- )				reset state for new anonymous def
+;`		( -- )				close def; execute if anonymous
+classes		( -- @ )			table of header type behaviors
+
+\ --- Compile-time stack [ff64] ---
+
+>cs		( n -- )			push to compile-time stack [ff64]
+cs>		( -- n )			pop from compile-time stack [ff64]
+
+\ ================ DEFINING WORDS ===========================
+
+:`		( <name> -- )			define a named word (code type)
+:.`		( <name> -- )			define a private named word
+alias`		( @ <name> -- )			create synonym for existing word
+create`		( <name> -- )			define data-type word
+variable`	( <name> -- ; -- @ )		define cell variable (init 0)
+constant`	( n <name> -- ; -- n )		define a constant
+equ`		( n <name> -- ; -- n )		alias for constant`
+:^`		( <name> -- )			define redirectable vector
+!^`		( @ vec -- )			set vector target (macro)
+@^`		( vec -- @ )			read vector target (macro)
+^^`		( vec -- )			reset vector to default (macro)
+n^`		( vec -- )			nop vector (do nothing) (macro)
+x^`		( vec -- )			execute vector body (macro)
+header		( @ # xt ct -- )		create raw dictionary header
+H		( -- @ )			var: symbol table pointer
+h.ct		( -- n )			offset of ct field in header
+h.sz		( -- n )			offset of sz field in header
+h.nm		( -- n )			offset of nm field in header
+h.name		( hdr -- )			print header name [ff64]
+h.next		( hdr -- hdr' )			advance to next header [ff64]
+find		( @ # -- ptr 0 | @ # )		look up word in symbol table
+which		( -- @ )			var: last header found by find
+
+\ =================== FLOW CONTROL ==========================
+
+execute		( @ -- )			call address on TOS
+reverse`	( -- )				swap return addr with code after
+catch		( @ -- err )			push exception frame, call @
+throw		( err -- )			unwind to last catch
+?`		( -- )				convert last call to cond jump
+
+\ --- IF / ELSE / THEN ---
+
+IF`		( -- )				forward cond jump (needs condition)
+IF.`		( ? -- )			forward jump on stack boolean
+ELSE`		( -- )				uncond jump + resolve prior IF
+SKIP`		( -- )				forward unconditional jump
+THEN`		( -- )				resolve forward jump from IF/ELSE
+;THEN`		( -- )				compile ret, then resolve IF
+CASE`		( x y -- x | x x -- )		equal-test + forward cond jump
+
+\ --- Loops ---
+
+BEGIN`		( -- )				open loop, mark entry point
+TIMES`		( n -- | == n )			counted loop: n times (n on rstack)
+RTIMES`		( -- | n == )			open counted loop (n already on R)
+START`		( -- )				loop with forward jump to ENTER
+ENTER`		( -- )				resolve START's forward jump
+TILL`		( -- )				backward cond jump to BEGIN
+TILL.`		( ? -- )			TILL using stack boolean
+WHILE`		( -- )				forward cond jump out of loop
+WHILE.`		( ? -- )			WHILE using stack boolean
+AGAIN`		( -- )				backward uncond jump + resolve IF
+BREAK`		( -- )				forward uncond jump out of loop
+END`		( -- )				resolve WHILE/BREAK fwd refs
+UNTIL`		( -- )				backward cond jump + END
+UNTIL.`		( ? -- )			UNTIL using stack boolean
+REPEAT`		( -- )				backward uncond jump + END
+0;`		( 0 -- | ? -- ? )		if TOS=0 drop and return
+0<>;`		( n -- | 0 -- 0 )		if TOS!=0 drop and return
++longconds`	( -- )				enable long forward jumps
+-longconds`	( -- )				restore short forward jumps
+
+\ ===================== STRINGS =============================
+\ String literals are compiled by the stringcompiler.
+\ Special chars in strings: _ =space  ^X =ctrl-X  ~ =toggle bit7
+\                           \c =literal c
+
+,"..."		( -- )				compile raw string (no count)
+!"..."		( -- )				compile string + throw it as error
+"..."		( -- @ # )			compile counted string, push addr/#
+."..."		( -- )				compile string + type it
+zt		( @ # -- @ )			append NUL byte (zero-terminate)
+append		( @s # @d -- )			append # bytes to counted @d
+appendc		( c @d -- )			append byte to counted @d
+
+\ ================= I/O =====================================
+
+type		( @ # -- )			write string to stdout (vector)
+accept		( @ # -- n )			read line from stdin (vector)
+emit		( c -- )			write one byte to stdout
+space		( -- )				emit a space
+cr		( -- )				emit newline
+key		( -- c )			read one byte from stdin
+putc		( c -- )			redirectable emit (used by . etc)
+stdin		( -- 0 )			file descriptor: standard input
+stdout		( -- 1 )			file descriptor: standard output
+stderr		( -- 2 )			file descriptor: standard error
+
+\ ============== NUMBER DISPLAY =============================
+
+.		( n -- )			print n in current base + space
+.\		( n -- )			print n in current base (no space)
+.dec		( n -- )			print n in decimal + space
+.dec\		( n -- )			print n in decimal (no space)
+.x		( n -- )			print n in hex ($ prefix) + space
+.x\		( n -- )			print n in hex (no space)
+.ux		( u -- )			print unsigned hex + space
+.ux\		( u -- )			print unsigned hex (no space)
+.u		( u -- )			print unsigned in base + space
+.u\		( u -- )			print unsigned in base (no space)
+.ub		( u b -- )			print u in base b + space
+.ub\		( u b -- )			print u in base b (no space)
+.l		( u -- )			print as 8 hex digits
+.w		( w -- )			print as 4 hex digits
+.b		( c -- )			print as 2 hex digits
+.#s		( u c -- )			print u as c hex digits
+.digit		( c -- )			emit digit char for value 0-35
+base		( -- @ )			var: output conversion base
+
+\ =============== CONCEPTS ==================================
+\ DATAstack  — separate data stack; TOS cached in registers
+\ CALLstack  — return stack; also loop counters, >r temps
+\ TOS        — top of stack (rightmost in diagrams)
+\ NOS        — next of stack (second element)
+\ SWAPbit    — SC bit1: which register is TOS vs NOS
+\ CALLbit    — SC bit0: data/call stack pointer swap [x86 only]
+\ anonymous  — unnamed defs auto-execute on ; (STATE-free)
+\ backquote  — ` suffix marks macros (immediate execution)
+\ FLAGS      — CPU flags drive conditionals (not booleans)

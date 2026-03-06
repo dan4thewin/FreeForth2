@@ -1,0 +1,911 @@
+\ QUICKREF — FreeForth2 Quick Reference (x86 + x86-64)
+\
+\ One line per word: name, stack effect, short description.
+\ Derived from ff.help (x86) and ff64.help (x86-64 additions).
+\
+\ Notation:
+\   n=number  @=address  #=count  c=char/byte  ?=boolean
+\   xx=double-cell (PNO accumulator)  f:x=FP stack item
+\   ( == ) = return stack effect
+\   Backtick words (e.g. dup`) are compile-time macros.
+\   Without the backtick: inline at compile time. With it: call at runtime.
+\   FLAGS-based: comparisons set CPU flags, NOT a stack boolean.
+\   [x86-64]    = x86-64 only or differs from x86
+\   [x86 only]  = x86 only, not present on x86-64
+\
+
+\ ===================== STACK OPERATIONS =====================
+
+dup`		( x -- x x )			duplicate TOS (macro: register rename)
+2dup`		( x y -- x y x y )		duplicate top two cells
+3dup`		( x y z -- x y z x y z )	triplicate top three cells
+?dup		( 0 -- 0 | x -- x x )		dup only if TOS nonzero
+swap`		( x y -- y x )			exchange TOS/NOS (register rename)
+2swap`		( w x y z -- y z w x )		exchange top two pairs
+over`		( x y -- x y x )		copy NOS over TOS
+2over`		( a b c d -- a b c d a b)	copy 3rd/4th over top pair
+under`		( x y -- x x y )		copy NOS under TOS
+tuck`		( x y -- y x y )		copy TOS under NOS
+nipdup`		( x y -- y y )			overwrite NOS with TOS
+pick`		( xn..x0 n -- xn..x0 xn)	copy nth item to TOS (n is literal)
+drop`		( n -- )			discard TOS
+2drop`		( x y -- )			discard top two cells
+nip`		( x y -- y )			discard NOS
+rot`		( x y z -- y z x )		rotate 3rd to top
+-rot`		( x y z -- z x y )		rotate top to 3rd
+>rswapr>`	( x y z -- y x z )		exchange 2nd and 3rd cells
+2xchg`		( x y z -- z y x )		exchange 1st and 3rd cells
+bounds`		( @ # -- @+# @ )		convert addr+count to limit+start
+depth		( -- n )			net cells pushed since startup
+
+\ =================== RETURN STACK OPS ======================
+
+>r`		( x -- | == x )			move TOS to return stack
+2>r`		( x y -- | == x y )		move two cells to return stack
+dup>r`		( x -- x | == x )		copy TOS to return stack
+2dup>r`		( x y -- x y | == x y )		copy two cells to return stack
+r>`		( -- x | x == )			move return stack top to data stack
+2r>`		( -- x y | x y == )		move two cells from return stack
+dropr>`		( x -- y | y == )		replace TOS with return stack top
+r`		( -- x | x == x )		copy return stack top (no pop)
+2r`		( -- x y | x y == x y )		copy top two return cells (no pop)
+rdrop`		( -- | x == )			discard return stack top
+2rdrop`		( -- | x y == )			discard top two return cells
+>>r`		( xn..x1 n -- | == xn..x1)	move n cells to return stack
+>>rr`		( xn..x1 n -- | == x1..xn)	move n cells, reversed order
+-r`		( n -- | == ?n..?1 )		reserve n cells on return stack
++r`		( n -- | xn..x1 == )		drop n return stack cells
+xxr`		( n -- | xn..x1 == )		alias for +r`
+r0`		( -- x | x == x )		read return stack cell 0 (top)
+r1`		( -- x | x y == x y )		read return stack cell 1
+r2`		( -- x | x y z == x y z)	read return stack cell 2
+r3`		( -- x )			read return stack cell 3
+r4`		( -- x )			read return stack cell 4
+r5`		( -- x )			read return stack cell 5
+r0!`		( x -- | a == x )		store into return stack cell 0
+r1!`		( x -- | b a == x a )		store into return stack cell 1
+r2!`		( x -- | c b a == x b a)	store into return stack cell 2
+r3!`		( x -- )			store into return stack cell 3
+r4!`		( x -- )			store into return stack cell 4
+r5!`		( x -- )			store into return stack cell 5
+r!`		( x -- | a == x )		alias for r0!`
+rp@`		( -- @ )			push return stack pointer [ff64:RSP]
+sp@`		( -- @ )			push data stack pointer [ff64:R15]
+
+\ ================ INTEGER ARITHMETIC =======================
+
++`		( x y -- x+y )			add
+-`		( x y -- x-y )			subtract
+*`		( x y -- x*y )			multiply (signed)
+/`		( x y -- x/y )			divide (signed, rounds toward zero)
+%`		( x y -- x%y )			modulo (sign = x sign)
+&`		( x y -- x&y )			bitwise AND
+|`		( x y -- x|y )			bitwise OR
+^`		( x y -- x^y )			bitwise XOR
+over+`		( x y -- x y+x )		add NOS into TOS
+over-`		( x y -- x y-x )		subtract NOS from TOS
+over*`		( x y -- x x*y )		multiply NOS into TOS
+over&`		( x y -- x y&x )		AND NOS into TOS
+over|`		( x y -- x y|x )		OR NOS into TOS
+over^`		( x y -- x y^x )		XOR NOS into TOS
+2dup+`		( x y -- x y x+y )		push sum of TOS and NOS
+~`		( u -- ~u )			bitwise complement (no flag change!)
+negate`		( n -- -n )			two's complement negate
+bswap`		( n -- n' )			reverse byte order
+flip`		( n -- n' )			swap low two bytes
+1+`		( n -- n+1 )			increment
+1-`		( n -- n-1 )			decrement
+2+`		( n -- n+2 )			add 2
+4+`		( n -- n+4 )			add 4 (x86 cell+)
+8+`		( n -- n+8 )			add 8 (ff64 cell+) [ff64]
+8-`		( n -- n-8 )			subtract 8 [ff64]
+2*`		( n -- n*2 )			shift left 1
+2/`		( n -- n/2 )			arithmetic shift right 1
+4*`		( n -- n*4 )			shift left 2
+4/`		( n -- n/4 )			arithmetic shift right 2
+8*`		( n -- n*8 )			shift left 3
+8/`		( n -- n/8 )			arithmetic shift right 3
+<<`		( n u -- n<<u )			shift left by u bits
+>>`		( u n -- u>>n )			logical shift right by n bits
+++`		( -- )				increment variable in place (macro)
+--`		( -- )				decrement variable in place (macro)
+/%`		( x y -- x%y x/y )		signed divide with remainder
+m/mod`		( xl xh y -- r q )		signed 128/64-bit divide [ff64:128b]
+um/mod`		( xl xh y -- r q )		unsigned 128/64-bit divide
+m*`		( x y -- lo hi )		signed multiply to double-cell
+um*`		( x y -- lo hi )		unsigned multiply to double-cell
+*/mod`		( x y z -- r q )		x*y/z with double intermediate
+*/`		( x y z -- q )			x*y/z quotient only
+s>d`		( x -- xl xh )			sign-extend to double-cell
+d+`		( xl xh yl yh -- zl zh )	double-cell addition
+min`		( x y -- min )			signed minimum
+max`		( x y -- max )			signed maximum
+within		( n lo hi -- ; z? )		true if lo<=n<hi (sets FLAGS)
+abs`		( x -- |x| )			absolute value
+dnegate`	( dl dh -- -dl -dh )		negate double-cell
+dabs`		( dl dh -- |dl| |dh| )		absolute value double-cell
+
+\ =========== COMPARISONS / CONDITIONALS (FLAGS) ============
+\ These set CPU FLAGS and store a jump opcode. No boolean pushed.
+\ Use before IF, WHILE, UNTIL, TILL, ?.
+
+0-`		( -- )				test TOS (or ebx,ebx) — set FLAGS
+0=`		( -- )				select: jump if zero
+0<>`		( -- )				select: jump if nonzero
+0<`		( -- )				select: jump if negative
+0>=`		( -- )				select: jump if non-negative
+0>`		( -- )				select: jump if positive
+0<=`		( -- )				select: jump if non-positive
+C1?`		( -- )				select: jump if carry set
+C0?`		( -- )				select: jump if carry clear
+=`		( -- )				compare NOS vs TOS, jump if equal
+<>`		( -- )				compare NOS vs TOS, jump if not equal
+<`		( -- )				compare NOS vs TOS, jump if less
+>`		( -- )				compare NOS vs TOS, jump if greater
+<=`		( -- )				compare NOS vs TOS, jump if <=
+>=`		( -- )				compare NOS vs TOS, jump if >=
+u<`		( -- )				unsigned: jump if below
+u>`		( -- )				unsigned: jump if above
+u<=`		( -- )				unsigned: jump if not above
+u>=`		( -- )				unsigned: jump if not below
+
+\ --- Dotted versions: push boolean, do NOT set ?# ---
+
+0=.`		( n -- ? )			TOS==0 ? -1 : 0
+0<>.`		( n -- ? )			TOS!=0 ? -1 : 0
+0<.`		( n -- ? )			TOS<0  ? -1 : 0
+0>=.`		( n -- ? )			TOS>=0 ? -1 : 0
+0>.`		( n -- ? )			TOS>0  ? -1 : 0
+0<=.`		( n -- ? )			TOS<=0 ? -1 : 0
+=.`		( x y -- ? )			NOS==TOS ? -1 : 0
+<>.`		( x y -- ? )			NOS!=TOS ? -1 : 0
+<.`		( x y -- ? )			NOS<TOS  ? -1 : 0
+>.`		( x y -- ? )			NOS>TOS  ? -1 : 0
+<=.`		( x y -- ? )			NOS<=TOS ? -1 : 0
+>=.`		( x y -- ? )			NOS>=TOS ? -1 : 0
+u<.`		( x y -- ? )			unsigned below
+u>.`		( x y -- ? )			unsigned above
+u<=.`		( x y -- ? )			unsigned not above
+u>=.`		( x y -- ? )			unsigned not below
+
+\ --- Boolean/flag utilities ---
+
+BOOL`		( -- ? )			convert FLAGS to stack boolean (-1/0)
+nzTRUE		( -- ; nz )			set nonzero flag (Z clear)
+zFALSE		( -- ; z )			set zero flag (Z set)
+
+\ =================== MEMORY ACCESS =========================
+
+@`		( @ -- n )			fetch cell (64-bit on ff64)
+c@`		( @ -- c )			fetch byte, zero-extend
+cs@`		( @ -- c )			fetch byte, sign-extend
+w@`		( @ -- w )			fetch 16-bit, zero-extend
+ws@`		( @ -- w )			fetch 16-bit, sign-extend
+2@`		( @ -- lo hi )			fetch double-cell (x86: 64-bit)
+d@`		( @ -- n )			fetch 64-bit value [ff64: same as @]
+dup@`		( @ -- @ n )			fetch cell, keep address
+dupc@`		( @ -- @ c )			fetch byte, keep address
+dupw@`		( @ -- @ w )			fetch 16-bit, keep address
+@+`		( @ -- @+cell n )		fetch cell and advance address
+c@+`		( @ -- @+1 c )			fetch byte and advance address
+w@+`		( @ -- @+2 w )			fetch 16-bit and advance address
+!`		( n @ -- )			store cell
+c!`		( c @ -- )			store byte
+w!`		( w @ -- )			store 16-bit
+2!`		( lo hi @ -- )			store double-cell
+d!`		( n @ -- )			store 64-bit [ff64: same as !]
++!`		( n @ -- )			add n to cell at @
+-!`		( n @ -- )			subtract n from cell at @
+over!`		( @ n -- @ )			store n at @, keep @
+overc!`		( @ c -- @ )			store byte, keep address
+overw!`		( @ w -- @ )			store 16-bit, keep address
+over+!`		( @ n -- @ )			add n at @, keep address
+over-!`		( @ n -- @ )			sub n from @, keep address
+tuck!`		( n @ -- @ )			store n at @, keep @ on top
+tuckc!`		( c @ -- @ )			store byte, keep @ on top
+tuckw!`		( w @ -- @ )			store 16-bit, keep @ on top
+tuck+!`		( n @ -- @ )			add n at @, keep @ on top
+tuck-!`		( n @ -- @ )			sub n at @, keep @ on top
+tuckd!`		( n @ -- @ )			store 64-bit, keep @ [ff64]
+2dup!`		( n @ -- n @ )			store NOS at TOS, keep both
+2dupc!`		( c @ -- c @ )			store byte, keep both
+2dupw!`		( w @ -- w @ )			store 16-bit, keep both
+2dup+!`		( n @ -- n @ )			add NOS to [TOS], keep both
+2dup-!`		( n @ -- n @ )			sub NOS from [TOS], keep both
+2dupd!`		( n @ -- n @ )			store 64-bit, keep both [ff64]
+on`		( @ -- )			store -1 (all bits set) at @
+off`		( @ -- )			store 0 at @
+
+\ ================ MEMORY BLOCK OPS =========================
+
+erase		( @ # -- )			zero # bytes at @
+fill		( @ # c -- )			fill # bytes at @ with c
+move		( @s @d # -- )			safe copy (handles overlap)
+cmove`		( @s @d # -- )			copy # bytes, ascending
+place`		( @s # @d -- @d )		copy # bytes to @d, return @d
+$-		( @1 @2 # -- n )		compare # bytes, return diff
+$-.		( @1 @2 # -- n )		case-insensitive compare
+search		( @ # @' #' -- @r #r ;z?)	find substring, sets Z if found
+
+\ ================== COMPILATION ============================
+
+here`		( -- @ )			current compilation pointer (macro)
+allot`		( n -- )			advance compilation pointer by n
+align`		( -- )				align here to 4-byte boundary
+,`		( n -- )			compile 32-bit value at here
+c,`		( c -- )			compile byte at here
+w,`		( w -- )			compile 16-bit at here
+d,`		( n -- )			compile 64-bit at here [ff64]
+,1`		( -- )				advance compilation ptr by 1
+,2`		( -- )				advance compilation ptr by 2
+,3`		( -- )				advance compilation ptr by 3
+,4`		( -- )				advance compilation ptr by 4
+nop`		( -- )				compile NOP ($90) [ff64]
+lit`		( n -- ; -- n )			compile literal push
+'`		( -- )				convert preceding call to literal
+-call		( -- @ )			uncall: extract call target addr
+call,		( @ -- )			compile a call to @
+callmark	( -- @ )			var: addr after last compiled call
+;;`		( -- )				compile ret (or tail-call optimize)
+tailrec		( -- @ )			var: enable/disable tail-call opt
+
+\ --- Compiler state ---
+
+SC		( -- @ )			compiler state: SWAPbit [+ CALLbit x86]
+>SC		( n -- )			set SC, emit xchg if changed
+rst		( -- )				reset SC to default
+>S0		( -- )				clear SWAPbit (NOS=edx TOS=ebx)
+>S1		( -- )				set SWAPbit (NOS=ebx TOS=edx)
+>C0		( -- )				clear CALLbit [x86 only]
+>C1		( -- )				set CALLbit [x86 only]
+c04		( -- )				toggle CALLbit in last byte [x86 only]
+s01		( -- )				toggle SWAPbit dest, advance 2
+s1		( -- )				toggle SWAPbit dest, advance 1
+s08		( -- )				toggle SWAPbit source, advance 2
+s09		( -- )				toggle SWAPbit src+dest, advance 2
+
+\ --- Parsing ---
+
+>in		( -- @ )			var: next source char address
+tp		( -- @ )			var: end of source address
+tib		( -- @ )			constant: input buffer base
+eob		( -- @ )			constant: end of blocks limit
+parse		( c -- @ # )			parse next token using delimiter c
+wsparse		( -- @ # )			parse next whitespace-delimited token
+lnparse		( -- @ # )			parse to end of line
+\`		( -- )				line comment (to end of line)
+(`		( -- )				paren comment (to closing paren)
+EOF`		( -- )				skip to end of file
+number		( @ # -- n 0 | @ # )		convert string to number or fail
+notfound	( @ # -- )			vector: called when word not found
+
+\ --- Compiler loop ---
+
+compiler	( -- )				main compiler loop (vectorized)
+eval		( @ # -- )			compile source string
+[`		( -- anon SC )			suspend def, start anonymous
+]`		( anon SC -- )			end anonymous, resume outer def
+anon		( -- @ )			var: anonymous def entry point
+anon:`		( -- )				reset state for new anonymous def
+;`		( -- )				close def; execute if anonymous
+classes		( -- @ )			table of header type behaviors
+
+\ --- Compile-time stack [ff64] ---
+
+>cs		( n -- )			push to compile-time stack [ff64]
+cs>		( -- n )			pop from compile-time stack [ff64]
+
+\ ================ DEFINING WORDS ===========================
+
+:`		( <name> -- )			define a named word (code type)
+:.`		( <name> -- )			define a private named word
+alias`		( @ <name> -- )			create synonym for existing word
+create`		( <name> -- )			define data-type word
+variable`	( <name> -- ; -- @ )		define cell variable (init 0)
+constant`	( n <name> -- ; -- n )		define a constant
+equ`		( n <name> -- ; -- n )		alias for constant`
+:^`		( <name> -- )			define redirectable vector
+!^`		( @ vec -- )			set vector target (macro)
+@^`		( vec -- @ )			read vector target (macro)
+^^`		( vec -- )			reset vector to default (macro)
+n^`		( vec -- )			nop vector (do nothing) (macro)
+x^`		( vec -- )			execute vector body (macro)
+header		( @ # xt ct -- )		create raw dictionary header
+H		( -- @ )			var: symbol table pointer
+h.ct		( -- n )			offset of ct field in header
+h.sz		( -- n )			offset of sz field in header
+h.nm		( -- n )			offset of nm field in header
+h.name		( hdr -- )			print header name [ff64]
+h.next		( hdr -- hdr' )			advance to next header [ff64]
+find		( @ # -- ptr 0 | @ # )		look up word in symbol table
+which		( -- @ )			var: last header found by find
+
+\ =================== FLOW CONTROL ==========================
+
+execute		( @ -- )			call address on TOS
+reverse`	( -- )				swap return addr with code after
+catch		( @ -- err )			push exception frame, call @
+throw		( err -- )			unwind to last catch
+?`		( -- )				convert last call to cond jump
+
+\ --- IF / ELSE / THEN ---
+
+IF`		( -- )				forward cond jump (needs condition)
+IF.`		( ? -- )			forward jump on stack boolean
+ELSE`		( -- )				uncond jump + resolve prior IF
+SKIP`		( -- )				forward unconditional jump
+THEN`		( -- )				resolve forward jump from IF/ELSE
+;THEN`		( -- )				compile ret, then resolve IF
+CASE`		( x y -- x | x x -- )		equal-test + forward cond jump
+
+\ --- Loops ---
+
+BEGIN`		( -- )				open loop, mark entry point
+TIMES`		( n -- | == n )			counted loop: n times (n on rstack)
+RTIMES`		( -- | n == )			open counted loop (n already on R)
+START`		( -- )				loop with forward jump to ENTER
+ENTER`		( -- )				resolve START's forward jump
+TILL`		( -- )				backward cond jump to BEGIN
+TILL.`		( ? -- )			TILL using stack boolean
+WHILE`		( -- )				forward cond jump out of loop
+WHILE.`		( ? -- )			WHILE using stack boolean
+AGAIN`		( -- )				backward uncond jump + resolve IF
+BREAK`		( -- )				forward uncond jump out of loop
+END`		( -- )				resolve WHILE/BREAK fwd refs
+UNTIL`		( -- )				backward cond jump + END
+UNTIL.`		( ? -- )			UNTIL using stack boolean
+REPEAT`		( -- )				backward uncond jump + END
+0;`		( 0 -- | ? -- ? )		if TOS=0 drop and return
+0<>;`		( n -- | 0 -- 0 )		if TOS!=0 drop and return
++longconds`	( -- )				enable long forward jumps
+-longconds`	( -- )				restore short forward jumps
+
+\ ============= CONDITIONAL COMPILATION =====================
+
+[IF]`		( ? -- )			if false, skip to [ELSE]/[THEN]
+[ELSE]`		( -- )				skip to [THEN]
+[THEN]`		( -- )				end conditional compilation block
+[0]`		( -- 0 )			immediate constant 0
+[1]`		( -- 1 )			immediate constant 1
+[~]`		( <name> -- ? )			0 if name found, nonzero if not
+[os]`		( -- 1 )			1=Linux, 0=Windows
+[64]`		( -- 4 | 0 )			4 on ff64, 0 on ff (x86) [ff64]
+cell`		( -- 8 )			cell size: 8 on ff64 [ff64]
+
+\ ===================== STRINGS =============================
+\ String literals are compiled by the stringcompiler.
+\ Special chars in strings: _ =space  ^X =ctrl-X  ~ =toggle bit7
+\                           \c =literal c
+
+,"..."		( -- )				compile raw string (no count)
+!"..."		( -- )				compile string + throw it as error
+"..."		( -- @ # )			compile counted string, push addr/#
+."..."		( -- )				compile string + type it
+zt		( @ # -- @ )			append NUL byte (zero-terminate)
+append		( @s # @d -- )			append # bytes to counted @d
+appendc		( c @d -- )			append byte to counted @d
+
+\ ============= NUMBER LITERAL FORMATS ======================
+
+\ $FF          hex literal (255)
+\ &77          octal literal (63)
+\ %1010        binary literal (10)
+\ 8#77         explicit base (63)
+\ 'A           ASCII literal (65)
+\ 1'000        digit grouping (skip ' , . /)
+\ 2000-3-1     Gregorian date
+\ 1:30:00      time (sexagesimal accumulation)
+\ 1_12:0:0     day_hour:min:sec
+
+\ ================= I/O =====================================
+
+type		( @ # -- )			write string to stdout (vector)
+accept		( @ # -- n )			read line from stdin (vector)
+emit		( c -- )			write one byte to stdout
+space		( -- )				emit a space
+cr		( -- )				emit newline
+key		( -- c )			read one byte from stdin
+putc		( c -- )			redirectable emit (used by . etc)
+stdin		( -- 0 )			file descriptor: standard input
+stdout		( -- 1 )			file descriptor: standard output
+stderr		( -- 2 )			file descriptor: standard error
+
+\ ============== NUMBER DISPLAY =============================
+
+.		( n -- )			print n in current base + space
+.\		( n -- )			print n in current base (no space)
+.dec		( n -- )			print n in decimal + space
+.dec\		( n -- )			print n in decimal (no space)
+.x		( n -- )			print n in hex ($ prefix) + space
+.x\		( n -- )			print n in hex (no space)
+.ux		( u -- )			print unsigned hex + space
+.ux\		( u -- )			print unsigned hex (no space)
+.u		( u -- )			print unsigned in base + space
+.u\		( u -- )			print unsigned in base (no space)
+.ub		( u b -- )			print u in base b + space
+.ub\		( u b -- )			print u in base b (no space)
+.l		( u -- )			print as 8 hex digits
+.w		( w -- )			print as 4 hex digits
+.b		( c -- )			print as 2 hex digits
+.#s		( u c -- )			print u as c hex digits
+.digit		( c -- )			emit digit char for value 0-35
+base		( -- @ )			var: output conversion base
+\ --- Pictured Numeric Output (PNO) ---
+\ Build formatted numbers right-to-left: <# ... #>
+\ Usage: : .hex  <# X#s #> type ;
+\ Signed: dup abs 0 <# #s rot sign #> type
+\ PNO words are in lib/pno.ff (needs pno.ff).
+
+<#		( -- )				begin pictured numeric output
+#		( xx -- yy )			extract one digit (using base)
+#s		( xx -- 0 0 )			extract all digits
+hold		( c -- )			insert char into output buffer
+sign		( n -- )			insert '-' if n negative
+#>		( xx -- @ # )			end pictured output, get string
+X#		( xx -- yy )			extract hex digit (uppercase)
+X#s		( xx -- 0 0 )			extract all hex digits (uppercase)
+x#		( xx -- yy )			extract hex digit (lowercase)
+x#s		( xx -- 0 0 )			extract all hex digits (lowercase)
+
+\ ============= DEBUG / DUMP ================================
+
+dump		( @ # -- )			hex dump # bytes from @
+2dump		( @lim @ -- )			hex dump from @ to @lim
+;dump`		( @ -- )			interactive hex dump from @
+ds		( -- )				display data stack [ff64]
+ss		( -- )				display stack as ( depth; vals )
+dd		( -- )				drain data stack (drop all) [ff64]
+.s`		( -- )				dump stack with prompt (macro)
+.h`		( -- )				dump heap + stack (macro)
+ui		( -- )				user interface vector (prompt)
+prompt		( -- )				display default prompt
+words`		( -- )				list all defined words
+.hdr		( @ -- )			display one header (addr/xt/type)
+.hdr+		( @ -- @next )			display header, advance to next
+.hdrs		( -- )				list all headers with details
+dis		( <name> -- )			disassemble word via GDB
+see`		( <name> -- )			native disassembler (loads see.ff)
+see.		( @ -- )			disassemble starting at @
+debug`		( -- )				swap in debug compiler
+nodebug`	( -- )				restore normal compiler
+-d`		( -- )				load debug.ff and enable debug
+findxt		( @ # -- xt len )		find word xt by name
+findh		( @ -- hfa off )		find header nearest to @
+findnm		( @ -- )			print name of word nearest to @
+
+\ ============= HEADER VISIBILITY ===========================
+
+pvt`		( -- )				mark last header as private
+:.`		( <name> -- )			define + mark private (: + pvt)
+hidepvt`	( -- )				remove all private headers
+pvtmargin	( -- )				set stop-point for hidepvt
+hidestop	( -- )				vector: controls hidepvt boundary
+hide		( -- @ )			var: 0 disables hidepvt
+mark`		( <name> -- )			create self-forgetting mark
+marker		( @ # -- )			create mark from string
+
+\ ============= FILE INCLUSION ==============================
+
+needs`		( <file> -- )			compile file (skip if loaded)
+needed		( @ # -- )			compile file by name (guarded)
+needexec	( @ # -- )			load file + exec last def
+-f`		( <file> -- )			needs + call main if defined
+eval		( @ # -- )			compile source string
+ffpath		( -- @ )			var: library search path
+openbuf		( -- @ )			80-byte buffer for openlib
+openlib		( @ # -- fd )			open file, search ffpath
+
+\ ========== OPERATING SYSTEM INTERFACE =====================
+
+\ --- Generic syscall ---
+
+syscall		( args.. # sys# -- ior )	Linux syscall (up to 6 args)
+
+\ --- File I/O (always available) ---
+
+openr		( @ # -- fd )			open existing file read-only
+openw		( @ # -- fd )			open/create file read-write
+openw0		( @ # -- fd )			open/create+truncate read-write
+close		( fd -- ? )			close file descriptor
+read		( @ # fd -- n )			read # bytes from fd into @
+write		( @ # fd -- n )			write # bytes from @ to fd
+_fstat		( buf fd -- ior )		fstat (buf>=144B) [ff64]
+_stat		( buf @ -- ior )		stat NUL-terminated path [ff64]
+_lstat		( buf @ -- ior )		lstat (no follow symlinks) [ff64]
+access		( mode @ -- ior )		check file perms [ff64]
+dup2		( new old -- fd )		duplicate file descriptor [ff64]
+fcntl2		( arg cmd fd -- ior )		file control [ff64]
+pipe		( buf -- ior )			create pipe (2 ints in buf) [ff64]
+ioctl3		( arg req fd -- ior )		device ioctl [ff64]
+truncate	( len fd -- ior )		truncate file [ff64]
+flock		( op fd -- ior )		advisory lock [ff64]
+link		( new old -- ior )		create hard link [ff64]
+symlink		( new old -- ior )		create symbolic link [ff64]
+readlink	( # buf @ -- n )		read symlink target [ff64]
+fchmod		( mode fd -- ior )		change file mode [ff64]
+fchown		( gid uid fd -- ior )		change file owner [ff64]
+umask		( mask -- prev )		set file creation mask [ff64]
+getdents64	( # buf fd -- n )		raw directory read [ff64]
+tell		( fd -- off )			current file position [ff64]
+_lseek		( wh off fd -- pos )		raw lseek syscall [ff64]
+
+\ --- Memory management ---
+
+mmap		( off fd fl pr # @ -- @ )	map memory [ff64]
+munmap		( # @ -- ior )			unmap memory [ff64]
+mprotect	( pr # @ -- ior )		set memory protection [ff64]
+brk		( @ -- @' )			change data segment [ff64]
+PROT_READ	( -- 1 )			mmap perm: read [ff64]
+PROT_WRITE	( -- 2 )			mmap perm: write [ff64]
+PROT_EXEC	( -- 4 )			mmap perm: execute [ff64]
+MAP_SHARED	( -- 1 )			mmap flag: shared [ff64]
+MAP_PRIVATE	( -- 2 )			mmap flag: private [ff64]
+MAP_ANONYMOUS	( -- $20 )			mmap flag: no file [ff64]
+
+\ --- Process control ---
+
+fork		( -- pid )			create child process [ff64]
+execve		( env argv fn -- ior )		execute program [ff64]
+wait4		( ru opt st pid -- pid )	wait for process [ff64]
+wait		( -- pid )			wait for any child [ff64]
+exit_group	( n -- )			exit all threads [ff64]
+alarm		( sec -- prev )			set alarm timer [ff64]
+setpgid		( pgid pid -- ior )		set process group [ff64]
+getpgrp		( -- pgid )			get process group [ff64]
+getpriority	( who which -- n )		get scheduling priority [ff64]
+setpriority	( n who which -- ior )		set scheduling priority [ff64]
+chroot		( @ -- ior )			change root directory [ff64]
+
+\ --- Directory / filesystem ---
+
+getcwd		( # buf -- # )			get current directory [ff64]
+chdir		( @ -- ior )			change directory [ff64]
+mkdir		( mode @ -- ior )		create directory [ff64]
+rmdir		( @ -- ior )			remove directory [ff64]
+unlink		( @ -- ior )			delete file [ff64]
+rename		( new old -- ior )		rename file [ff64]
+
+\ --- Time / misc ---
+
+uname		( buf -- ior )			system info (buf>=390B) [ff64]
+gettimeofday	( tz tv -- ior )		get time of day [ff64]
+getrandom	( fl # buf -- n )		get random bytes [ff64]
+nanosleep	( rem req -- ior )		sleep (ns precision) [ff64]
+time		( @ -- t )			seconds since epoch [ff64]
+times		( buf -- ticks )		process times [ff64]
+
+\ --- Exit ---
+
+bye`		( -- )				quit FreeForth session
+exit		( n -- )			exit with return code n
+quit		( -- )				reset and restart REPL [ff64]
+
+\ ======== SHELL / ENVIRONMENT ==============================
+
+getenv		( @ # -- @v #v | 0 0 )		look up environment variable
+getpid		( -- pid )			get process ID
+getppid		( -- ppid )			get parent process ID
+system		( @ # -- status )		execute shell command
+shell		( @ # -- )			shell command, abort on error
+!!`		( <line> -- )			execute rest of line as shell cmd
+cd`		( <dir> -- )			change current directory
+man`		( <topic> -- )			display man page
+
+\ --- Command line ---
+
+doargv		( -- )				eval command-line args as Forth
+argc		( -- n )			count of command-line arguments
+argv		( n -- @ # )			nth argument (addr + length)
+ff_argc		( -- @ )			var: raw argc [ff64]
+ff_argv		( -- @ )			var: raw argv pointer [ff64]
+ff_envp		( -- @ )			var: raw envp pointer [ff64]
+
+\ ========= DYNAMIC LIBRARIES ==============================
+
+#lib		( @ # -- h )			load shared library by name
+#fun		( @ # h -- entry )		look up function in library
+#call		( args.. n entry -- r )		call library function
+lib:`		( @ # <name> -- )		define library lookup word
+fun:`		( entry n <name> -- )		define library call word
+libc		( -- @ )			var: handle to libc.so.6
+libc.`		( n <name> -- )			inline call to libc function
+
+\ ========= FIXUP (needs fixup.ff) ==========================
+
+fixup		( @ # -- )			self-patching libc resolver [ff64]
+
+\ ========= I/O RESULT (needs ior.ff) =======================
+
+strerror	( errno -- )			print error for errno [ff64]
+ior		( -- @ )			var: last I/O result
+?ior		( n -- n )			store ior; keep n on stack
+?ior.		( n -- n )			store ior; if err, print + throw
+
+\ ========= VECTORS (defining) [ff64] =======================
+\ See :^ in DEFINING WORDS above for the full set:
+\ :^ !^` @^` n^` x^` ^^`
+
+\ ======== BOOT INFRASTRUCTURE [ff64] =======================
+
+pad		( -- @ )			scratch buffer: here + 256 [ff64]
+helpbuf		( -- @ )			128KB buffer for help system [ff64]
+xfp		( -- @ )			var: exception frame pointer [ff64]
+features	( -- @ )			buffer: loaded feature names
+-v`		( -- )				display loaded features
+
+\ ======== SIGNAL HANDLING [ff64] ===========================
+
+SEGVhndlr	( -- )				SIGSEGV handler [ff64]
+SEGVthrow	( -- )				install SEGV handler [ff64]
+
+\ ====== CONSOLE (needs console.ff) =========================
+
+cls		( -- )				clear screen
+home		( -- )				cursor to 0,0
+atxy		( col row -- )			position cursor
+atx		( col -- )			position cursor on row [ff64]
+color		( n -- )			set ANSI color attribute [ff64]
+key?		( -- ; z? )			test if key available [ff64]
+ekey		( -- c )			read one key in raw mode [ff64]
+foreground	( n -- )			set foreground color
+background	( n -- )			set background color
+normal		( -- )				reset to default colors
+nocolor		( -- )				disable color output
+
+\ ======= TIME (needs time.ff) ==============================
+
+.now`		( -- )				display current date and time
+.d		( u -- )			display Gregorian date
+.wd		( u -- )			display weekday
+.dt		( u -- )			display date+time
+.t		( u -- )			display time (hh:mm:ss)
+now		( -- u )			seconds since 2000-3-1
+ms		( u -- )			sleep u milliseconds
+ms@		( -- u )			current millisecond count
+
+\ ===== PERFORMANCE (needs perf.ff, x86 only) ==============
+
+{{{`		( -- )				begin timed section
+}}}`		( -- )				end timed section, show cycles
+
+\ ====== FILE OPS (needs fileops.ff, mostly x86) ===========
+
+lseek		( wh off fd -- off )		seek in file
+ioctl		( arg req fd -- ? )		device ioctl
+select		( tv ex wr rd n -- ? )		I/O multiplexing
+
+\ ====== MALLOC (needs malloc.ff) ===========================
+
+malloc		( # -- @ )			allocate # bytes from heap
+free		( @ -- )			free malloc'd memory
+
+\ ====== STAT (ff.help — needs stat.ff) =====================
+
+mkst		( <name> -- )			allocate stat struct space
+stat		( @ # st -- 0 | -n )		stat a file
+
+\ ====== MMAP (needs mmap.ff, x86 only) ====================
+
+mkmm		( <name> -- )			allocate mmap struct
+mkmm.		( @ -- )			init memory as mmap struct
+mm.sz		( -- n )			offset of size field
+mm.fd		( -- n )			offset of fd field
+mm.prot		( -- n )			offset of prot field
+mm.flags	( -- n )			offset of flags field
+mm.stat		( -- n )			offset of stat struct
+mmapr		( @ # mm -- @ | -n )		mmap existing file read-only
+mmapw		( @ # mm -- @ | -n )		mmap existing file read-write
+mmapwt		( @ # n mm -- @ | -n )		mmap new/truncated file
+munmap		( mm -- ior ior )		unmap + close mmap'd file
+
+\ ====== STAT LIBRARY (needs stat.ff) [ff64] ================
+
+?stat		( @ -- ior )			stat NUL-terminated path [ff64]
+?lstat		( @ -- ior )			lstat (no follow symlinks) [ff64]
+st@		( -- mode )			read st_mode from buffer [ff64]
+sz@		( -- n )			read st_size from buffer [ff64]
+mt@		( -- n )			read st_mtime from buffer [ff64]
+nl@		( -- n )			read st_nlink from buffer [ff64]
+fmode		( @ # -- mode|-1 )		stat path, return st_mode [ff64]
+fsize		( @ # -- n|-1 )			stat path, return st_size [ff64]
+flmode		( @ # -- mode|-1 )		lstat, return st_mode [ff64]
+is-reg		( mode -- mode ; z? )		test regular file (sets ZF) [ff64]
+is-dir		( mode -- mode ; z? )		test directory (sets ZF) [ff64]
+is-link		( mode -- mode ; z? )		test symlink (sets ZF) [ff64]
+is-fifo		( mode -- mode ; z? )		test named pipe (sets ZF) [ff64]
+is-sock		( mode -- mode ; z? )		test socket (sets ZF) [ff64]
+is-blk		( mode -- mode ; z? )		test block device (sets ZF) [ff64]
+is-chr		( mode -- mode ; z? )		test char device (sets ZF) [ff64]
+can-r		( mode -- mode ; z? )		test owner-read perm [ff64]
+can-w		( mode -- mode ; z? )		test owner-write perm [ff64]
+can-x		( mode -- mode ; z? )		test owner-exec perm [ff64]
+file?		( @ # -- ; z? )			is regular file? [ff64]
+dir?		( @ # -- ; z? )			is directory? [ff64]
+link?		( @ # -- ; z? )			is symlink? [ff64]
+st.mode		( -- 24 )			offset of st_mode [ff64]
+st.size		( -- 48 )			offset of st_size [ff64]
+st.nlink	( -- 16 )			offset of st_nlink [ff64]
+st.uid		( -- 28 )			offset of st_uid [ff64]
+st.gid		( -- 32 )			offset of st_gid [ff64]
+st.atime	( -- 72 )			offset of st_atime [ff64]
+st.mtime	( -- 88 )			offset of st_mtime [ff64]
+st.ctime	( -- 104 )			offset of st_ctime [ff64]
+
+\ ====== NETWORKING (needs net.ff) [ff64] ===================
+
+socket		( pr ty dom -- fd )		create socket [ff64]
+connect		( # @ fd -- ior )		connect to address [ff64]
+bind		( # @ fd -- ior )		bind socket to address [ff64]
+listen		( bl fd -- ior )		listen for connections [ff64]
+accept4		( fl # @ fd -- fd )		accept connection [ff64]
+shutdown	( how fd -- ior )		shutdown socket [ff64]
+sendto		( tl to fl # @ fd -- n )	send with dest address [ff64]
+recvfrom	( fl fr fl # @ fd -- n )	receive with src address [ff64]
+send		( fl # @ fd -- n )		send data [ff64]
+recv		( fl # @ fd -- n )		receive data [ff64]
+socketpair	( sv pr ty dom -- ior )		create socket pair [ff64]
+setsockopt	( ol ov on lv fd -- ior)	set socket option [ff64]
+getsockopt	( ol ov on lv fd -- ior)	get socket option [ff64]
+getsockname	( al @ fd -- ior )		get local address [ff64]
+getpeername	( al @ fd -- ior )		get remote address [ff64]
+pselect6	( sig to ex wr rd n -- n)	I/O multiplexing [ff64]
+htons		( n -- n )			byte-swap 16-bit for network [ff64]
+
+\ Network constants [ff64]:
+\ AF_UNIX(1) AF_INET(2) AF_INET6(10)
+\ SOCK_STREAM(1) SOCK_DGRAM(2) SOCK_RAW(3)
+\ SOL_SOCKET(1) SO_REUSEADDR(2) SO_KEEPALIVE(9)
+\ SHUT_RD(0) SHUT_WR(1) SHUT_RDWR(2)
+
+\ ====== TESTING (needs test.ff) ============================
+
+plan		( -- @ )			var: number of tests
+okcnt		( -- @ )			var: passing test count
+skipcnt		( -- @ )			var: skipped test count
+verbose		( -- @ )			var: if nonzero, echo tests
+t{		( -- )				start test (stack must be empty)
+->		( -- )				record stack depth
+}t		( -- )				check stack matches expectation
+skip		( <line> -- )			skip test, increment skipcnt
+>plan		( n -- )			set and display plan "1..n"
+tally		( -- )				compare plan with okcnt
+tally-exit	( -- )				tally then exit 0 or 1
+
+\ ========= FLOATING POINT (needs fpu.ff) [x86 only] =======
+\ FPU stack is separate: 8 x 80-bit cells (ST0..ST7).
+
+finit`		( -- )				initialize FPU
+fcell		( -- 10 )			float size in bytes
+
+\ --- FPU stack ops ---
+
+fdup`		( f:x -- f:x f:x )		duplicate FP TOS
+fover`		( f:y f:x -- f:y f:x f:y)	copy FP second to top
+fdrop`		( f:x -- )			discard FP TOS
+fnip`		( f:y f:x -- f:x )		discard FP second
+fswap`		( f:y f:x -- f:x f:y )		exchange FP top two
+f2drop`		( f:y f:x -- )			discard FP top two
+f2dup`		( f:y f:x -- ..y x y x )	duplicate FP top two
+ftuck`		( f:y f:x -- f:x f:y f:x)	FP tuck
+funder`		( f:y f:x -- f:y f:y f:x)	FP under
+frot`		( f:z y x -- f:y x z )		FP rotate
+f-rot`		( f:z y x -- f:x z y )		FP reverse rotate
+
+\ --- FPU constants ---
+
+fpi`		( -- f:pi )			push pi
+1.`		( -- f:1.0 )			push 1.0
+0.`		( -- f:0.0 )			push 0.0
+fldln2`		( -- f:ln2 )			push ln(2)
+fldlg2`		( -- f:lg2 )			push log10(2)
+fldl2e`		( -- f:lb(e) )			push log2(e)
+fldl2t`		( -- f:lb(10) )			push log2(10)
+
+\ --- FPU arithmetic ---
+
+f+`		( f:y f:x -- f:y+x )		FP add
+f-`		( f:y f:x -- f:y-x )		FP subtract
+fswap-`		( f:y f:x -- f:x-y )		FP reverse subtract
+fover+`		( f:y f:x -- f:y f:x+y )	FP add, keep second
+fover-`		( f:y f:x -- f:y f:x-y )	FP sub, keep second
+f*`		( f:y f:x -- f:y*x )		FP multiply
+f/`		( f:y f:x -- f:y/x )		FP divide
+fswap/`		( f:y f:x -- f:x/y )		FP reverse divide
+fover*`		( f:y f:x -- f:y f:x*y )	FP mul, keep second
+fover/`		( f:y f:x -- f:y f:x/y )	FP div, keep second
+f1/`		( f:x -- f:1/x )		FP reciprocal
+fabs`		( f:x -- f:|x| )		FP absolute value
+fnegate`	( f:x -- f:-x )			FP negate
+fmax`		( f:y f:x -- f:max )		FP maximum
+fmin`		( f:y f:x -- f:min )		FP minimum
+fscale`		( f:e f:m -- f:m*2^e )		scale by power of 2
+fxtract`	( f:x -- f:e f:m )		extract exponent + mantissa
+f2/		( f:x -- f:x/2 )		FP halve
+f2*		( f:x -- f:x*2 )		FP double
+fsqrt`		( f:x -- f:sqrt(x) )		FP square root
+
+\ --- FPU transcendentals ---
+
+fsin`		( f:x -- f:sin(x) )		sine (radians)
+fcos`		( f:x -- f:cos(x) )		cosine
+ftan`		( f:x -- f:tan(x) )		tangent
+fsincos`	( f:x -- f:sin f:cos )		sine and cosine
+fatan`		( f:x -- f:atan(x) )		arc tangent
+fatan2`		( f:y f:x -- f:atan2 )		two-argument arc tangent
+fasin		( f:x -- f:asin(x) )		arc sine
+facos		( f:x -- f:acos(x) )		arc cosine
+fln`		( f:x -- f:ln(x) )		natural logarithm
+flog`		( f:x -- f:log10(x) )		common logarithm
+f**		( f:y f:x -- f:y^x )		power
+faln		( f:x -- f:e^x )		exponential
+falog		( f:x -- f:10^x )		power of 10
+fxl2y`		( f:y f:x -- f:x*lb(y) )	x * log2(y)
+fxl2yp1`	( f:y f:x -- f:x*lb(y+1) )	x * log2(y+1)
+f2xm1`		( f:x -- f:2^x-1 )		2^x minus 1 (|x|<=1)
+fsinh		( f:x -- f:sinh(x) )		hyperbolic sine
+fcosh		( f:x -- f:cosh(x) )		hyperbolic cosine
+ftanh		( f:x -- f:tanh(x) )		hyperbolic tangent
+fasinh		( f:x -- f:asinh(x) )		inverse hyperbolic sine
+facosh		( f:x -- f:acosh(x) )		inverse hyperbolic cosine
+fatanh		( f:x -- f:atanh(x) )		inverse hyperbolic tangent
+floor		( f:x -- f:floor(x) )		round toward -infinity
+
+\ --- FPU comparisons (set FLAGS, not boolean) ---
+
+f0=`		( f:x -- f:x ; z? )		FP test: x == 0
+f0<>`		( f:x -- f:x ; nz? )		FP test: x != 0
+f0<`		( f:x -- f:x )			FP test: x < 0
+f0>=`		( f:x -- f:x )			FP test: x >= 0
+f0>`		( f:x -- f:x )			FP test: x > 0
+f0<=`		( f:x -- f:x )			FP test: x <= 0
+f=`		( f:y f:x -- f:y f:x )		FP compare: y == x
+f<>`		( f:y f:x -- f:y f:x )		FP compare: y != x
+f<`		( f:y f:x -- f:y f:x )		FP compare: y < x
+f>=`		( f:y f:x -- f:y f:x )		FP compare: y >= x
+f>`		( f:y f:x -- f:y f:x )		FP compare: y > x
+f<=`		( f:y f:x -- f:y f:x )		FP compare: y <= x
+f~		( f:y x t -- f:y x ;nz?)	approx equal (abs/rel/bitwise)
+
+\ --- FPU conversions ---
+
+f>s		( f:n -- n )			FP to 32-bit integer
+s>f		( n -- f:n )			32-bit integer to FP
+f>df		( f:x -- dl dh )		FP to C double (64-bit)
+df>f		( dl dh -- f:x )		C double to FP
+fsw@		( -- w )			read FPU status word
+fcw@		( -- w )			read FPU control word
+fcw!		( w -- )			set FPU control word
+
+\ --- FPU memory ---
+
+f@`		( @ -- f:x )			load float from memory
+dupf@`		( @ -- @ f:x )			load float, keep address
+f!`		( f:x @ -- )			store float to memory
+dupf!`		( f:x @ -- @ )			store float, keep address
+f+!`		( f:x @ -- )			add float to memory
+f,`		( f:x -- )			compile float at here
+flit`		( f:x -- ; -- f:x )		compile float literal
+fvariable`	( <name> -- ; -- @ )		define float variable
+fconstant`	( f:x <name> -- )		define float constant
+
+\ --- FPU display ---
+
+f.		( f:x -- )			print in scientific notation
+f#		( -- @ )			var: significant digits for f.
+f.s`		( -- )				dump FP stack
+fnumber		( @ # -- f:x )			parse string to float
+
+\ ===== ANS FORTH EQUIVALENTS (not defined — see ff.help) ====
+\ invert = ~    and = &    or = |    xor = ^    mod = %
+\ not = ~       /mod = /%
+
+\ =============== CONCEPTS ==================================
+\ DATAstack  — separate data stack; TOS cached in registers
+\ CALLstack  — return stack; also loop counters, >r temps
+\ TOS        — top of stack (rightmost in diagrams)
+\ NOS        — next of stack (second element)
+\ SWAPbit    — SC bit1: which register is TOS vs NOS
+\ CALLbit    — SC bit0: data/call stack pointer swap [x86 only]
+\ anonymous  — unnamed defs auto-execute on ; (STATE-free)
+\ backquote  — ` suffix marks macros (immediate execution)
+\ FLAGS      — CPU flags drive conditionals (not booleans)
