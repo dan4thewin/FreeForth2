@@ -139,6 +139,41 @@ The Makefile concatenates both into `ff64.boot.min` for embedding.
 Future ports: ARM64 would replace ff64.asm/ff64.boot but reuse
 fflin64.boot; macOS would replace fflin64.boot but reuse ff64.boot.
 
+## File loading: eval, not assembly
+
+File loading is pure Forth — there is no assembly `_loadfile`.
+`needed` (in fflin64.boot) opens a file, reads it into the tib
+buffer, and calls `eval`. `eval` saves/restores `>in`/`tp` around
+a call to `compiler`. This matches the i386 design exactly.
+
+**`needs` vs `needed`:** `needs` is the user-facing backtick macro:
+`` ; wsparse needed ;` ``. The leading `;` flushes anonymous code
+before `needed` runs. This prevents the code-overwrite problem
+(inner compilation writing at `[anon]` where the caller's anonymous
+code lives). All practical file loading goes through `needs`.
+
+**Historical note:** ff64 previously had a ~107-line assembly
+`_loadfile` with its own `filebuf` and `hereatexec` variable.
+This was removed in experiment 141 after discovering the i386
+never had anything like it.
+
+## ELF binary layout
+
+ff64.asm has two ELF sections (in the `ffdl` / dynamic-link build):
+
+- **`.flat`** (PROGBITS, WAX): code, initialized data, dictionary
+  headers (`GENWORDS64`), embedded boot source, and `headbuf`
+  (64KB, interleaved with initialized data).
+- **`.bss`** (NOBITS, WA): uninitialized buffers — `tib` (256KB),
+  `eob` (1KB), `helpbuf` (128KB), `dstack` (8KB), `codebuf` (64KB).
+  Not stored in the file; the kernel demand-allocates zero pages at
+  runtime.
+
+The linker merges both into one RWE LOAD segment with
+`MemSiz > FileSiz`. **New `rb` buffers go in `.bss`**, after the
+`section '.bss'` directive. Don't put `rb` in `.flat` — it bloats
+the binary with zeros on disk.
+
 ## Resolved bugs
 
 ### The `_parse` stack effect bug (was "ELSE corruption bug")

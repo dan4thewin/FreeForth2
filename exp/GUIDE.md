@@ -3096,8 +3096,7 @@ A subtle bug from the era when ff64 had an assembly REPL: after boot
 last definition (`_top`) used `:^` which calls `_colon`, which sets
 `anon = 0`. This was fixed by resetting `anon = rbp` before compiling
 each `-f` file. With the self-booting architecture (Exp 069), `-f` is
-handled by Forth's `doargv` → `-f`` → `needed` → `loadfile`, which
-manages anon/callmark/SC itself via `hereatexec`.
+handled by Forth's `doargv` → `-f`` → `needed` → `eval`.
 
 **Running total:** ~245 words/macros ported. 322 tests across 52
 experiments, all passing.
@@ -3216,33 +3215,39 @@ a negative errno on failure.
 
 **`close` ( fd -- result )**: Closes a file descriptor via `sys_close`.
 
-**`loadfile` ( addr len -- )**: The workhorse. Opens a file, reads it
-into the filebuf area, sets up `tin`/`tp` for the compiler, and calls
-`_compiler` to process the file content. Saves and restores the input
-state so the calling code's parsing position is preserved.
+**`loadfile`**: *Removed in experiment 141.* Originally a ~107-line
+assembly routine that opened files, read into a private `filebuf`, and
+called `_compiler`. Replaced by the i386 pattern: `needed` reads files
+into `tib` (the shared source buffer) and calls `eval`. See Part 17
+for the current file-loading architecture.
 
-### The hereatexec mechanism
+### The hereatexec mechanism (historical — removed in exp 141)
 
-When `loadfile` is called from the REPL, it runs inside anonymous code
+When `loadfile` was called from the REPL, it ran inside anonymous code
 via `_semi_exec`. The problem: `_semi_exec` resets `rbp` to the start
-of anonymous code before executing it. If `loadfile` compiles new
-definitions at this `rbp`, they overwrite the executing anonymous code.
+of anonymous code before executing it. If `loadfile` compiled new
+definitions at this `rbp`, they would overwrite the executing code.
 
-**Solution:** `_semi_exec` saves `rbp` (the position past the anonymous
-code) in a new variable `hereatexec` before resetting it. `_loadfile`
-uses `hereatexec` as the safe starting position for compilation.
+The solution at the time was `hereatexec` — a variable where
+`_semi_exec` saved `rbp` before resetting it. `_loadfile` used it as
+the safe starting position.
 
-### The loadfile rbp preservation rule
+**This was all unnecessary.** The i386 never had `loadfile` or
+`hereatexec`. Investigation in experiment 141 revealed that the
+`needs` backtick macro (`` ; wsparse needed ;` ``) does `;` first,
+flushing anonymous code before `needed` runs. This prevents the
+overwrite entirely. Both i386 and ff64 are "vulnerable" if `needed`
+is called directly from anonymous code — but that's by design.
 
-A deeper bug: after `_compiler` returns in `_loadfile`, the original
-code restored `rbp` to the anonymous code start. This caused `_semi_exec`
-(which does `mov [anon], rbp` after the call) to reset `[anon]` to the
-anonymous code start. The NEXT REPL line would compile new anonymous
-code there, OVERWRITING the loaded definitions.
+### The loadfile rbp preservation rule (historical — removed in exp 141)
 
-**Rule:** `_loadfile` must NOT restore `rbp` after `_compiler` returns.
-Leave rbp past all loaded definitions. When control returns to
-`_semi_exec`, it preserves the space via `mov [anon], rbp`.
+A deeper bug in the old `_loadfile`: after `_compiler` returned, the
+code restored `rbp` to the anonymous code start, causing `_semi_exec`
+to reset `[anon]` there and overwrite loaded definitions.
+
+**Rule (no longer applicable):** `_loadfile` must NOT restore `rbp`
+after `_compiler` returns. This entire class of bugs disappeared when
+`_loadfile` was replaced by Forth `eval`.
 
 ### SEGV handler
 
@@ -3263,13 +3268,20 @@ without any libc dependency. Three functions:
 ```forth
 : needed 2dup + dup c@ >r dup >r $60 swap c! 1+
   find 2r> c! 0= IF 2drop ;THEN 1-
-  2dup marker swap loadfile ;
+  2dup openlib 0- 0< IF 2drop type !"_not_found" ;THEN
+  openr 0- 0< IF type !"_not_found" ;THEN
+  >r 2dup marker pvtmargin 2drop
+  tp@ eob over- under r read r> close drop
+  over w@ [ "#!" drop w@ ] lit = 2drop
+  IF bounds BEGIN c@+ 10- 0= drop UNTIL swap over- THEN eval 0 noauto! ;
 ```
 
 It temporarily writes a backtick at the end of the filename, looks for
 that name in the dictionary. If found (a previous `marker` created it),
-the file is already loaded — skip. Otherwise, create a marker with the
-filename+backtick as its name, then load the file.
+the file is already loaded — skip. Otherwise, resolve the path via
+`openlib`, open it, create a marker with the filename, read the file
+into `tib` at `tp`, skip any shebang (`#!`) line, and `eval` the
+contents.
 
 ### The find word
 
@@ -3289,7 +3301,7 @@ the internal `_find` function:
 
 ## Phase 3d: Command-Line Arguments (Experiment 066)
 
-With `loadfile`, `needed`, and `find` in place, the system could load
+With `needed`, `eval`, and `find` in place, the system could load
 files from Forth. But it still couldn't process command-line arguments
 the way the i386 FreeForth did — where `ff -f myfile.ff` would load
 `myfile.ff` through the Forth layer rather than the assembly stub.
@@ -3387,7 +3399,7 @@ The stub in ff64.boot:
 On first call, this loads `lib/help64.ff`, which defines its own
 `help\`` that replaces this stub. The loaded `help\`` calls `wsparse`
 itself to grab the keyword argument — arguments cannot be passed on
-the stack through `needexec` because `loadfile` disrupts the stack.
+the stack through `needexec` because file loading disrupts the stack.
 
 This is the same lazy-loading pattern DG uses for `see\`` — keep the
 core small by deferring rarely-used functionality to loadable files.
@@ -3963,17 +3975,15 @@ Or use `make fftk64` after generating cmpl64.
 | 88 | 1 | SC | Cleared to 0 |
 | 89 | 1 | cond_jmp | Cleared to 0 |
 
-### Critical Bug: loadfile Overwrite
+### Critical Bug: loadfile Overwrite (historical — removed in exp 141)
 
-The most significant bug found during turnkey development:
-`loadfile` reset `rbp = hereatexec` before each file's compilation.
-But `hereatexec` was never updated. With multiple `-f` files, the
-second file's compilation started at the **same address** as the
-first — overwriting the first file's compiled definitions.
-
-The fix: update `hereatexec` after `_compiler` returns in `loadfile`.
-This bug was invisible for single `-f` usage and for `needed`-based
-loading, only manifesting with multiple `-f` arguments.
+This was the most significant bug during turnkey development, now only
+of historical interest. The old `loadfile` reset `rbp = hereatexec`
+before each file's compilation, but `hereatexec` was never updated.
+With multiple `-f` files, the second file's compilation overwrote the
+first. The fix at the time was updating `hereatexec` after `_compiler`
+returned. The entire mechanism was later removed when `_loadfile` was
+replaced by Forth's `eval` (experiment 141).
 
 ### The `n^` Correction
 
@@ -4033,8 +4043,8 @@ handling) but reuse `ff64.boot` (same architecture).
 
 **Why fflin.boot can't be reused as-is:** It contains i386-specific
 elements — the `^^` backtick macro emits x86 instructions, struct
-sigaction is 140 bytes (vs 152 on x86-64), and the `needed`
-implementation uses manual buffer+eval instead of ff64's `loadfile`.
+sigaction is 140 bytes (vs 152 on x86-64), and `needed` has minor
+differences in error handling (two-step openlib/openr vs single call).
 However, ~80% of fflin.boot is pure Forth that works unchanged.
 
 ### Recoverable SEGV Handler (Experiment 075)
@@ -4161,8 +4171,8 @@ When `needed "somefile.ff"` is called:
 1. The backtick guard is checked (is `somefile.ff\`` defined?)
 2. If not found, `openlib` searches each FFPATH directory
 3. For each directory, it builds `dir/somefile.ff` and tries to open it
-4. The first successful open wins — close the fd and pass the full
-   path to `loadfile`
+4. The first successful open wins — `needed` opens it, reads into
+   tib, and calls `eval`
 
 Absolute paths (`/...`) and relative paths (`./...`) bypass the
 FFPATH search entirely.
@@ -4273,7 +4283,7 @@ definition. When `;` terminates `_xxx`, it converts the last `call fixup`
 stack contains only the wrapper's return address — exactly what fixup
 needs to compute the patch site.
 
-Without tail-call (as happens in loadfile without explicit `;`):
+Without tail-call (as happens in file loading without explicit `;`):
 ```
 R = [fixup_return, wrapper_return]
 r> 5- → patches inside _xxx (WRONG!)
@@ -4296,10 +4306,10 @@ tail-call ensures only the wrapper's return address is present.
 
 #### Why `_colon` Matters
 
-This bug was subtle because it worked in the REPL but crashed in loadfile.
+This bug was subtle because it worked in the REPL but crashed in file loading.
 The key is that FreeForth's `_colon` (`:`) does NOT terminate the previous
 named definition. In the REPL, `_auto` calls `;` at end of each line,
-providing implicit termination. In loadfile, definitions are only
+providing implicit termination. In file loading, definitions are only
 terminated by explicit `;` or by `_auto` at EOF.
 
 Without the `;`, the hidden definition _xxx has no `ret` or `jmp` at
@@ -4424,7 +4434,7 @@ loaded, making the `-v` command show all active capabilities:
 " console" features append ;  \ at end of console.ff
 ```
 
-The trailing `;` is essential. FreeForth's `loadfile` feeds source
+The trailing `;` is essential. FreeForth's file loading feeds source
 to the compiler, which only executes accumulated code at `;` or `:`.
 Without `;`, the `features append` compiles but never runs.
 
@@ -4450,14 +4460,10 @@ The guard mechanism works as follows:
 3. If found, the file was already loaded — return immediately
 4. If not found, create the marker word, then load the file
 
-Step 4 was missing in ff64. The i386 version calls `marker pvtmargin`
-before loading, which creates a dictionary entry named `filename``.
-The ff64 version went straight to `loadfile` without creating the
-marker, causing every `needed` call to reload the file.
-
-The fix adds `2dup marker pvtmargin` before discarding the filename
-and calling `loadfile`. Now `needed` creates the guard on first load,
-and subsequent calls find the marker and skip.
+Step 4 was initially missing in ff64. The i386 version calls `marker
+pvtmargin` before loading. The ff64 version originally went straight
+to `loadfile` without creating the marker. The current `needed`
+(experiment 141) includes `2dup marker pvtmargin` matching the i386.
 
 ### Walking Back Excess Assembly (Experiments 090–093)
 
@@ -4707,7 +4713,7 @@ in `read` reorders from Forth-natural `( addr # fd )` to the kernel's
 
 Three words **must** stay in assembly: `exit`, `write`, and `accept`
 are used by ff64.boot which compiles before fflin64.boot.  The generic
-`syscall` dispatcher and `loadfile` also stay in assembly.
+`syscall` dispatcher stays in assembly; file loading is now pure Forth.
 
 ### Syscall Word Library (exp 109)
 
@@ -5014,3 +5020,118 @@ lib/
     see64.ff      ← x86-64: decompiler
     syscalls.ff   ← x86-64: Linux syscall numbers
 ```
+
+---
+
+## Part 17: File Loading and Memory Layout (Experiments 139–142)
+
+### The eval-based file loading design
+
+FreeForth loads files entirely in Forth — there is no assembly file loader.
+This matches Christophe Lavarenne's i386 design exactly. The mechanism:
+
+1. **`eval` ( addr len -- )**: Saves `>in` and `tp` on the return stack,
+   sets them to span the given buffer, calls `compiler`, then restores
+   the saved values. This makes `eval` re-entrant: nested `eval` calls
+   (from nested `needs`) simply push another frame.
+
+   ```forth
+   : eval >in@ tp@ 2>r over+ tp! >in! compiler 2r> tp! >in! ;
+   ```
+
+2. **`needed` ( addr len -- )**: The file-loading word in `fflin64.boot`.
+   Checks whether the file is already loaded (via `find` on the filename
+   with a backtick appended). If not, resolves the path via `openlib`,
+   opens the file, creates a `marker` + `pvtmargin`, reads the file into
+   `tib` at `tp`, skips any shebang line, and calls `eval`.
+
+3. **`needs`** (backtick macro): The user-facing word. Defined as
+   `` ; wsparse needed ;` ``. The critical detail: the leading `;`
+   flushes anonymous code before `needed` runs. After the flush,
+   `[anon]` = `rbp` (fresh), so `needed`'s inner compilation at `[anon]`
+   can't overwrite anything. This is the safety mechanism that prevents
+   the code-overwrite problem.
+
+### The code-overwrite problem
+
+When `_semi` executes anonymous code, it resets `rbp` to `[anon]` and
+calls. If `needed` → `eval` → `compiler` runs inside that anonymous code,
+the compiler writes at `rbp` = `[anon]` — overwriting the executing code.
+For small inner files (< ~10 bytes of output), the return address in the
+anonymous code isn't reached yet, so it works. For larger files, SEGV.
+
+Both i386 and ff64 have this vulnerability when `needed` is called
+directly from anonymous code. It's by design — `needed` is an internal
+word. The user-facing `needs` prevents it via the `;` flush.
+
+### tib as a file stack
+
+The `tib` buffer (256KB, from the i386 design) serves as an implicit file
+stack. The source being compiled lives at `[>in]` through `[tp]`. When
+`eval` is called (during `needs`), it:
+
+1. Saves `>in`/`tp` on the return stack
+2. Sets `>in`/`tp` to span the new source (just read from file, at `tp`)
+3. Calls `compiler`, which consumes the inner source
+4. Restores `>in`/`tp`, resuming the outer source
+
+The file's content is read at `tp` (end of current source), so multiple
+nested `needs` stack upward in the tib buffer. The i386 comment
+(ff.asm:246–247): "tib is a file stack."
+
+### Memory map
+
+The ff64 memory layout, in order of address:
+
+```
+[ELF headers + PLT + GOT]        ← dynamic linker structures
+[.flat section: code + data]      ← PROGBITS, in file
+  code and data
+  dl_errbuf (256B)                ← dlerror buffer
+  numbuf (21B)                    ← number output scratch
+  cstack (128B) + csp             ← compile-time stack
+  headbuf (64KB)                  ← headers grow down from heads64
+  heads64: GENWORDS64             ← initial dictionary entries
+  boot64: "ff64.boot.min"        ← embedded boot source
+[.bss section: buffers]           ← NOBITS, NOT in file
+  tib (256KB)                     ← source buffer / file stack
+  eob (1KB)                       ← end-of-buffer scratch
+  helpbuf (128KB)                 ← help file reading
+  dstack (8KB)                    ← data stack (r15 points here)
+  codebuf (64KB)                  ← compiled code goes here (rbp)
+```
+
+### BSS: on-disk zeros vs demand paging
+
+ELF distinguishes PROGBITS (data in the file) from NOBITS (not in file,
+zero-filled at runtime). In the LOAD program header, `FileSiz` is bytes
+on disk and `MemSiz` is bytes in memory. When `MemSiz > FileSiz`, the
+kernel maps the extra as anonymous zero pages, allocated on demand.
+
+The i386 always had this: `section '.bss'` (ff.asm:1335) puts the
+512KB heap, 256KB tib, and 1KB eob in NOBITS. Binary size: 28KB on
+disk, 784KB at runtime.
+
+ff64 initially lacked a `.bss` section — all `rb` buffers lived in
+`.flat` (PROGBITS), storing ~457KB of zeros on disk. Adding
+`section '.bss'` (guarded by `if defined ffdl` for the dynamic build)
+reduced the binary from 572KB to 104KB.
+
+**Rule:** New uninitialized buffers go after the `section '.bss'`
+directive in ff64.asm. Never put `rb` in `.flat` — it bloats the binary.
+`headbuf` is the exception: it stays in `.flat` because `heads64:
+GENWORDS64` (initialized data) immediately follows it.
+
+### Historical note: the _loadfile era (experiments 063–140)
+
+ff64 originally had a ~107-line assembly `_loadfile` with its own
+`filebuf` (64KB), `namebuf` (256B), and `hereatexec` variable. This was
+an ff64 invention — the i386 never had it. It caused three distinct bugs
+during development (rbp preservation, hereatexec overwrite, hereatexec
+advancement). All were symptoms of the same root cause: file loading
+belonged in Forth, not assembly.
+
+Experiments 139 (eval proof-of-concept), 140 (tib/eob buffer
+unification), and 141 (removal of `_loadfile`) progressively replaced
+the assembly mechanism with the i386 Forth pattern. Experiment 142
+added the `.bss` section to recover the binary size.
