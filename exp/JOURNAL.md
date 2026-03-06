@@ -11216,3 +11216,46 @@ into a proper 256KB `tib` matching the i386 layout.
 - 5/5 tests pass
 - `make test64`: all PASSED
 - `make -C exp test`: all pass (exp 073 pre-existing failure only)
+
+---
+
+## Experiment 140: tib/eob buffer unification
+
+### Goal
+
+Replace ff64's separate `inbuf` (4KB) + `filebuf` (64KB) with a unified
+256KB `tib` buffer plus `eob` label, matching the i386 memory layout
+(ff.asm:235-247).
+
+### Background
+
+The i386 memory map:
+```
+[binary code and data> heap <headers][source code> blocks][ ] < stacks ]
+:                 ebp^      ^H    tib:  tin^>  tp^     eob: ;   eax^ esp^
+```
+
+`tib` is 256KB. Boot source, user input, and loaded file contents all live in
+tib. The i386 comment (ff.asm:246-247): "Boot source code, and later user
+command lines, are stored at tib. `needs` reads its source file's entire
+contents just after the current source code stored at tib and evaluates it
+(tib is a file stack)."
+
+ff64 had separate buffers: `inbuf` (4KB for REPL), `filebuf` (64KB for loaded
+files). This was an ff64 invention that diverged from the original design.
+
+### Changes
+
+- `ff64.asm`: `inbuf rb 4096` → `tib rb 1024*256` + `eob rb 1024`
+- `ff64.asm`: dict entry `"tib", inbuf` → `"tib", tib` + new `"eob", eob`
+- `ff64.asm`: `namebuf` and `filebuf` kept temporarily (still used by `_loadfile`)
+- `exp/086-shrink/Makefile`: size threshold 380000 → 640000 (256KB tib growth)
+- `exp/113-asm-reduction/Makefile`: size threshold 379600 → 640000
+
+Binary size: 367736 → 638072 (grew ~264KB = 256KB tib + 1KB eob + alignment).
+
+### Results
+
+- 3/3 exp/140-tib-eob tests pass (buffer size, tp in range, eval with eob)
+- `make test64`: all PASSED
+- `make -C exp test`: all pass (exp 073 pre-existing only)

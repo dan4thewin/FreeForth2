@@ -1,0 +1,15 @@
+( exp 140: Verify tib/eob buffer unification )
+( Tests that tib is 256KB, eob exists, and eval can use the full range. )
+
+( Test 1: eob - tib = 256KB )
+eob tib - 262144 - 0- 0= IF ."PASS:_tib-size" cr ;THEN ."FAIL:_tib-size" cr ;
+
+( Test 2: tp@ is between tib and eob )
+tp@ tib >= 2drop IF tp@ eob < 2drop IF ."PASS:_tp-in-range" cr ;THEN THEN ."FAIL:_tp-in-range" cr ;
+
+( Test 3: eval with tp@ eob over- as buffer size )
+: evalload openr dup tp@ eob over- rot read swap close drop tp@ swap eval ;
+"exp/139-eval-fileload/file1.ff" evalload
+hello 42 - 0- 0= IF ."PASS:_eval-with-eob" cr ;THEN ."FAIL:_eval-with-eob" cr ;
+
+0 exit ;

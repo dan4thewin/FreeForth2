@@ -2192,7 +2192,8 @@ WORD64 "_bootxt", bootxt, 1, 7
 WORD64 "sigrestorer", _segv_restorer, 1, 11
 WORD64 ">in", tin, 1, 3
 WORD64 "tp", tp, 1, 2
-WORD64 "tib", inbuf, 1, 3
+WORD64 "tib", tib, 1, 3
+WORD64 "eob", eob, 1, 3
 WORD64 "helpbuf", helpbuf, 1, 7
 WORD64 "xfp", xfp, 1, 3
 
@@ -2322,9 +2323,10 @@ boot64:    file "ff64.boot.min"
 boot64_end:
     boot64_size = boot64_end - boot64
 
-inbuf      rb 4096
-namebuf    rb 256                ; scratch buffer for NUL-terminated filenames
-filebuf    rb 65536
+tib        rb 1024*256             ; terminal input and file-stack buffer (i386 layout)
+eob        rb 1024                 ; end-of-buffer scratch area
+namebuf    rb 256                  ; scratch buffer for NUL-terminated filenames
+filebuf    rb 65536                ; loaded file contents (used by _loadfile, to be removed)
 helpbuf    rb 131072             ; 128KB buffer for help file reading
 dstack     rb 8192
 dstack_top:

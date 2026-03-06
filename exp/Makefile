@@ -66,7 +66,8 @@ EXPERIMENTS = 023-forthmacros64 \
               112-file-tests \
               113-asm-reduction \
               134-native-getenv \
-              139-eval-fileload
+              139-eval-fileload \
+              140-tib-eob
 
 test:
 	@fail=0; for d in $(EXPERIMENTS); do \
