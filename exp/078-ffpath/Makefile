@@ -35,3 +35,5 @@ test:
 	echo "  $$pass passed, $$fail failed"; \
 	test $$fail -eq 0
 
+
+clean:

@@ -53,3 +53,6 @@ test:
 	echo "  ----"; \
 	echo "  $$pass passed, $$fail failed"; \
 	test $$fail -eq 0
+
+clean:
+	@rm -f /tmp/tk_*.ff
