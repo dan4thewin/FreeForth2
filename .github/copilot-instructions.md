@@ -3,7 +3,7 @@
 ## About this project
 
 FreeForth2 is derived from FreeForth by Christophe Lavarenne (1956–2011).
-The x86-64 port is an ongoing effort on the `exp64-1` branch.
+The x86-64 port is an ongoing effort on the `static-elf64` branch.
 
 ## Approach
 
@@ -69,6 +69,13 @@ This is a defining attribute of FreeForth (and FreeForth2):
   source of faulty assumptions."
 - Dotted comparisons (`=.`, `<.`, etc.) and `IF.`/`WHILE.`/`UNTIL.`
   are legitimate words but belong in Forth (ff64.boot), not assembly.
+- **Conditional inversion.** `IF`, `WHILE`, and `UNTIL` all XOR the
+  condition with 1 (invert the jump sense). `IF`/`WHILE` emit a
+  forward jump (skip body when condition is FALSE). `UNTIL` emits a
+  backward jump (loop when condition is FALSE). So `0<> WHILE` means
+  "continue while nonzero" and `0<> UNTIL` means "loop until nonzero"
+  (exits on nonzero, loops on zero) — these are **opposite senses**.
+  Getting this wrong is a common source of infinite loops.
 - **FLAGS cross word boundaries.** `0=`/`0<>`/`0<`/`0>` emit NO
   runtime code — they only store a Jcc opcode in `cond_jmp`. It is
   `0-` (emitting `or reg,reg`) or binary comparisons (`=`, `<`, etc.)
@@ -349,9 +356,13 @@ IF ... ;THEN             \ early return
 BEGIN ... cond UNTIL     \ loop until true
 BEGIN ... cond WHILE ... REPEAT
 START ... ENTER ... REPEAT  \ body skipped first time
-TIMES ... REPEAT         \ counted loop
+TIMES ... REPEAT         \ counted loop (i386 uses REPEAT, not LOOP)
 CASE ... ;;              \ multi-way dispatch
 ```
+
+**Note:** `LOOP` is NOT a Lavarenne word — it was invented during the
+ff64 port. The i386 closes `TIMES` with `REPEAT`. ff64 accepts both
+`TIMES...REPEAT` and `TIMES...LOOP` but prefer `REPEAT` for fidelity.
 
 ### Key non-obvious words
 
