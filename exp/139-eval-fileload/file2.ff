@@ -1,0 +1,2 @@
+( test file 2: defines answer, returns 99 )
+: answer 99 ;

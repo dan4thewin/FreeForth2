@@ -11140,3 +11140,79 @@ All known loop+conditional compile-time bugs are now **FIXED**:
 - `make test64`: all PASSED (loops.ff: 91 ok, 0 skip)
 - `make test`: all PASSED (ff, ff+longconds, fftk, fftk+longconds)
 - `make -C exp test`: all pass (exp 073 pre-existing failures only)
+
+---
+
+## Experiment 139: eval file-loading parity proof
+
+### Goal
+
+Before replacing the assembly `_loadfile` with the i386's `eval`-based approach,
+prove that ff64's `eval` already works correctly for file loading. The i386
+`needed` reads a file into memory at `tp@`, then calls `eval` to compile it.
+If `eval` handles this correctly in ff64, we can safely remove `_loadfile`.
+
+### Background
+
+The i386 has no assembly `loadfile`. Its `needed` does:
+```forth
+>r marker pvtmargin tp@ eob over- under r read r> close drop
+... eval 0 noauto! ;
+```
+
+The ff64 port invented `_loadfile` in assembly (~80 lines), which manages its
+own `filebuf`, `hereatexec`, and `tin`/`tp` save/restore. This spawned three
+hard-won bugs:
+1. **rbp preservation** — `_loadfile` restored rbp after compilation, causing
+   the next REPL line to overwrite loaded definitions.
+2. **hereatexec overwrite** — `_semi_exec` reset rbp to anon start, so
+   `_loadfile` (running inside anonymous code) compiled on top of itself.
+3. **hereatexec advancement** — the second `loadfile` reset rbp to original
+   `hereatexec`, overwriting the first file's definitions.
+
+All three are consequences of managing code buffer pointers in assembly. The
+i386's `eval` avoids all of them: it saves/restores `>in`/`tp`, calls
+`compiler`, and lets rbp advance naturally.
+
+### Test design
+
+Created `evalload` — a minimal Forth word that does what the i386 `needed` does:
+```forth
+: evalload openr dup tp@ 60000 rot read swap close drop tp@ swap eval ;
+```
+
+Five tests:
+1. **eval-single**: Load file1.ff (defines `hello → 42`), verify `hello` works
+2. **eval-sequential**: Load file2.ff (defines `answer → 99`), verify both
+   `hello` and `answer` survive
+3. **eval-use-loaded**: Define `use_hello` that calls `hello`, verify it works
+4. **eval-nested**: Load file4.ff which itself calls `evalload` to load file2.ff,
+   then defines `combined → hello + answer`. Proves eval-within-eval stacks.
+5. **eval-persist**: Verify all definitions still work after everything
+
+### Key finding
+
+All 5 tests pass. `eval` in ff64 handles:
+- Single file loading with definition persistence ✓
+- Sequential loads without overwriting ✓
+- References to eval-loaded definitions from new definitions ✓
+- Nested eval (eval calling eval) with proper `>in`/`tp` stacking ✓
+- All definitions surviving after multiple eval calls ✓
+
+This proves `eval` can replace `_loadfile` for file loading. The `>in`/`tp`
+save/restore in `eval` is the moral equivalent of `_loadfile`'s `tin`/`tp`
+push/pop, but without the `hereatexec`/`filebuf_ptr` complexity.
+
+### Buffer note
+
+Currently `eval` reads into `tp@`, which in the REPL context is `tib + ~32`
+(past the current command). With `inbuf` being only 4096 bytes, the read
+actually spills past `inbuf` into `namebuf` and `filebuf`. This works because
+it's all contiguous BSS, but it's not clean. Experiment 140 will unify these
+into a proper 256KB `tib` matching the i386 layout.
+
+### Results
+
+- 5/5 tests pass
+- `make test64`: all PASSED
+- `make -C exp test`: all pass (exp 073 pre-existing failure only)

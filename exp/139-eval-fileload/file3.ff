@@ -1,0 +1,3 @@
+( test file 3: loads file1.ff via loadfile, then defines combo )
+"exp/139-eval-fileload/file1.ff" loadfile
+: combo hello 10 + ;

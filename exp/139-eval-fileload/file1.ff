@@ -1,0 +1,2 @@
+( test file 1: defines hello, returns 42 )
+: hello 42 ;
