@@ -11041,3 +11041,102 @@ Two real-world uses found in the codebase:
 3. **rdrop ;THEN → SEGV at compile time** — still open
 4. **TIMES + WHILE → counter ignored** — still open
 5. **Multiple WHILE → no return** — still open
+
+---
+
+## Experiment 138 — Fix TIMES+WHILE and Multiple WHILE via Recursive \_resolve\_fwds
+
+**Date:** 2026-03-06
+**Branch:** exp64-1
+**Status:** PASS
+
+### Goal
+
+Fix the TIMES+WHILE bug where REPEAT resolved WHILE's forward ref but
+orphaned RTIMES's JS fixup, causing the TIMES counter to be ignored.
+Also fix triple (and arbitrary N-ary) WHILE.
+
+### Background
+
+`TIMES ... WHILE ... REPEAT` is a legitimate pattern found in hanoi:49.
+On i386, it works because END iterates ALL forward refs in a loop. On
+ff64, REPEAT only resolved one forward ref (WHILE), leaving the RTIMES
+JS fixup unresolved. When the TIMES counter expired, the JS conditional
+jump went nowhere useful, and the loop ran forever or gave wrong results.
+
+The compile-time data stack before REPEAT:
+
+| Pattern            | Stack layout                     |
+|--------------------|----------------------------------|
+| `BEGIN...REPEAT`   | `0`                              |
+| `BEGIN...W...REP`  | `0 while_fwd`                    |
+| `BEGIN...WW...REP` | `0 while1 while2`                |
+| `BEGIN...WWW..REP` | `0 while1 while2 while3`         |
+| `TIMES...REPEAT`   | `-1 js_fixup`                    |
+| `TIMES...W...REP`  | `-1 js_fixup while_fwd`          |
+
+Flag: 0 = no rdrop needed, -1 = emit rdrop. Forward refs are large
+positive addresses. The flag is always negative or zero.
+
+### The Fix
+
+Introduced `_resolve_fwds`, a recursive private-inline word that mirrors
+`_resolve_breaks` (which does the same for the cstack). It resolves all
+positive forward refs on the compile-time data stack, stopping at the
+flag:
+
+```forth
+:. _resolve_fwds 0- 0> IF THEN` _resolve_fwds THEN ;
+: REPEAT` _jmpback_mrk _resolve_fwds _end_cs 0- 0<> drop IF _emit_rdrop THEN ;
+```
+
+`_resolve_fwds` tests TOS with `0- 0>`:
+- **Positive** (a forward ref address): resolve with `THEN\``, recurse
+- **Zero or negative** (the flag): stop
+
+This handles any number of WHILEs plus an optional TIMES JS fixup.
+The approach was suggested by DG: "can we tackle this and the triple
+WHILE by using recursion?" — mirroring `_resolve_breaks` which already
+uses recursion (`cs> 0; _then _resolve_breaks`).
+
+### Failed Approaches (Before Recursion)
+
+1. **Hard-coded double check** — `0- 0<> IF THEN\` 0- 0> IF THEN\`
+   THEN THEN` resolved at most two forward refs. Worked for
+   TIMES+WHILE and double WHILE, but not triple WHILE.
+
+2. **`0- 0> drop IF THEN\``** (with drop) — the `drop` consumed
+   the flag (0) for BEGIN+WHILE+REPEAT, leaving the compile-time data
+   stack empty. Solution: omit the `drop` — comparisons don't consume
+   TOS in FreeForth, so the flag stays on the stack.
+
+3. **Moving JS fixup to cstack** — `_resolve_breaks` would resolve JS
+   too early (before rdrop), so the JS would jump to before the rdrop
+   code, leaving the TIMES counter on the return stack.
+
+4. **Swapping RTIMES stack order to `js -1`** — with -1 on top,
+   the first `0- 0<>` test saw -1 as nonzero and tried to resolve
+   it as an address → SEGV.
+
+### Files Changed
+
+- `ff64.boot:321-322` — new `_resolve_fwds` + simplified REPEAT
+- `test/loops.ff` — Groups R and U fully promoted from `skip` to active
+- `exp/135-loop-cond-audit/test.ff` — same
+
+### Remaining ff64 Compiler Bugs
+
+All known loop+conditional compile-time bugs are now **FIXED**:
+
+1. ~~IF AGAIN → SEGV~~ **FIXED** (exp 136)
+2. ~~BEGIN...IF BREAK...REPEAT → SEGV~~ **FIXED** (exp 137)
+3. ~~TIMES + WHILE → counter ignored~~ **FIXED** (this experiment)
+4. ~~Double WHILE → no return~~ **FIXED** (this experiment)
+5. ~~Triple WHILE → no return~~ **FIXED** (this experiment)
+6. **rdrop ;THEN** — not actually a bug; tested and works correctly
+
+### Results
+
+- `make test64`: all PASSED (loops.ff: 91 ok, 0 skip)
+- `make test`: all PASSED (ff, ff+longconds, fftk, fftk+longconds)
+- `make -C exp test`: all pass (exp 073 pre-existing failures only)

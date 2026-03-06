@@ -427,17 +427,16 @@ t{ _q3 -> 3 }t
 
 \ ============================================================
 \ Group R: TIMES + WHILE early exit
-\ KNOWN BUG: REPEAT resolves WHILE instead of RTIMES js fixup.
 \ ============================================================
 
 \ hanoi:49 — TIMES tuck c@ <> drop swap 0<> WHILE 1+ REPEAT nip ;
 testing TIMES + WHILE early exit (match)
-\ : _r1 0 10 TIMES 1+ dup 3 <> 2drop WHILE REPEAT ;
-skip t{ _r1 -> 3 }t
+: _r1 0 10 TIMES 1+ dup 3 <> 2drop WHILE REPEAT ;
+t{ _r1 -> 3 }t
 
 testing TIMES + WHILE early exit (no match — full TIMES)
-\ : _r2 0 3 TIMES 1+ dup 99 <> 2drop WHILE REPEAT ;
-skip t{ _r2 -> 3 }t
+: _r2 0 3 TIMES 1+ dup 99 <> 2drop WHILE REPEAT ;
+t{ _r2 -> 3 }t
 
 \ ============================================================
 \ Group S: ;; in CASE/BREAK/END
@@ -465,16 +464,15 @@ t{ _t2 -> 3 }t
 
 \ ============================================================
 \ Group U: Multiple WHILE
-\ KNOWN BUG: second WHILE exit path doesn't return.
 \ ============================================================
 
 \ hanoi:58 — BEGIN 1- 0<> WHILE d b` 1- 0<> WHILE d c` 1- 0<> WHILE d a` REPEAT
 testing double WHILE countdown
-\ : _u1 10 BEGIN 1- 0- 0<> WHILE 1- 0- 0<> WHILE REPEAT ;
-skip t{ _u1 -> 0 }t
+: _u1 10 BEGIN 1- 0- 0<> WHILE 1- 0- 0<> WHILE REPEAT ;
+t{ _u1 -> 0 }t
 testing triple WHILE countdown
-\ : _u2 30 BEGIN 1- 0- 0<> WHILE 1- 0- 0<> WHILE 1- 0- 0<> WHILE REPEAT ;
-skip t{ _u2 -> 0 }t
+: _u2 30 BEGIN 1- 0- 0<> WHILE 1- 0- 0<> WHILE 1- 0- 0<> WHILE REPEAT ;
+t{ _u2 -> 0 }t
 
 \ ============================================================
 \ Group V: Nested START/ENTER

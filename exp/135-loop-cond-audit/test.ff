@@ -414,16 +414,12 @@ t{ _q3 -> 3 }t
 \ ============================================================
 
 testing TIMES + WHILE early exit (match)
-\ KNOWN BUG on ff64: TIMES+WHILE broken. REPEAT's THEN resolves WHILE
-\ instead of RTIMES js fixup → TIMES counter ignored, rstack not cleaned.
-\ Works on i386 where END iterates all forward refs.
-\ : _r1 0 10 TIMES 1+ dup 3 <> 2drop WHILE REPEAT ;
-skip t{ _r1 -> 3 }t
+: _r1 0 10 TIMES 1+ dup 3 <> 2drop WHILE REPEAT ;
+t{ _r1 -> 3 }t
 
 testing TIMES + WHILE early exit (no match — full TIMES)
-\ Same bug: TIMES counter ignored on ff64.
-\ : _r2 0 3 TIMES 1+ dup 99 <> 2drop WHILE REPEAT ;
-skip t{ _r2 -> 3 }t
+: _r2 0 3 TIMES 1+ dup 99 <> 2drop WHILE REPEAT ;
+t{ _r2 -> 3 }t
 
 \ ============================================================
 \ Group S: ;; in CASE/BREAK/END — see.ff:237
@@ -450,16 +446,14 @@ t{ _t2 -> 3 }t
 
 \ ============================================================
 \ Group U: Multiple WHILE — hanoi:58,98 (triple WHILE)
-\ NOTE: ff64 bug — second WHILE's exit path doesn't return.
 \ ============================================================
 
-\ KNOWN BUG: multiple WHILE broken on ff64
 testing double WHILE countdown
-\ : _u1 10 BEGIN 1- 0- 0<> WHILE 1- 0- 0<> WHILE REPEAT ;
-skip t{ _u1 -> 0 }t
+: _u1 10 BEGIN 1- 0- 0<> WHILE 1- 0- 0<> WHILE REPEAT ;
+t{ _u1 -> 0 }t
 testing triple WHILE countdown — hanoi:58
-\ : _u2 30 BEGIN 1- 0- 0<> WHILE 1- 0- 0<> WHILE 1- 0- 0<> WHILE REPEAT ;
-skip t{ _u2 -> 0 }t
+: _u2 30 BEGIN 1- 0- 0<> WHILE 1- 0- 0<> WHILE 1- 0- 0<> WHILE REPEAT ;
+t{ _u2 -> 0 }t
 
 \ ============================================================
 \ Group V: Nested START/ENTER — hid-m.ff:4-6, ff.boot:284-286

@@ -2140,9 +2140,9 @@ pushes a 0 break-sentinel, stores `here` in mrk[0].
   resolves it via THEN instead of tearing down loop infrastructure.
   Otherwise: resolve breaks, restore mrk, drop flag.
 - `UNTIL`: conditional backward to mrk, resolve breaks, restore mrk
-- `REPEAT`: backward E9. If TOS is nonzero, resolves WHILE's forward
-  ref via THEN; if TOS is zero (no WHILE — e.g., `BEGIN...IF BREAK...
-  REPEAT`), skips the THEN. Then: resolve breaks, restore mrk,
+- `REPEAT`: backward E9. Calls `_resolve_fwds` to recursively resolve
+  all forward refs (WHILEs and TIMES JS) on the compile-time data stack,
+  stopping at the flag (0 or -1). Then: resolve breaks, restore mrk,
   conditional rdrop based on flag (-1 means TIMES loop needs rdrop).
 - `END`: resolve breaks ONLY (no backward jump!), drop flag
 
@@ -2152,10 +2152,23 @@ pushes a 0 break-sentinel, stores `here` in mrk[0].
 ```
 Compiles forward E9, pushes fixup to cstack, resolves preceding IF.
 
-**5. `_resolve_breaks` recursively pops cstack until 0 sentinel:**
+**5. Two recursive resolvers — one for each stack:**
+
+`_resolve_breaks` pops the cstack until the 0 sentinel:
 ```forth
 :. _resolve_breaks cs> 0; _then _resolve_breaks ;
 ```
+
+`_resolve_fwds` resolves forward refs on the data stack while TOS is
+positive (large address). Stops at the flag (0 = BEGIN, -1 = TIMES):
+```forth
+:. _resolve_fwds 0- 0> IF THEN` _resolve_fwds THEN ;
+```
+
+These mirror each other: `_resolve_breaks` iterates the cstack (for
+WHILE/BREAK forward jumps), `_resolve_fwds` iterates the data stack
+(for WHILE and TIMES JS fixups). The recursion handles any number of
+WHILEs — triple WHILE (hanoi:58) works correctly.
 
 ### Why cstack instead of linked list?
 
