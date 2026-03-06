@@ -85,6 +85,18 @@ This is a defining attribute of FreeForth (and FreeForth2):
   just writes `0= IF`. What can't cross is `cond_jmp` (compile-time
   state), which the caller's `0=` trivially re-establishes.
 
+## Reference files
+
+Before writing or debugging Forth code:
+
+- **Bulk-load `TINYREF`** — 311-line core quick reference (stack ops,
+  arithmetic, comparisons, memory, flow control, defining words,
+  strings, I/O). Small enough to keep in context.
+- **`grep QUICKREF`** for unknown words — the full 911-line reference
+  covers all words including libs, OS, FPU, networking, etc.
+- Only fall back to `ff.help` / `ff64.help` when you need the detailed
+  prose explanation.
+
 ## Debugging generated code
 
 FreeForth's compiler generates machine code at runtime. When something
