@@ -159,6 +159,19 @@ before `needed` runs. This prevents the code-overwrite problem
 (inner compilation writing at `[anon]` where the caller's anonymous
 code lives). All practical file loading goes through `needs`.
 
+**The i386 boot exception:** `fflin.boot:60-61` deliberately calls
+`needed` from anonymous code: `_boot ' >r / "ff.ff" needed ' _exec ;`.
+This works because `_boot '` does NOT call `_boot` — FreeForth's `'`
+is a postfix backtick macro that converts the preceding call into a
+literal push. `>r` stashes `_boot`'s XT on the return stack as a
+continuation. After `needed` overwrites the anonymous block, `;`
+returns to `_boot` via the stashed XT. It is a deliberate one-shot
+trampoline, not an accidental safety violation.
+
+**Parsing pitfall:** `_boot '` looks like "call _boot, then parse
+next token" — but `'` operates on the previously compiled call. This
+postfix nature of `'` is essential to reading FreeForth boot code.
+
 **Historical note:** ff64 previously had a ~107-line assembly
 `_loadfile` with its own `filebuf` and `hereatexec` variable.
 This was removed in experiment 141 after discovering the i386

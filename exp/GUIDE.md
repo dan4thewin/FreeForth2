@@ -3239,6 +3239,53 @@ flushing anonymous code before `needed` runs. This prevents the
 overwrite entirely. Both i386 and ff64 are "vulnerable" if `needed`
 is called directly from anonymous code — but that's by design.
 
+### The i386 boot sequence: a deliberate use of `needed` in anonymous code
+
+The i386 `fflin.boot` ends with a subtle and deliberate construction
+that appears to violate the `needed`-in-anonymous-code rule:
+
+```forth
+linsetup ' ossetup !^ _boot ' >r      \ line 60
+"ff.ff" needed ' _exec ;              \ line 61
+```
+
+This is a single anonymous block. The sequence:
+
+1. `linsetup` — call linsetup (patches SEGV handler, dlopen)
+2. `' ossetup !^` — patch `_boot`'s first call to be `linsetup`
+3. `_boot '` — **does not call `_boot`**. The `'` backtick macro
+   converts the preceding `call _boot` into a literal push of
+   `_boot`'s XT. This is a key parsing subtlety: `'` acts on the
+   compiled call that precedes it, not on the next word.
+4. `>r` — pushes `_boot`'s XT onto the return stack
+5. `"ff.ff" needed` — loads ff.ff via `eval` (the dangerous call)
+6. `' _exec` — pushes `_exec`'s XT as a literal (for `_boot`'s
+   `catch` to use)
+7. `;` — returns via `ret`, which pops `_boot`'s XT from the return
+   stack and jumps there. `_boot` runs `ossetup doargv _top`.
+
+The `needed` on line 61 **is** executing inside anonymous code at
+`[anon]`. The `eval` inside `needed` calls `compiler`, which writes
+new code starting at `[anon]` — overwriting the anonymous block being
+executed. But by step 5, the CPU has already fetched and executed
+instructions 1–4; the return continuation (`_boot`) is safely stashed
+on the return stack, not in the anonymous code region. After `needed`
+returns, `' _exec ;` compiles a literal and returns to `_boot`.
+
+The anonymous code that gets overwritten (steps 1–4) has already
+executed and is never revisited. Christophe engineered this: `' >r`
+saves the continuation outside the overwrite zone. It is not an
+accident — it is a careful one-shot trampoline.
+
+**Parsing pitfall for analysis:** When reading `_boot ' >r`, it is
+tempting to parse this as "call `_boot`, then `'` reads the next
+token" — which would mean `_boot` executes (entering the REPL, never
+returning) and `>r` never runs. The correct reading is: `_boot` emits
+a call instruction, `'` converts that call into a literal, and `>r`
+pushes it. `'` is a backtick macro that operates on the previously
+compiled call, not a prefix parser. Understanding FreeForth's postfix
+`'` is essential to reading boot sequences correctly.
+
 ### The loadfile rbp preservation rule (historical — removed in exp 141)
 
 A deeper bug in the old `_loadfile`: after `_compiler` returned, the
