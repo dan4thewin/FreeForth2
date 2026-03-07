@@ -3966,61 +3966,173 @@ The ff64 version groups `doargv` and `_hidepvt` into a single
 For turnkey builds, `_postboot` is nop'd — skipping both argument
 processing and header compaction in one operation.
 
-### The ff64 port
+### The ff64 port — and a lurking bug
 
-For ff64, the same mechanism applies with minor differences:
+For ff64, the same turnkey mechanism applies with some differences:
 - Headers live in `.flat` (not BSS), so no separate `dict` file —
   the `cmpl64` dump includes everything
 - 64-bit variables at known offsets (8 bytes each instead of 4)
-- `_bootxt` at offset 72 (was offset 16 on i386)
-- The `-f` handler detects `main` and rewrites vectors (`_top`, `_postboot`)
-- `DS0` (data stack top address) stored via a config file since
-  `dstack_top` is a label not exposed to Forth
+- The `-f` handler detects `main` and rewrites vectors (`_top`,
+  `_postboot`)
+- `DS0` (data stack top address) stored via `cmpl64.cfg` since
+  `dstack_top` is an assembly label not exposed to Forth
 
-### Building a Turnkey (Experiment 073)
-
-The 64-bit turnkey builder is now implemented and tested.
-
-**Build a turnkey from a program file:**
-```bash
-./ff64 -f program.ff -f lib/mkimage64.ff    # produces cmpl64, cmpl64.cfg
-fasm fftk64.asm fftk64.o                     # assemble turnkey loader
-ld -m elf_x86_64 -lc -ldl \
-   --dynamic-linker=/lib64/ld-linux-x86-64.so.2 \
-   -o fftk64 fftk64.o                        # link turnkey binary
-./fftk64                                      # run standalone program
-```
-
-Or use `make fftk64` after generating cmpl64.
-
-**Build a pre-compiled REPL:**
-```bash
-./ff64 -f lib/mkimage64.ff && make fftk64
-./fftk64                     # instant REPL (no boot compilation)
-```
-
-**The three files:**
-
-| File | Purpose | Size |
-|------|---------|------|
-| `lib/mkimage64.ff` | Dump script — captures running system state | ~25 lines |
-| `cmpl64` | Raw code image (H to here) | ~310KB |
-| `cmpl64.cfg` | DS0 + segvsetup address (16 bytes) | 16B |
-| `fftk64.asm` | Turnkey loader — embeds cmpl64, boots | ~60 lines |
-
-**Variable offset table in cmpl64:**
+**The offset table** lists the header variables at the start of the
+`.flat` section (`cmpl64` file). The turnkey startup code references
+these by numeric offset to initialise the system:
 
 | Offset | Size | Name | fftk64 startup |
 |--------|------|------|----------------|
 | 0 | 8 | H | Already correct (header chain) |
-| 8 | 8 | anon | Set to saved_here by mkimage64 |
+| 8 | 8 | anon | Set to fftk64's codebuf |
 | 16 | 8 | callmark | Cleared to 0 |
-| 48 | 8 | xfp | Cleared to 0 |
-| 56 | 8 | ff_argc | Set from rsp |
-| 64 | 8 | ff_argv | Set from rsp+8 |
-| 72 | 8 | bootxt | Set to _boot xt by mkimage64 |
-| 88 | 1 | SC | Cleared to 0 |
-| 89 | 1 | cond_jmp | Cleared to 0 |
+| 24 | 8 | tin | (not touched — no source to compile) |
+| 32 | 8 | tp | (not touched) |
+| 40 | 8 | xfp | Cleared to 0 |
+| 48 | 8 | CS0 | Set to rsp (argc/argv/envp) |
+| 56 | 8 | bootxt | Set to `_boot` xt by mkimage |
+| 64 | 1 | SC | Cleared to 0 |
+| 65 | 8 | cond_jmp | Cleared to 0 |
+
+**This table was wrong for months.** The original `fftk64.asm`
+(experiment 073) was written when the header layout had fewer fields.
+Later experiments added `CS0` (exp 134/142), shifting `bootxt` from
+offset 56 → where it already was, but the fftk64.asm code had been
+written with incorrect offsets from the start. The specific errors:
+
+- `xfp` was at offset 48 (should be 40)
+- Offsets 56/64 were used to store `argc`/`argv` as separate variables
+  — but ff64 derives them from `CS0` (initial stack pointer), not from
+  stored copies
+- `bootxt` was read from offset 72 (should be 56) — reading garbage
+- `SC` was at offset 88 (should be 64)
+
+The result: `fftk64` produced a binary that jumped to a garbage address
+and crashed immediately. The fix (in the "put a bow on it" session)
+was simply correcting every offset in `fftk64.asm` and changing the
+`argc`/`argv` handling to store `rsp` into `CS0` — exactly what
+`ff64.asm`'s own `_start` does.
+
+**Lesson for the historian:** When an assembly file references another
+file's layout by hardcoded numeric offsets, those offsets are a silent
+contract. If either side changes, nothing warns you. The i386 version
+is immune because `fftk.asm` embeds its image at the same address and
+the compiler has already resolved all symbols. The x86-64 version,
+with its explicit offset table, creates a maintenance hazard. A future
+improvement would be to generate the offsets from the assembly source,
+or to have mkimage write them into the config file.
+
+### Building a Turnkey — Dynamic and Static
+
+There are two x86-64 turnkey builders:
+
+| | `fftk64` (dynamic) | `fftk64s` (static) |
+|---|---|---|
+| **Assembler** | `fftk64.asm` | `fftk64s.asm` |
+| **Linker** | ld (links libc, libdl) | None (FASM outputs ELF directly) |
+| **libc** | Yes (needed for `dlopen`/`dlsym`) | No |
+| **FFI (`#lib`/`#fun`)** | Works | Stubbed out |
+| **Build image with** | `./ff64` | `./ff64s` |
+| **cat.ff size** | ~580K | ~108K |
+
+**Why the build host matters for static turnkeys:**
+
+This is subtle and important. The `cmpl64` image contains **absolute
+addresses** — every compiled `call`, every variable reference, every
+header pointer is a raw 64-bit address. There is no relocation table.
+The image must be loaded at exactly the same virtual address where it
+was compiled.
+
+`ff64` (dynamic) places its `.flat` section at `0x403018` — the linker
+assigns this address based on ELF section layout, PLT stubs, and GOT
+entries for libc symbols.
+
+`ff64s` (static) places its `.flat` section at `0x400078` — right
+after the minimal ELF program header. There is no linker, no sections,
+no PLT.
+
+If you build `cmpl64` with `ff64` and load it into `fftk64s`, every
+address in the image is wrong by `0x2FA0` (the difference between the
+two base addresses). The code jumps to the wrong places, loads from
+the wrong variables, and crashes immediately.
+
+**Rule: dynamic images go in `fftk64`, static images go in `fftk64s`.**
+
+The build workflow:
+
+```bash
+# Dynamic turnkey (links libc — needed if app uses #lib/#fun/#call)
+./ff64  -f myapp.ff -f lib/x86-64/mkimage.ff
+make fftk64
+mv fftk64 myapp
+
+# Static turnkey (no dependencies — smaller, faster startup)
+./ff64s -f myapp.ff -f lib/x86-64/mkimage.ff
+make fftk64s
+mv fftk64s myapp
+```
+
+### Why the Static Turnkey Was 501KB — and How It Became 108KB
+
+The first working `fftk64s` was 501KB. The i386 `fftk` was 35KB.
+Both contained the same cat.ff program. What went wrong?
+
+**The memory layout of ff64.asm:**
+
+```
+Address     What                    Size    Contents
+─────────── ─────────────────────── ─────── ──────────────────────
+0x400078    H (variables)           ~200B   Compiler state
+0x400150    Assembly runtime        ~4KB    Forth primitives
+0x401400    Headers                 ~80KB   Dictionary entries
+0x415999    tib                     256KB   ← terminal input buffer
+0x455999    eob                     1KB     ← end-of-buffer scratch
+0x455D99    helpbuf                 128KB   ← help file buffer
+0x475D99    dstack                  8KB     ← data stack
+0x477D99    dstack_top              —       (DS0 points here)
+0x477D99    codebuf                 64KB    ← compiled Forth code
+0x487DA2    [here]                  —       (compilation pointer)
+```
+
+`mkimage.ff` dumps everything from `H` to `here` — that's the entire
+address range, **including 393KB of zero-filled buffers** (tib,
+helpbuf, dstack) sitting between the assembly runtime and the compiled
+Forth code.
+
+In the dynamic build (`ff64`), these buffers live in `.bss` — a
+special ELF section that tells the OS "zero-fill this region in
+memory; don't store it in the file." The linker sets `MemSiz > FileSiz`
+in the program header, and the kernel zero-fills the extra pages at
+load time.
+
+In the static build (`ff64s`), FASM's `format elf64 executable` does
+the same trick automatically: `rb` directives at the end of a segment
+set `MemSiz > FileSiz` without occupying file space. **But the
+buffers weren't at the end.** They were in the middle, with codebuf
+(and thus all compiled Forth) after them. Since there was initialized
+data (compiled code) after the buffers, FASM had to store the zeros.
+
+**The fix:** reorder the `rb` declarations in ff64.asm:
+
+```
+Before: ... | tib 256K | eob 1K | helpbuf 128K | dstack 8K | codebuf 64K |
+After:  ... | codebuf 64K | tib 256K | eob 1K | helpbuf 128K | dstack 8K |
+```
+
+Now `codebuf` (where compiled Forth code lives) is immediately after
+the assembly runtime and headers. The large zero-filled buffers are
+trailing `rb` declarations. When FASM writes the ELF, it sets
+`MemSiz = 564KB` but only stores `FileSiz = 108KB` — the kernel
+zero-fills the remaining 456KB at load time.
+
+**The image shrinks from 499KB to 106KB.** The turnkey binary goes
+from 501KB to 108KB. Comparable to the i386's 35KB, adjusted for
+64-bit pointer sizes and a larger boot Forth library.
+
+**Why this matters beyond size:** A 108KB static binary with zero
+dependencies — no libc, no dynamic linker, no shared libraries —
+loads in microseconds. On embedded or minimal systems, it's the
+difference between "works everywhere" and "needs a runtime."
 
 ### Critical Bug: loadfile Overwrite (historical — removed in exp 141)
 

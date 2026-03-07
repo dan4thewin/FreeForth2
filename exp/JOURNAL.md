@@ -12099,3 +12099,125 @@ pass.
 - `lib/shell.ff` — rewritten to use boot words
 - `lib/mmap.ff` — NEW cross-platform mmap
 - `exp/145-shared-mmap/Makefile` — 14 tests
+
+## Experiment 145b — Static Turnkey Builder and BSS Optimization
+
+**Goal:** Produce a statically-linked 64-bit turnkey binary (no libc,
+no dynamic linker) and reduce its size from 501KB to something
+comparable to the i386 turnkey (35KB).
+
+**Context:** The existing `fftk64.asm` (experiment 073) produced a
+dynamically-linked turnkey that required libc and libdl at runtime.
+`strace` showed the binary loading shared libraries before doing
+anything useful.  Furthermore, `fftk64.asm`'s offset table hadn't
+been updated since exp 073 — it referenced variables at the wrong
+byte positions, and the turnkey crashed on startup.
+
+### Act 1: Fixing the offset bug
+
+A smoke test (`./ff64 -f cat.ff -f lib/x86-64/mkimage.ff && make fftk64
+&& ./fftk64 /tmp/test.txt`) crashed immediately. GDB showed the final
+`jmp rcx` jumping to `0x49178b49d3014800` — clearly not a valid
+address. The value was read from offset 72, which was not `bootxt`
+but raw machine code bytes.
+
+The root cause: ff64.asm's `.flat` header had grown since exp 073.
+`CS0` was added (exp 134/142) at offset 48, pushing everything after
+it forward. The `fftk64.asm` offset table was never synchronized.
+Every offset from 48 onward was wrong:
+
+```
+fftk64.asm said:    Reality (ff64.asm):
+  +48  xfp             +40  xfp
+  +56  ff_argc          +48  CS0
+  +64  ff_argv          +56  bootxt
+  +72  bootxt           +64  SC (1 byte!)
+  +88  SC               +65  cond_jmp
+```
+
+Additionally, the old code stored `argc`/`argv` as separate values at
+offsets 56/64. But ff64 derives `argc`/`argv` from `CS0` (the initial
+stack pointer) — it doesn't have separate `ff_argc`/`ff_argv`
+variables. The fix: store `rsp` into `CS0` at offset 48, matching
+what `ff64.asm`'s own `_start` does.
+
+### Act 2: The static turnkey
+
+Created `fftk64s.asm` — identical to `fftk64.asm` except:
+- Uses `format elf64 executable 3` (FASM outputs a complete ELF binary)
+- No `extrn dlopen`/`dlsym`/`dlerror` references
+- No linker step — `fasm` produces the final executable directly
+
+First attempt segfaulted. The `cmpl64` image had been built by `ff64`
+(dynamic), whose `.flat` section loads at `0x403018`. But the static
+binary's segment starts at `0x400078`. Every absolute address in the
+image was off by `0x2FA0`. **Solution:** build `cmpl64` using `ff64s`
+(the static FreeForth), so all addresses match.
+
+This is a fundamental constraint of FreeForth's compilation model:
+there is no relocation. The compiler generates absolute `call` and
+`mov` instructions with hardcoded addresses. The image must load at
+the exact virtual address where it was compiled.
+
+### Act 3: 501KB → 108KB
+
+The static turnkey worked but was 501KB — 14× the i386's 35KB.
+Investigation revealed the breakdown:
+
+```
+ 86KB  Assembly runtime + dictionary headers
+256KB  tib (terminal input buffer) — all zeros
+  1KB  eob (end-of-buffer scratch) — all zeros
+128KB  helpbuf (help file buffer) — all zeros
+  8KB  dstack (data stack) — all zeros
+ 20KB  codebuf + compiled Forth (cat.ff + boot)
+─────
+499KB  total cmpl64 image
+```
+
+The 393KB of zero-filled buffers sat between the runtime and the
+compiled code. `mkimage.ff` dumps from `H` to `here`, capturing
+everything including the zeros.
+
+In `ff64` (dynamic), these buffers live in `.bss` — the linker sets
+`MemSiz > FileSiz` in the ELF program header, and the OS zero-fills
+them at load time. In `ff64s` (static), FASM can do the same thing —
+but only for `rb` declarations at the **end** of the segment. The
+buffers were in the middle, with `codebuf` (containing compiled Forth)
+after them.
+
+**Fix:** Reorder `rb` declarations in ff64.asm: move `codebuf` before
+`tib`/`eob`/`helpbuf`/`dstack`. Now compiled Forth code sits right
+after the assembly runtime, and the large buffers are trailing zeros
+that FASM handles via `MemSiz > FileSiz`.
+
+Result: image drops from 499KB to 106KB. Binary from 501KB to 108KB.
+The kernel zero-fills 456KB of buffers at load time, costing nothing
+in file size or I/O.
+
+### Verification
+
+```
+$ strace -e trace=open ./fftk64s /tmp/test.txt
+open("/tmp/test.txt", O_RDONLY) = 3
+hello world
++++ exited with 0 +++
+
+$ file fftk64s
+fftk64s: ELF 64-bit LSB executable, x86-64, statically linked, no section header
+
+$ ls -lh fftk64s fftk ff64s
+ 108K  fftk64s   (64-bit static turnkey)
+  36K  fftk      (32-bit dynamic turnkey)
+  87K  ff64s     (64-bit static FreeForth)
+```
+
+One syscall to open the file. No libc, no dynamic linker, no shared
+libraries. A 108KB self-contained Unix program.
+
+**Files changed:**
+- `fftk64.asm` — fixed offset table (bootxt=56, CS0=48, SC=64)
+- `fftk64s.asm` — NEW static turnkey builder
+- `ff64.asm` — reordered BSS: codebuf before tib/helpbuf/dstack
+- `Makefile` — added `fftk64s` target
+- `.gitignore` — added `fftk64s.asm`
