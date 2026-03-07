@@ -27,6 +27,7 @@
 !/fflinio.asm
 !/fftk.asm
 !/fftk64.asm
+!/fftk64s.asm
 !/hanoi
 !/hello
 !/lib/

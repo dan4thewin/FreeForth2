@@ -41,8 +41,12 @@ fftk64.o: fftk64.asm cmpl64 cmpl64.cfg
 fftk64: fftk64.o
 	$(LD64) -o $@ $<
 
+fftk64s: fftk64s.asm
+	fasm $< $@
+	chmod +x $@
+
 clean:
-	rm -f ff ff64 ff64s fftk fftk64 *.o ff64.boot.min cmpl64 cmpl64.cfg
+	rm -f ff ff64 ff64s fftk fftk64 fftk64s *.o ff64.boot.min cmpl64 cmpl64.cfg
 
 test1:
 	@set -o pipefail; \
