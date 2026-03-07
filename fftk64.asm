@@ -15,13 +15,18 @@ public _start
 
 cmpl64: file "cmpl64"
 
+;;  .flat header layout (must match ff64.asm):
+;;    +0  H          +8  anon       +16 callmark   +24 tin
+;;   +32  tp        +40  xfp        +48 CS0        +56 bootxt
+;;   +64  SC (byte) +65  cond_jmp
+
 _start:
         ;; Load DS0 (dstack_top) from config file
         mov r15, [ds0_val]
 
         ;; Set compilation pointer past all fftk64 code/data
         lea rbp, [fftk64_codebuf]
-        mov [cmpl64+8], rbp         ; update anon to match
+        mov [cmpl64+8], rbp         ; anon = rbp
 
         ;; Clear TOS/NOS registers
         xor ebx, ebx
@@ -29,18 +34,15 @@ _start:
 
         ;; Reset compiler state
         mov qword [cmpl64+16], 0    ; callmark = 0
-        mov qword [cmpl64+48], 0    ; xfp = 0
-        mov byte [cmpl64+88], 0     ; SC = 0
-        mov byte [cmpl64+89], 0     ; cond_jmp = 0
+        mov qword [cmpl64+40], 0    ; xfp = 0
+        mov byte [cmpl64+64], 0     ; SC = 0
+        mov byte [cmpl64+65], 0     ; cond_jmp = 0
 
-        ;; Save argc/argv for Forth access
-        mov rax, [rsp]
-        mov [cmpl64+56], rax        ; ff_argc
-        lea rax, [rsp+8]
-        mov [cmpl64+64], rax        ; ff_argv
+        ;; Save initial stack pointer (argc/argv derived via CS0 in Forth)
+        mov [cmpl64+48], rsp        ; CS0 = rsp
 
-        ;; Jump to _boot (stored in bootxt at offset 72)
-        mov rcx, [cmpl64+72]
+        ;; Jump to _boot (stored in bootxt at offset 56)
+        mov rcx, [cmpl64+56]
         jmp rcx
 
 ;; Force linker to include dl* symbols (needed by #lib/#fun/#call)
