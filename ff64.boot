@@ -526,7 +526,7 @@ variable base
 : .l 8 .#s ;
 
 ( Dictionary inspector — Lavarenne's .hdr+ advances to next header )
-( Stack effect: ( addr -- next-addr ) — prints header info, returns next )
+( Stack effect: \( addr -- next-addr \) — prints header info, returns next )
 : .hdr+ dup .x\ .":_" dup @ .x dup h.ct+ c@ .x h.sz+ c@+ 2dup type + 1+ ;
 : .hdrs H@ START .hdr+ cr ENTER dup h.sz+ c@ 0- 0= drop UNTIL drop ;
 : .hdr .hdr+ cr drop ;

@@ -11,7 +11,7 @@ ff: ff.o
 	$(LD) -o $@ $<
 
 ff64.boot.min: ff64.boot fflin64.boot
-	grep -h '^[: _$$A-Za-z0-9"]' $^ > $@
+	perl -gpe 's/(^|\s+)\\(\s.*|$$)//g; s/(^|\s+)\(\s.*?(?<=\s)\)(?=\s)//gs; s/^\s*\n//gm' $^ > $@
 
 ff64.o: fflin64.asm ff64.asm ff64.boot.min
 	fasm $< $@
@@ -62,6 +62,9 @@ test64: ff64
 		echo "$$r"; \
 		echo "$$r" | grep -q PASSED || echo "$$r" | grep -q SKIPPED || let e+=1; \
 	done; exit $$e
+
+testexp: ff64
+	$(MAKE) --no-print-directory -C exp test | perl -pe 's/\S+\s+//' | sort | uniq -c
 
 test: ff
 	@echo ff; \

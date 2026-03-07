@@ -16,7 +16,7 @@
 
 ( Syscall-based I/O — replaces assembly WORD64 entries )
 ( x86-64 syscall: read=0, write=1, open=2, close=3 )
-( Stack keeps Forth-natural ( addr # ) buffer pair; fd on top )
+( Stack keeps Forth-natural \( addr # \) buffer pair; fd on top )
 : read  ( addr # fd -- n ) >r swap r> 3 0 syscall ;
 : openr ( addr # -- fd ) zt $1A4  0 rot 3 2 syscall ;
 : openw ( addr # -- fd ) zt $1A4 $241 rot 3 2 syscall ;
@@ -24,7 +24,7 @@
 
 ( Syscall word library — thin Forth wrappers over generic syscall )
 ( See ff64.help for full documentation. Reference: musl libc. )
-( Convention: ( argN...arg2 arg1 N sysnum syscall ) )
+( Convention: \( argN...arg2 arg1 N sysnum syscall \) )
 (   arg1=closest to TOS → rdi, arg2 → rsi, arg3 → rdx, etc. )
 
 ( File I/O — raw syscall wrappers, prefixed _ to avoid shadowing )

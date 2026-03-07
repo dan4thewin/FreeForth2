@@ -4,7 +4,7 @@ needs fixup.ff
 needs ior.ff
 needs syscalls.ff
 
-[64] [IF] [ELSE]
+[~] getpid [IF]
 :. _getpid "getpid" fixup ;
 :  getpid 0 0 _getpid #call ; ( -- pid )
 :. _getppid "getppid" fixup ;
