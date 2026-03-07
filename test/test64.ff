@@ -330,18 +330,18 @@ testing 0<>; early exit
 t{ 5 _t0nesemi -> }t
 t{ 0 _t0nesemi -> 99 }t
 
-testing TIMES/LOOP
-: _ttl1 0 swap TIMES 1 + LOOP ;
+testing TIMES/REPEAT
+: _ttl1 0 swap TIMES 1 + REPEAT ;
 t{ 1 _ttl1 -> 1 }t
 t{ 5 _ttl1 -> 5 }t
 t{ 0 _ttl1 -> 0 }t
 
 testing TIMES r counter
-: _ttlr 0 5 TIMES r + LOOP ;
+: _ttlr 0 5 TIMES r + REPEAT ;
 t{ _ttlr -> 10 }t
 
 testing nested TIMES
-: _ttln 0 3 TIMES 2 TIMES 1 + LOOP LOOP ;
+: _ttln 0 3 TIMES 2 TIMES 1 + REPEAT REPEAT ;
 t{ _ttln -> 6 }t
 
 testing TIMES/REPEAT
@@ -349,7 +349,7 @@ testing TIMES/REPEAT
 t{ _ttr -> 3 }t
 
 testing RTIMES
-: _trtimes 0 5 >r RTIMES r + LOOP ;
+: _trtimes 0 5 >r RTIMES r + REPEAT ;
 t{ _trtimes -> 10 }t
 
 testing START/END

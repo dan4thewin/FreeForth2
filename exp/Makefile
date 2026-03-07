@@ -71,7 +71,7 @@ EXPERIMENTS = 023-forthmacros64 \
 
 # Known-broken experiments — listed so we know they exist.
 # Fix and move back to EXPERIMENTS when passing.
-SKIP = 073-turnkey 078-ffpath 079-fixup 080-lib64
+SKIP = 073-turnkey 080-lib64
 
 test:
 	@fail=0; for d in $(EXPERIMENTS); do \

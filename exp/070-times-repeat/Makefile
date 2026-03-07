@@ -18,8 +18,8 @@ test:
 	run "TIMES REPEAT basic" \
 		': t 3 TIMES 42 . REPEAT cr ; t ;' \
 		'42 42 42 '; \
-	run "TIMES LOOP still works" \
-		': t 3 TIMES 42 . LOOP cr ; t ;' \
+	run "TIMES REPEAT still works" \
+		': t 3 TIMES 42 . REPEAT cr ; t ;' \
 		'42 42 42 '; \
 	run "TIMES REPEAT zero count" \
 		': t 0 TIMES 42 . REPEAT cr ; t ;' \

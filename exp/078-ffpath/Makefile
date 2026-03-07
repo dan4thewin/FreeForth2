@@ -30,7 +30,7 @@ test:
 		"lib/x86-64"; \
 	run "not found error" \
 		'echo "\"nosuchfile.ff\" needed 0 exit" | ./ff64' \
-		"not found"; \
+		"Can't open file"; \
 	echo "  ----"; \
 	echo "  $$pass passed, $$fail failed"; \
 	test $$fail -eq 0

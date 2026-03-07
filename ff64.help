@@ -88,10 +88,6 @@ cond. ( -- ) convert stack boolean to FLAGS
   stack booleans to FreeForth's FLAGS-based control flow.
   see also: conditionals IF. WHILE. UNTIL.  ff.help
 
-LOOP` compile-time macro: close a TIMES counted loop
-  Decrements counter, branches back if nonzero.
-  see also: TIMES REPEAT
-
 C1?` compile-time macro: test CPU carry flag (set)
   Stores JB ($72) in cond_jmp. Use after add/adc/sbb
   to branch on overflow/borrow.

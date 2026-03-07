@@ -20,21 +20,21 @@ test-fixup-patched:
 
 # Test: strerror displays correct error message for various codes
 test-strerror:
-	@printf '"lib/ior.ff" loadfile ;\n2 strerror\n-22 strerror\n0 exit ;\n' > /tmp/079-strerror.ff
+	@printf 'needs ior.ff\n2 strerror\n-22 strerror\n0 exit ;\n' > /tmp/079-strerror.ff
 	@OUT=$$(cd $(ROOT) && ./ff64 -f /tmp/079-strerror.ff 2>&1); \
-	echo "$$OUT" | grep -q "Unknown error -2" && \
-	echo "$$OUT" | grep -q "Invalid argument" && \
-	echo "  PASS test-strerror" || (echo "  FAIL test-strerror"; exit 1)
+	echo "$$OUT" | grep -q "errno -2" && \
+	echo "$$OUT" | grep -q "EINVAL" && \
+	echo "  PASS test-strerror" || (echo "  FAIL test-strerror"; echo "    got: $$OUT"; exit 1)
 
 # Test: strerror works when loaded via needed (FFPATH resolves lib/x86-64)
 test-strerror-needed:
-	@printf '"ior.ff" needed ;\n-13 strerror\n0 exit ;\n' > /tmp/079-needed.ff
-	@cd $(ROOT) && ./ff64 -f /tmp/079-needed.ff 2>&1 | grep -q "Permission denied" && \
+	@printf 'needs ior.ff\n-13 strerror\n0 exit ;\n' > /tmp/079-needed.ff
+	@cd $(ROOT) && ./ff64 -f /tmp/079-needed.ff 2>&1 | grep -q "EACCES" && \
 	echo "  PASS test-strerror-needed" || (echo "  FAIL test-strerror-needed"; exit 1)
 
 # Test: ?ior stores result in ior variable
 test-qior:
-	@printf '"ior.ff" needed ;\n42 ?ior drop\nior @ . cr ;\n0 exit ;\n' > /tmp/079-qior.ff
+	@printf 'needs ior.ff\n42 ?ior drop\nior @ . cr ;\n0 exit ;\n' > /tmp/079-qior.ff
 	@cd $(ROOT) && ./ff64 -f /tmp/079-qior.ff 2>&1 | grep -q "42" && \
 	echo "  PASS test-qior" || (echo "  FAIL test-qior"; exit 1)
 

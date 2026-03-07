@@ -22,8 +22,8 @@ test:
 	echo "  --- BEGIN/WHILE/REPEAT ---"; \
 	chk ': t 0 BEGIN 1+ dup 5 - 0- 0<> drop WHILE REPEAT . cr ; t ;' '5 ' 'BEGIN/WHILE/REPEAT'; \
 	chk ': t 0 BEGIN 1+ dup 5 - 0- 0= drop UNTIL . cr ; t ;' '5 ' 'BEGIN/UNTIL'; \
-	echo "  --- TIMES/LOOP ---"; \
-	chk ': t 0 5 TIMES 1+ LOOP . cr ; t ;' '5 ' 'TIMES/LOOP 5x'; \
+	echo "  --- TIMES/REPEAT ---"; \
+	chk ': t 0 5 TIMES 1+ REPEAT . cr ; t ;' '5 ' 'TIMES/REPEAT 5x'; \
 	echo "  --- depth clean after boot ---"; \
 	chk 'depth . cr ;' '0 ' 'depth is 0 after boot'; \
 	echo "  --- nested loops ---"; \

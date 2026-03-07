@@ -163,7 +163,7 @@ $77 dup : u>`  lit _?2 ; : u>.`  lit _?2. ;
 :. ?off dup 2* over^ -$100& drop _off ? ;
 :. ?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition"
 : cond ?@ ?nn 1^ ;
-: cond. 0-` drop` 0<>` ;
+:. cond. 0-` drop` 0<>` ;
 :. SC, here SC c@ c, ;
 : IF.` cond.
 : IF` cond c, SC, ;
@@ -235,6 +235,9 @@ create mrk 0 , 0 ,
 4 constant cell
 4*` ' alias cell*`
 cell 4 - constant [64]`
+0 constant stdin
+1 constant stdout
+2 constant stderr
 
 variable io pvt
 : key io 1 under accept drop c@ ;

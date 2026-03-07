@@ -257,7 +257,7 @@ $77 dup : u>`  lit _?2 ; : u>.`  lit _?2. ;
 ( cond.: convert a stack boolean to FLAGS for dotted flow control. )
 ( Emits 0- [test TOS], drop [consume it], 0<> [set Jcc for nonzero]. )
 ( Falls through to IF.` which falls through to IF`, matching i386. )
-: cond. 0-` drop` 0<>` ;
+:. cond. 0-` drop` 0<>` ;
 : IF.` cond.
 : IF` >S0 cond $0F c, $10+ c, here 4 allot ;
 : THEN` >S0 here over - 4- swap d! 0 callmark! ;
@@ -321,7 +321,6 @@ variable mrk 0 mrk 8+ !
 : REPEAT` _jmpback_mrk _resolve_fwds _end_cs 0- 0<> drop IF _emit_rdrop THEN ;
 : TIMES` >r`
 : RTIMES` >S0 _begin -1 $48 c, $FF c, $0C c, $24 c, $0F c, $88 c, here 4 allot ;
-: LOOP` >S0 _jmpback_mrk THEN` _end_cs drop rdrop` ;
 
 ( Stack manipulation )
 : 2swap rot >r rot r> ;
@@ -491,7 +490,6 @@ variable base
 
 ( Hex digit output — .#s prints N hex digits of a value )
 ( .b falls through to .#s — just provides the count 2. )
-( REPEAT not LOOP: Lavarenne's original uses TIMES...REPEAT. )
 : .b 2
 : .#s TIMES dup r 4* >> $F & .digit REPEAT drop ;
 : .w 4 .#s ;

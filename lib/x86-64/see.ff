@@ -43,7 +43,7 @@ $103 :. ca		xx buf appendc ;
 :. _xlen	0 swap BEGIN swap 1+ swap 4 >> 0- 0= UNTIL drop ;
 $102 :. xa	xx 0- 0< IF '-' ca negate THEN
 		0- 0= IF '0' ca drop ;THEN
-		dup _xlen TIMES dup r 4* >> xdigit LOOP drop ;
+		dup _xlen TIMES dup r 4* >> xdigit REPEAT drop ;
 
 \ Mnemonic tables — packed names, no spaces
 create mne3 pvt 39 allot "movleajmppopretstdnopcqocdqcldshlshrsar" mne3 swap move
