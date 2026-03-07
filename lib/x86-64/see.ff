@@ -201,6 +201,12 @@ $5f :. popDI	1b 3 m3 7 r64x 0 ;op
 $68 :. pushi32	5b 3 m4 xa 0 ;op
 $6a :. pushi8	2b 3 m4 se xa 0 ;op
 
+\ --- IMUL 3-operand (signed multiply with immediate) ---
+\ $6B r, r/m, imm8: e.g. 48 6B DB 0A = imul rbx, rbx, 10
+$6b :. imuli8	3b ext 'i' ca 'm' ca 'u' ca 'l' ca sp3 r64r ,a 7& r64 ,a se xa 0 ;op
+\ $69 r, r/m, imm32: e.g. 48 69 DB E8030000 = imul rbx, rbx, 1000
+$69 :. imuli32	2b 'i' ca 'm' ca 'u' ca 'l' ca sp3 rm ,a .le dup d@ xa 4+ 0 ;op
+
 \ --- Short conditional jumps ---
 :. j_	se over+ dup jba drop 0 ;
 $72 :. jb	2b 'j' ca 'b' ca sp5 j_ ;op
@@ -305,6 +311,14 @@ movsxi8  ' op0f $be 8* + !
 :. movsxi16	2b 1 m5 split 0- drop 0<> IF 2drop ??? 0 ;THEN r64r ,word r@ 0 ;
 movsxi16 ' op0f $bf 8* + !
 
+\ --- 0F 05: syscall instruction ---
+:. _syscall	1b 's' ca 'y' ca 's' ca 'c' ca 'a' ca 'l' ca 'l' ca 0 ;
+_syscall ' op0f $05 8* + !
+
+\ --- 0F AF: imul r, r/m (2-operand) ---
+:. imul2op	2b 'i' ca 'm' ca 'u' ca 'l' ca sp3 rm 0 ;
+imul2op ' op0f $af 8* + !
+
 \ --- Mov immediate (avoid IF/ELSE/THEN: split into 64-bit and 32-bit helpers) ---
 :. _movi64	.Q xa 0 ;
 :. _movi32	.N xa 0 ;
@@ -325,12 +339,15 @@ $d3 :. sh_cl	2b ext _shcl_nm m3 7& r64 ,cl 0 ;op
 \ --- Ret --- (mne3: 4=ret)
 $c3 :. ret	1b 4 m3. -1 ;op
 
+\ --- Int3 (breakpoint) ---
+$cc :. _int3	1b 'i' ca 'n' ca 't' ca '3' ca 0 ;op
+
 \ --- Mov immediate to r/m ---
 $c6 :. movi8	2b 0 m3 'b' ca 'y' ca 't' ca 'e' ca split nip mod ,a dup cs@ dup space .b xa 1+ 0 ;op
 $c7 :. movi32	2b 0 m3 split nip mod ,a space .le dup d@ xa 4+ 0 ;op
 
 \ --- Word prefix ---
-$66 :. 66	dup 1+ c@ $89 CASE 2b 0 m3 'w' ca 'o' ca 'r' ca 'd' ca drop mr 0 ;; ;THEN 2drop drop .A? 0 ;op
+$66 :. 66	dup 1+ c@ $89 CASE 3b drop 0 m3 'w' ca 'o' ca 'r' ca 'd' ca mr 0 ;; ;THEN 2drop drop .A? 0 ;op
 
 \ --- Call/Jmp --- (mne4: 2=call, mne3: 2=jmp)
 $e8 :. call	5b 2 m4 over+ dup jba drop 0 ;op
