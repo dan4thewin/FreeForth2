@@ -1,9 +1,9 @@
 # FreeForth2 — Backlog
 
 ## Test fixes (SKIPPED experiments)
-- **fix-079**: Fix 079-fixup — test uses deleted `loadfile`, change to `needs ior.ff`. Trivial.
-- **fix-080**: Fix 080-lib64 — fixup.ff generates i386 thunks at runtime, needs x86-64 opcodes. Blocks all lib/ tests.
-- **fix-078**: Fix 078-ffpath — may be fixed now that openlib is ported from i386. Retest.
+- ~~**fix-079**~~: DONE — changed `loadfile` → `needs`, fixed strerror expectations.
+- ~~**fix-080**~~: DONE — changed `"xxx.ff" needed` → `needs xxx.ff`. All 8 tests pass.
+- ~~**fix-078**~~: DONE — updated "not found" expectation to "Can't open file".
 - **fix-073**: Fix 073-turnkey — REPL segfaults in turnkey binaries. Likely BSS/memory layout. Large.
 
 ## Compiler bugs (known, tested in exp/135 and test/loops.ff)
@@ -13,7 +13,6 @@
 - ~~**fix-repeat-break**~~: FIXED — `BEGIN ... IF BREAK ... REPEAT` works.
 
 ## Port work
-- exp 144+: Continue porting remaining i386 fflin.boot features.
 - **mmap-shared**: Move mmap.ff from lib/x86 to lib/ as cross-platform. Replace hardcoded syscall numbers with boot words (mmap/munmap) and constants (_sys.ftruncate). Replace 4-byte struct offsets with cell-relative. Add _sys.ftruncate to syscalls.ff. stat word needed on x86-64.
 - ~~**fill-bug**~~: FIXED — `fill` works for 100+ bytes.
 - **io-extraction**: Extract I/O from ff64.asm into fflin64io.asm, create fflin64.asm glue file. Prep for future ARM64/macOS ports.
@@ -23,14 +22,14 @@
 
 ## Hygiene
 - **beautify-forth**: Beautify new Forth files — standardize comment and header style, tab-based alignment.
-- **privatize-cond-dot**: Make `cond.` private in both ff.boot and ff64.boot (`:` → `:.`). DG confirmed oversight.
-- **remove-loop**: Remove LOOP from ff64.boot — not a FreeForth word. Use TIMES...REPEAT instead.
-- **add-stderr-x86**: Add `stderr` constant to ff.boot (x86). Already in ff64.boot.
+- ~~**privatize-cond-dot**~~: DONE — `:. cond.` in both ff.boot and ff64.boot.
+- ~~**remove-loop**~~: DONE — removed LOOP from ff64.boot, updated all references.
+- ~~**add-stderr-x86**~~: DONE — added stdin/stdout/stderr to ff.boot.
 - **exp-tmp-cleanup**: Move experiment temp files from /tmp to local dirs (~20+ Makefiles).
 - ~~**segv-missing-word**~~: FIXED — ff64 now shows `<-error: ???` on unknown words, same as i386.
-- **needs-segv-loop**: `needs`/`needed` enters infinite SEGV loop when a dependency file can't be found (e.g., hanoi without console.ff/time.ff preloaded). The needed/openlib chain crashes instead of reporting an error.
+- ~~**needs-segv-loop**~~: NOT A BUG — cascading errors from missing dependencies (e.g., hanoi without console.ff/time.ff). Error recovery works; SEGV is from executing partially-compiled broken code.
 - **standardize-tests**: DG asked to standardize on one test pattern (`[[ $$actual = $$expected ]]` exact match in Makefiles).
-- **else-workarounds**: Now that `_parse` bug is fixed, audit ff64.boot `IF...;THEN` workarounds — ELSE may work correctly now. Remove workarounds where safe.
+- ~~**else-workarounds**~~: DONE — audit complete. ELSE used freely in ff64.boot. No workarounds remain.
 
 ## Side quests
 - **dis-move-to-lib**: Move dis.ff to lib/ as cross-platform tool (gdb-based, arch-independent).
