@@ -20,7 +20,7 @@ variable _wstat pvt
   "-c" drop _sh_argv 8+ !
   0 _sh_argv 24+ !
   fork 0- 0= IF envp _sh_argv _sh_argv @ execve drop -1 exit THEN
-  drop 0 _wstat ! 0 0 _wstat rot wait4 drop _wstat w@ $FF00 & 8 >> ;
+  drop 0 _wstat ! 0 0 _wstat 0 wait4 drop _wstat w@ $FF00 & 8 >> ;
 [ELSE]
 needs fixup.ff
 :. _system "system" fixup ;
@@ -31,5 +31,5 @@ needs fixup.ff
 : shell system 0; ior! !"shell_call_failed" ( addr len -- )
 : cd` wsparse zt chdir ?ior ( <newdir> -- )
 ;
-: !!` lnparse shell ; ( <line> -- )
+: !!` lnparse 2dup + 0 swap c! shell ; ( <line> -- )
 " shell" features append ;

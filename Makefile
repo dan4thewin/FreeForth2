@@ -57,7 +57,7 @@ test1:
 
 test64: ff64
 	@set -o pipefail; e=0; \
-	skip="core1.ff core2.ff mmap.ff"; \
+	skip="core1.ff core2.ff"; \
 	for d in test/*; do \
 		b=$$(basename $$d); \
 		echo -n $$d; printf %$$((20-$${#d}))s; \

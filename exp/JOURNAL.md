@@ -12445,3 +12445,71 @@ All three gates pass:
 - `make testexp` — 72 PASSED, 1 SKIPPED (073-turnkey only)
 
 Only 073-turnkey remains skipped (turnkey REPL SEGV — a large effort).
+
+---
+
+## Experiment 149: shell.ff bugs and mmap cross-platform
+
+**Date:** 2026-03-07
+**Goal:** Fix shell.ff bugs blocking mmap.ff on ff64; enable mmap test on both platforms.
+
+### Background
+
+test/mmap.ff was skipped in `make test64` because it hung. Investigation revealed
+three separate bugs in lib/shell.ff, plus a missing-dependency issue in the test.
+
+### Bug 1: `!!` NUL-termination (ff64 only)
+
+`!!` calls `lnparse shell`. On i386, `system` calls `zt` (NUL-terminate) before
+passing to libc `system()`. On ff64, `system` uses fork/execve directly and never
+NUL-terminates — the string passed to bash contained trailing source code.
+
+**Fix:** `lnparse 2dup + 0 swap c!  shell` — write a NUL byte at addr+len before
+calling shell. This is safe because lnparse always points into the tib, and the
+byte at addr+len is a newline (both are whitespace to the parser).
+
+### Bug 2: `system` wait4 stack consumption (ff64 only)
+
+`wait4 ( rusage options status pid -- pid )` requires 4 arguments, but `system`
+only pushed 3 (`0 0 _wstat rot`). The missing rusage argument caused wait4 to
+consume one item from the caller's stack, silently corrupting every `system` /
+`shell` / `!!` call.
+
+**Manifestation:** `depth` showed -1 after any `!!` call. The t{ }t framework
+detected this as "stack must be empty" and "wrong number of results" on the
+catch-based test 12 in mmap.ff.
+
+**Fix:** Replace `0 0 _wstat rot wait4` with `0 0 _wstat 0 wait4` — explicitly
+provide all 4 arguments (rusage=0, options=0, status=&_wstat, pid=0). The `rot`
+was unnecessary and masked the missing argument.
+
+### Bug 3: i386 regression from NUL-termination fix
+
+The first attempt at the `!!` fix used `under + 0 swap c! 0 shell`, passing 0 as
+the len argument. On ff64 this works (system drops len). On i386, `system` calls
+`zt` which does `over+ 0 swap c!` — with len=0, this writes a NUL at addr+0,
+erasing the first byte of the command string. Every `!!` command silently failed.
+
+**Fix:** Use `2dup + 0 swap c! shell` instead, preserving the original (addr len)
+pair for `shell`. On i386, `zt` harmlessly re-terminates at the same position.
+
+### Missing dependencies in test/mmap.ff
+
+test/mmap.ff uses `!!` (from shell.ff), `getpid` (from shell.ff), and PNO words
+`s>d`, `#s`, `#>`, `<#`, `hold` (from pno.ff). On i386, ff.ff loads both
+shell.ff and pno.ff automatically. On ff64, there's no equivalent auto-loader.
+
+**Fix:** Added `needs shell.ff` and `needs pno.ff` to test/mmap.ff.
+
+### Changes
+
+- `lib/shell.ff:23` — `0 0 _wstat 0 wait4` (was `0 0 _wstat rot wait4`)
+- `lib/shell.ff:34` — `lnparse 2dup + 0 swap c! shell` (was `lnparse shell`)
+- `test/mmap.ff:1-2` — added `needs shell.ff` / `needs pno.ff`
+- `Makefile:60` — removed mmap.ff from test64 skip list
+
+### Test results
+
+- `make test` — all PASSED (including test/mmap.ff on all 4 i386 configs)
+- `make test64` — all PASSED (mmap.ff now runs, 12/12)
+- `make testexp` — 72 PASSED, 1 SKIPPED (073-turnkey only)

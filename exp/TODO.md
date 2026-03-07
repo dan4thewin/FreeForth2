@@ -13,7 +13,7 @@
 - ~~**fix-repeat-break**~~: FIXED — `BEGIN ... IF BREAK ... REPEAT` works.
 
 ## Port work
-- **mmap-shared**: Move mmap.ff from lib/x86 to lib/ as cross-platform. Replace hardcoded syscall numbers with boot words (mmap/munmap) and constants (_sys.ftruncate). Replace 4-byte struct offsets with cell-relative. Add _sys.ftruncate to syscalls.ff. stat word needed on x86-64.
+- ~~**mmap-shared**~~: DONE (exp 145 + 149) — lib/mmap.ff is cross-platform, test/mmap.ff passes on both i386 and ff64. Also fixed shell.ff system stack bug (wait4 missing rusage arg) and !! NUL-termination.
 - ~~**fill-bug**~~: FIXED — `fill` works for 100+ bytes.
 - **io-extraction**: Extract I/O from ff64.asm into fflin64io.asm, create fflin64.asm glue file. Prep for future ARM64/macOS ports.
 

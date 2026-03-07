@@ -1,3 +1,5 @@
+needs shell.ff
+needs pno.ff
 needs mmap.ff
 needs test.ff
 12 >plan
