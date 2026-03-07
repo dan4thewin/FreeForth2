@@ -1,10 +1,19 @@
-( ior.ff — I/O result checking and strerror )
-( Equivalent of strerror/?ior from Lavarenne's ff.ff, via fixup. )
-( Requires fixup.ff [loaded automatically via needed]. )
-needs fixup.ff
+\ ior.ff — I/O result checking and strerror
 
+[64] [IF]
+\ Native strerror — packed errno name table, no libc dependency
+\ 8-char entries for errno 1-28; index = errno-1 * 8
+create _enames pvt 224 allot
+"EPERM   ENOENT  ESRCH   EINTR   EIO     ENXIO   E2BIG   ENOEXEC EBADF   ECHILD  EAGAIN  ENOMEM  EACCES  EFAULT  ENOTBLK EBUSY   EEXIST  EXDEV   ENODEV  ENOTDIR EISDIR  EINVAL  ENFILE  EMFILE  ENOTTY  ETXTBSY EFBIG   ENOSPC  " _enames swap move
+:. _ename 1- 8* _enames + 8 ;
+: strerror ( ior -- )
+  negate dup 1 >= 2drop IF dup 28 <= 2drop IF _ename type cr ;THEN THEN
+  ."errno_" . cr ;
+[ELSE]
+needs fixup.ff
 :. _strerror "strerror" fixup ;
 :  strerror negate 1 dup _strerror #call zlen type cr ;
+[THEN]
 
 variable ior
 : ?ior dup ior!

@@ -172,8 +172,9 @@ variable mainxt pvt
 ( doargv — evaluate command line arguments as FreeForth words )
 :. doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap eval. ;
 
-( _postboot — doargv + hidepvt; nop'd for turnkey )
-:^ _postboot doargv _hidepvt ;
+( _postboot — doargv + FFHIDE check + hidepvt; nop'd for turnkey )
+:. _ffhide "FFHIDE" getenv 0- 0<> IF swap c@ '0'- 0= IF hide off THEN THEN 2drop ;
+:^ _postboot _ffhide doargv _hidepvt ;
 
 ( -f` must come after _postboot — it references _postboot for vector nop )
 :. _f_main mainxt ! _main ' _top !^ _postboot n^ ;

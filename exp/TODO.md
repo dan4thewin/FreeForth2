@@ -8,8 +8,10 @@
 
 ## Port work
 - exp 144+: Continue porting remaining i386 fflin.boot features
+- **mmap-shared**: Move mmap.ff from lib/x86 to lib/ as cross-platform. Replace hardcoded syscall numbers with boot words (mmap/munmap) and constants (_sys.ftruncate). Replace 4-byte struct offsets with cell-relative. Add _sys.ftruncate to syscalls.ff. stat word needed on x86-64.
 
 ## Hygiene
+- **beautify-forth**: Beautify new Forth files — standardize comment and header style, tab-based alignment.
 - **privatize-cond-dot**: Make `cond.` private in both ff.boot and ff64.boot (`:` → `:.`). DG confirmed oversight.
 - **remove-loop**: Remove LOOP from ff64.boot — not a FreeForth word. Use TIMES...REPEAT instead.
 - **add-stderr-x86**: Add `stderr` constant to ff.boot (x86). Already in ff64.boot.

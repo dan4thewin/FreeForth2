@@ -11633,3 +11633,130 @@ terminates any open definition first, which may be essential context.
 The `needed` word calls `eval` which compiles the loaded file's
 contents, and this may interact badly with the compile state when
 called from within an anonymous block. Debugging deferred.
+
+---
+
+## Experiment 144: Native libc replacements
+
+**Goal**: Eliminate fixup.ff dependency for `shell.ff` and `ior.ff` on
+x86-64 by replacing libc calls (system, strerror) with native syscall
+implementations. Add FFHIDE environment variable support.
+
+**Motivation**: The fixup.ff mechanism generates i386 runtime thunks
+for dlsym'ed libc functions. On x86-64, this crashes (exp 080). Rather
+than port fixup's code generation, we can bypass it entirely for the
+three libc consumers: `shell.ff` (system), `ior.ff` (strerror), and
+`malloc.ff` (malloc/free). This experiment handles the first two.
+
+### What changed
+
+#### 1. Native `system` in shell.ff
+
+The i386 version calls libc's `system()` via fixup/dlsym. The x86-64
+version uses three syscalls directly:
+
+```forth
+: system ( addr len -- status )
+  drop _sh_argv 16+ !       \ store cmd in argv[2]
+  "/bin/bash" drop _sh_argv !   \ argv[0] = "/bin/bash"
+  "-c" drop _sh_argv 8+ !      \ argv[1] = "-c"
+  0 _sh_argv 24+ !             \ argv[3] = NULL
+  fork 0- 0= IF envp _sh_argv _sh_argv @ execve drop -1 exit THEN
+  drop 0 _wstat ! 0 0 _wstat rot wait4 drop _wstat w@ $FF00 & 8 >> ;
+```
+
+Key design decisions:
+- **`/bin/bash`** (not `/bin/sh`) — DG's preference.
+- **FreeForth strings are NUL-terminated** — `"string"` pushes
+  `(addr len)` where addr already points to a NUL-terminated string
+  in the compiled code. `drop` discards the length; `zt` is NOT needed
+  and was causing bugs by writing a redundant NUL and dropping the
+  length.
+- **`_sh_argv`**: 32-byte `create` block holding 4 pointers. Stored in
+  data space (writable).
+- **`_wstat`**: variable for wait4's status output. Exit code extracted
+  with `w@ $FF00 & 8 >>` (bits 15:8 of the 32-bit wait status).
+- **`envp`** passes the parent's environment to the child, so
+  environment variables propagate correctly.
+
+**Bug encountered**: The `wait` wrapper word didn't write exit status.
+`wait ( status -- pid )` does `0 0 rot -1 wait4` — the stack ordering
+was wrong when called from `system` which pushes the child pid from
+`fork`. Fixed by inlining: `0 0 _wstat rot wait4`.
+
+#### 2. Native `strerror` in ior.ff
+
+The i386 version calls libc's `strerror()` via fixup/dlsym. The x86-64
+version uses a packed string table:
+
+```forth
+create _enames pvt 224 allot
+"EPERM   ENOENT  ESRCH   ..." _enames swap move
+:. _ename 1- 8* _enames + 8 ;
+: strerror ( ior -- )
+  negate dup 1 >= 2drop IF dup 28 <= 2drop IF _ename type cr ;THEN THEN
+  ."errno_" . cr ;
+```
+
+This follows the packed-table pattern from `see64.ff`'s `mne3`/`mne4`
+tables. 28 errno names in 8-char fixed-width entries = 224 bytes. Index
+by `(errno-1) * 8`. Unknown errnos fall through to `errno_N`.
+
+**Design note**: The range check uses FreeForth's FLAGS-based
+comparison. `dup 1 >= 2drop IF` — the `>=` sets flags, `2drop` cleans
+the comparison operands (FLAGS-preserving), `IF` branches on the flags.
+Nested `IF`s with `;THEN` for early exit.
+
+#### 3. FFHIDE environment variable
+
+Added `_ffhide` to `fflin64.boot`:
+
+```forth
+:. _ffhide "FFHIDE" getenv 0- 0<> IF swap c@ '0'- 0= IF hide off THEN THEN 2drop ;
+```
+
+This checks the FFHIDE environment variable at boot. If the first
+character is `'0'`, it sets `hide off`, making private words visible.
+Runs in `_postboot` BEFORE `doargv` — this ordering is essential so
+that `-f` loaded files can see the effect of `hide off`.
+
+**Bug encountered**: Initially placed after `doargv` in `_postboot`,
+which meant `-f` loaded files compiled before `_ffhide` ran. Fixed by
+reordering to `_ffhide doargv _hidepvt`.
+
+#### 4. Cross-platform guards
+
+Both `shell.ff` and `ior.ff` now use `[64] [IF] ... [ELSE] ... [THEN]`
+to provide native implementations on x86-64 and fixup-based
+implementations on i386. The fixup dependency is only needed on i386:
+
+```forth
+[64] [IF]
+\ native x86-64 implementation
+[ELSE]
+needs fixup.ff
+\ fixup-based i386 implementation
+[THEN]
+```
+
+### Tests (9/9 PASS)
+
+| Test | What it verifies |
+|------|-----------------|
+| system echo | `"echo hello" system` outputs "hello" |
+| system exit code 0 | `"true" system` returns 0 |
+| system exit code 1 | `"false" system` returns 1 |
+| shell reports error | `"false" shell` prints error, continues |
+| strerror ENOENT | errno 2 → "ENOENT" |
+| strerror EACCES | errno 13 → "EACCES" |
+| strerror unknown | errno 99 → "errno_99" |
+| FFHIDE=0 exposes privates | `hide @` returns 0 (off) |
+| hide on by default | `hide @` returns non-zero (on) |
+
+### Impact
+
+After this experiment, only `lib/malloc.ff` still requires fixup.ff on
+x86-64. The `shell.ff` and `ior.ff` features (system, shell, cd, man,
+!!, strerror, ior, ?ior) all work without libc function binding. This
+unblocks testing of these libraries even while fixup.ff (exp 080)
+remains broken.
