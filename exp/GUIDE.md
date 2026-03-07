@@ -4797,6 +4797,35 @@ fflin64.asm / fflin64s.asm Build wrappers (dynamic / static)
 Future ports: ARM64 would replace ff64.asm/ff64.boot but reuse
 fflin64.boot.  macOS would replace fflin64.boot but reuse ff64.boot.
 
+### Cross-Platform Library Unification (exp 145)
+
+Experiment 145 closed the gap between i386 and x86-64 boot environments
+so that `lib/` files work identically on both platforms without
+`needs syscalls.ff`.
+
+**`cell*` alias:**  `ff.boot` defines `4*' alias cell*'`, `ff64.boot`
+defines `8*' alias cell*'`.  Library code uses `cell*` to compute
+struct offsets portably: `3 cell*` gives 12 on i386 or 24 on x86-64.
+
+**i386 syscall wrappers:**  `fflin.boot` gained 15 thin wrappers
+matching `fflin64.boot` signatures: `_lseek`, `_stat`, `_fstat`,
+`_lstat`, `ioctl3`, `select`, `nanosleep`, `time`, `gettimeofday`,
+`chdir`, `ftruncate`, `tell`, `mmap`, `munmap`, plus struct constants
+`_stat.sz` (98) and `st.size` (44).  Library files now call these
+named words instead of `N _sys.foo syscall`.
+
+**Cross-platform `lib/mmap.ff`:**  Replaces platform-specific
+`lib/x86/mmap.ff` and `lib/x86-64/mmap.ff`.  Uses `cell*` for struct
+field offsets and boot words for syscalls.  The `munmap` redefinition
+uses the private-name-plus-alias pattern (`:. _mm_unmap ... munmap ... ;
+_mm_unmap ' alias munmap`) because FreeForth headers are visible
+immediately during compilation — `: munmap ... munmap ;` would
+infinite-recurse.
+
+**Metadata stays in the library:**  PROT_READ, MAP_SHARED, and other
+mmap constants live in `mmap.ff`, not in boot.  Boot provides only the
+thin syscall wrappers; the library owns its own protocol constants.
+
 ### Perl-Parity Expansion (exp 110)
 
 DG observed that Perl provides a rich set of OS builtins (man perlfunc)

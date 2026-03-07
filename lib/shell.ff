@@ -1,7 +1,6 @@
 \ shell.ff — OS interface: system, shell, cd, !!
 \ getenv is in boot code: fflin.boot [i386], fflin64.boot [x86-64]
 needs ior.ff
-needs syscalls.ff
 
 [~] getpid [IF]
 needs fixup.ff
@@ -30,7 +29,7 @@ needs fixup.ff
 
 : man` >in@ 4- lnparse + over- ( <mantopic> -- ; fallthru )
 : shell system 0; ior! !"shell_call_failed" ( addr len -- )
-: cd` wsparse zt 1 _sys.chdir syscall ?ior ( <newdir> -- )
+: cd` wsparse zt chdir ?ior ( <newdir> -- )
 ;
 : !!` lnparse shell ; ( <line> -- )
 " shell" features append ;

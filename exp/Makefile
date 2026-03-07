@@ -66,7 +66,8 @@ EXPERIMENTS = 023-forthmacros64 \
               141-rm-loadfile \
               142-cs0-getenv \
               143-openlib-port \
-              144-native-libc
+              144-native-libc \
+              145-shared-mmap
 
 # Known-broken experiments — listed so we know they exist.
 # Fix and move back to EXPERIMENTS when passing.

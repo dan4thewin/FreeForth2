@@ -1,6 +1,5 @@
-( time.ff — calendar date, time display, ms@ and ms )
-( Lavarenne's date arithmetic, syscall numbers from syscalls.ff )
-needs syscalls.ff
+\ time.ff — calendar date, time display, ms@ and ms
+\ Syscall wrappers (time, gettimeofday, nanosleep) are in boot
 
 :. _leap .dec\ ."-2-29" drop ;
 : .d ( n -- ; display days since 0-0-0 as gregorian date )
@@ -12,15 +11,15 @@ needs syscalls.ff
   12 > drop IF 12- swap 1+ swap THEN swap
   .dec\ ."-" .dec\ ."-" .dec\ ;
 : .wd ( n -- ) 7% 3* "wedthufrisatsunmontue" drop + 3 type ;
-: now 0 1 _sys.time syscall [ 1970-1-1 2000-3-1- 24:0:0* 1:0:0+ ] lit + ; ( -- n ; seconds since 2000-3-1 )
+: now 0 time [ 1970-1-1 2000-3-1- 24:0:0* 1:0:0+ ] lit + ; ( -- n ; seconds since 2000-3-1 )
 : .now` now dup 24:0:0 / .wd space ( -- ; display current date&time )
 : .dt 24:0:0 /% 2000-3-1 + .d ."\_" ( n -- ; display seconds as date&time )
 : .t 60 /% 60 /% .dec\ .":" .dec\ .":" .dec ; ( n -- ; display seconds as time )
 
-( --- millisecond timer and delay --- )
-( gettimeofday returns {sec, usec}; nanosleep takes {sec, nsec} )
+\ millisecond timer and delay
+\ gettimeofday returns {sec, usec}; nanosleep takes {sec, nsec}
 variable _tsbuf pvt 0 ,
-: ms@ _tsbuf 0 over 2 _sys.gettimeofday syscall drop
+: ms@ _tsbuf 0 over gettimeofday drop
   2@ 1000* swap 1000/ + ; ( -- ms )
-: ms 1000 /% swap 1'000'000* swap _tsbuf 2! 0 _tsbuf 2 _sys.nanosleep syscall drop ; ( ms -- )
+: ms 1000 /% swap 1'000'000* swap _tsbuf 2! 0 _tsbuf nanosleep drop ; ( ms -- )
 " time" features append ;

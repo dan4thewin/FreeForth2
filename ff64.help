@@ -133,7 +133,12 @@ features ( -- addr ) buffer holding loaded feature names
 cell` ( -- 8 ) compile-time constant: cell size in bytes
   8 on ff64 (x86-64), 4 on ff (i386).
   Use for portable address arithmetic: cell allot, cell +, etc.
-  see also: [64] cell 8+
+  see also: cell* [64] cell 8+
+
+cell*` ( n -- n*cell ) compile-time macro: multiply by cell size
+  Alias for 8*` on ff64, 4*` on ff.  Used to compute struct offsets
+  portably: 3 cell* gives 24 on x86-64, 12 on i386.
+  see also: cell 8* 4*
 
 [64]` ( -- 4 | 0 ) compile-time constant: 64-bit architecture flag
   Returns 4 (truthy) on ff64, 0 (falsy) on ff.

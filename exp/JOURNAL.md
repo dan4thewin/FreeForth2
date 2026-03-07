@@ -12013,3 +12013,89 @@ needs fixup.ff
 
 This would eliminate the LAST fixup.ff dependency on x86-64, making
 the entire `lib/` directory usable without runtime libc binding.
+
+## Experiment 145 — Cross-Platform mmap and Boot Syscall Wrappers
+
+**Goal:** Unify the `lib/` ecosystem so that `fileops.ff`, `time.ff`,
+`shell.ff`, and `mmap.ff` work identically on both i386 and x86-64
+without `needs syscalls.ff`.  The i386 platform had no thin syscall
+wrapper words in its boot — the x86-64 port introduced them in
+`fflin64.boot`, but `fflin.boot` relied entirely on `_sys.N` numeric
+constants from `syscalls.ff`.  This experiment closes that gap.
+
+**Context:** Every `lib/` file previously started with
+`needs syscalls.ff`, which loaded platform-specific constants
+(`lib/x86/syscalls.ff` or `lib/x86-64/syscalls.ff`).  Those files
+defined `_sys.lseek`, `_sys.stat`, etc. as bare syscall numbers used
+with `N _sys.foo syscall`.  On x86-64, boot already had named wrappers
+(`_lseek`, `_stat`, `ioctl3`, etc.), making `syscalls.ff` redundant.
+On i386, no such wrappers existed.
+
+**Actions:**
+
+1. **Added 15 syscall wrappers to `fflin.boot`** — matching the x86-64
+   signatures exactly: `_lseek`, `_stat`, `_fstat`, `_lstat`, `ioctl3`,
+   `select`, `nanosleep`, `time`, `gettimeofday`, `chdir`, `ftruncate`,
+   `tell`, `mmap`, `munmap`.  Also added `_stat.sz` (98) and `st.size`
+   (44) struct constants.
+
+2. **Added missing wrappers to `fflin64.boot`** — `select` (syscall 23),
+   `ftruncate` (syscall 77), and `openw0` ($342 flags: O_RDWR|O_CREAT|
+   O_TRUNC).  Moved `_stat.sz` (144) and `st.size` (48) into boot and
+   **removed** the `PROT_*`/`MAP_*` constants — those belong in
+   `mmap.ff`, not boot.
+
+3. **Added `cell*` alias to both platforms** — `4*' alias cell*'` in
+   `ff.boot`, `8*' alias cell*'` in `ff64.boot`.  This lets
+   cross-platform code compute struct offsets portably.
+
+4. **Rewrote `lib/fileops.ff`** — removed `needs syscalls.ff`, calls
+   `_lseek`/`ioctl3`/`_stat` directly from boot.  `select` is now in
+   boot itself, no wrapper needed.
+
+5. **Rewrote `lib/time.ff`** — removed `needs syscalls.ff`, calls
+   `time`/`gettimeofday`/`nanosleep` directly.
+
+6. **Rewrote `lib/shell.ff`** — removed `needs syscalls.ff`, `cd'`
+   calls `chdir` directly.
+
+7. **Created cross-platform `lib/mmap.ff`** — replaces the
+   platform-specific `lib/x86/mmap.ff` and `lib/x86-64/mmap.ff`.
+   Uses `cell*` for struct offsets, boot words for syscalls, and the
+   `_mm_unmap`/alias pattern to redefine `munmap` (FreeForth headers
+   are visible immediately during compilation, so `: munmap ... munmap
+   ... ;` would infinite-recurse).
+
+**Key discoveries:**
+
+- **FreeForth does not support word shadowing.** `: foo foo ;` creates
+  an infinite recursion because the new header is visible immediately.
+  Standard Forth hides the new definition until `;`.  The workaround is
+  `:. _private old ; _private ' alias public`.
+
+- **i386 `mmap` returns high-memory addresses** (above $80000000) that
+  look negative as signed 32-bit integers.  The initial test used
+  `0- 0>= drop IF` to check for success — this rejected perfectly
+  valid addresses.  The fix: ignore the raw address, check that the
+  file size in the mmap struct is positive.
+
+- **`alias` works with backtick macros:** `4*' ' alias cell*'` creates
+  an alias that compiles the same code as `4*'`.  The `'` after the
+  backtick word gets its xt from the dictionary.
+
+**Tests:** 14 tests (7 pairs for i386 and x86-64): `cell*` arithmetic,
+`fileops.ff`/`time.ff`/`shell.ff`/`mmap.ff` loading, mmap stat+read
+(stat a file, mmap it, check size > 0), and `ms` delay timing.  All 14
+pass.
+
+**Files changed:**
+- `ff.boot` — added `cell*` alias
+- `ff64.boot` — added `cell*` alias
+- `fflin.boot` — added 15 syscall wrappers + struct constants
+- `fflin64.boot` — added `select`/`ftruncate`/`openw0`, struct
+  constants, removed PROT/MAP constants
+- `lib/fileops.ff` — rewritten to use boot words
+- `lib/time.ff` — rewritten to use boot words
+- `lib/shell.ff` — rewritten to use boot words
+- `lib/mmap.ff` — NEW cross-platform mmap
+- `exp/145-shared-mmap/Makefile` — 14 tests

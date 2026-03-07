@@ -20,6 +20,7 @@
 : read  ( addr # fd -- n ) >r swap r> 3 0 syscall ;
 : openr ( addr # -- fd ) zt $1A4  0 rot 3 2 syscall ;
 : openw ( addr # -- fd ) zt $1A4 $241 rot 3 2 syscall ;
+: openw0 ( addr # -- fd ) zt $1A4 $342 rot 3 2 syscall ;
 : close ( fd -- n )  1 3 syscall ;
 
 ( Syscall word library — thin Forth wrappers over generic syscall )
@@ -37,18 +38,18 @@
 : fcntl2  ( arg cmd fd -- ior )  3 72 syscall ;
 : pipe    ( pipefd[2] -- ior )  1 22 syscall ;
 : ioctl3  ( arg req fd -- ior )  3 16 syscall ;
+: select  ( timeout exceptfds writefds readfds nfds -- n )  5 23 syscall ;
+: ftruncate ( len fd -- ior )  2 77 syscall ;
 
 ( Memory management )
-$1  constant PROT_READ
-$2  constant PROT_WRITE
-$4  constant PROT_EXEC
-$1  constant MAP_SHARED
-$2  constant MAP_PRIVATE
-$20 constant MAP_ANONYMOUS
 : mmap    ( off fd flags prot len addr -- ptr )  6 9 syscall ;
 : munmap  ( len addr -- ior )  2 11 syscall ;
 : mprotect ( prot len addr -- ior )  3 10 syscall ;
 : brk     ( addr -- newbrk )  1 12 syscall ;
+
+( Struct constants — stat )
+144 constant _stat.sz
+ 48 constant st.size
 
 ( Process control )
 : getpid  ( -- pid )  0 39 syscall ;

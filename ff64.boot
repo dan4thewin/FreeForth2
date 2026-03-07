@@ -662,6 +662,7 @@ AGAIN
 1 constant [1]`
 0 constant [0]`
 8 constant cell
+8*` ' alias cell*`
 cell 4 - constant [64]`
 
 ( OS-specific definitions continue in fflin64.boot )

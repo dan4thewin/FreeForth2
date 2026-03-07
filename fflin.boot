@@ -13,6 +13,25 @@ $40000000 SEGVact 132+ ! \ SA_NODEFER
 :. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
 :. linsetup dlsetup SEGVthrow ;
 
+\ Syscall wrappers — match x86-64 fflin64.boot signatures
+\ Lets lib/ files use named words instead of _sys.N constants
+: _lseek     ( whence offset fd -- pos )  3 19 syscall ;
+: _stat      ( buf addr -- ior )  2 195 syscall ;
+: _fstat     ( buf fd -- ior )  2 197 syscall ;
+: _lstat     ( buf addr -- ior )  2 196 syscall ;
+: ioctl3     ( arg req fd -- ior )  3 54 syscall ;
+: select     ( timeout exceptfds writefds readfds nfds -- n )  5 142 syscall ;
+: nanosleep  ( rem req -- ior )  2 162 syscall ;
+: time       ( tloc -- sec )  1 13 syscall ;
+: gettimeofday ( tz tv -- ior )  2 78 syscall ;
+: chdir      ( addr -- ior )  1 12 syscall ;
+: ftruncate  ( len fd -- ior )  2 93 syscall ;
+: tell       ( fd -- pos ) 1 0 rot _lseek ;
+: mmap       ( off fd flags prot len addr -- ptr )  6 192 syscall ;
+: munmap     ( len addr -- ior )  2 91 syscall ;
+ 98 constant _stat.sz
+ 44 constant st.size
+
 : envp CS0@ dup @ 2+ 4* + ;
 : env envp @ BEGIN zlen 0<> WHILE 2dup+ -rot type cr 1+ REPEAT 2drop ;
 :. _getenv swap -rot >= drop IF nip ;THEN

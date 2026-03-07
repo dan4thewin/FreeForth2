@@ -1,0 +1,37 @@
+\ mmap.ff — memory-mapped file I/O (cross-platform)
+\ mmap, munmap, ftruncate, _stat.sz, st.size are in boot
+" mmap" features append
+needs fileops.ff
+
+\ mmap protection and sharing flags
+$1 constant PROT_READ   $2 constant PROT_WRITE   $4 constant PROT_EXEC
+$1 constant MAP_SHARED  $2 constant MAP_PRIVATE
+$20 constant MAP_ANON   $100 constant MAP_GROWSDOWN  $4000 constant MAP_NORESERVE
+
+\ mkmm struct: [addr] [sz] [fd] [prot] [flags] [stat...]
+: mkmm` create` 0 , 0 , -1 , PROT_READ , MAP_SHARED , _stat.sz allot anon:` ;
+1 cell* constant mm.sz
+2 cell* constant mm.fd
+3 cell* constant mm.prot
+4 cell* constant mm.flags
+5 cell* constant mm.stat
+: mkmm. dup 12 erase PROT_READ over mm.prot+ ! MAP_SHARED swap mm.flags+ ! ;
+
+\ mmap_ ( @ # mm xt -- @ | -n )
+: mmap_ swap >r -rot 2dup r mm.stat+ stat 0- 0< IF nip nip nip rdrop ;THEN
+  drop r mm.stat+ st.size+ @ r mm.sz+ ! rot execute 0- 0< IF rdrop ;THEN dup r mm.fd+ !
+  0 swap r mm.flags+ @ r mm.prot+ @ r mm.sz+ @ 0 mmap dup r> ! ;
+
+\ mmapr ( @ # mm -- @ | -n )
+: mmapr PROT_READ over mm.prot+ ! openr ' mmap_ ;
+: mmapw PROT_READ PROT_WRITE | over mm.prot+ ! openw ' mmap_ ;
+
+\ mmapwt ( @ # n mm -- @ | -n ) — map with truncate
+: mmapwt PROT_READ PROT_WRITE | over mm.prot+ !
+  >r -rot openw0 0- 0< IF rdrop ;THEN dup r mm.fd+ !
+  2dup ftruncate 0- 0< IF nip nip rdrop ;THEN drop swap r mm.sz+ !
+  0 swap r mm.flags+ @ r mm.prot+ @ r mm.sz+ @ 0 mmap dup r> ! ;
+
+\ _mm_unmap ( mm -- ior ior ) — unmap region and close fd
+:. _mm_unmap dup dup mm.sz+ @ swap @ munmap swap mm.fd+ @ close ;
+_mm_unmap ' alias munmap
