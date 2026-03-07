@@ -12336,3 +12336,42 @@ investigation.
 
 - `ff64.boot` — broke `2dupw!`/`2dup!` fall-through (1 line)
 - `test/test64.ff` — added 7 w!/2dupw! regression tests
+
+## Experiment 147: see.ff — fill opcode gaps and fix $66 prefix
+
+**Goal:** Make the x86-64 native disassembler (`lib/x86-64/see.ff`)
+reasonably complete — `see >st` (from hanoi) showed "unknown bytes" for
+several common instruction encodings.
+
+### Approach
+
+Systematically tested FreeForth compiler patterns to find which opcodes
+produced "unknown bytes" in `see`, then added handlers for each.
+
+### New handlers
+
+| Opcode | Instruction | Example use |
+|--------|-------------|-------------|
+| `$6B` | imul r, r/m, imm8 | `10*`, `3*` |
+| `$69` | imul r, r/m, imm32 | `1000*` |
+| `$CC` | int3 | `int3\`` breakpoint |
+| `$0F 05` | syscall | Linux syscall |
+| `$0F AF` | imul r, r/m (2-op) | generic multiply |
+
+### The $66 prefix fix
+
+The `$66` handler decodes 16-bit `mov word` instructions (`66 89 xx`).
+The original code used `2b ... drop mr` which only consumed 2 bytes
+(prefix + opcode) and tried to pass the wrong value to `mr`.
+
+**Root cause:** `3b` returns `(addr+3, ModRM, opcode)` — TOS is the
+opcode (byte 1), NOS is the ModRM (byte 2). This follows from
+`2xchg ( x y z -- z y x )` which swaps 1st and 3rd items. The fix
+is `drop` (discard TOS=opcode) not `nip` (which would discard
+NOS=ModRM). After `drop`: stack is `(addr+3, ModRM)` — exactly what
+`mr` expects.
+
+### Result
+
+`see >st` now produces a complete disassembly with zero unknown bytes.
+All test suites pass.
