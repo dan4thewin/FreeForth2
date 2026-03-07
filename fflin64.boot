@@ -121,80 +121,41 @@ sigrestorer _ksa 16+ !
 :. SEGVthrow 8 0 _ksa 11 4 13 syscall drop ;
 SEGVthrow ;
 
-( envp/getenv — ported from i386 fflin.boot )
-( CS0 holds initial RSP; Linux puts [argc][argv...][NULL][envp...][NULL] there )
 : envp CS0@ dup @ 2+ 8* + ;
 : env envp @ BEGIN zlen 0<> WHILE 2dup+ -rot type cr 1+ REPEAT 2drop ;
 :. _getenv swap -rot >= drop IF nip ;THEN
   >r 2dup r $- drop 0<> IF drop r> ;THEN
-  r + c@+ '=- drop 0<> IF drop r> ;THEN
+  r + c@+ '='- drop 0<> IF drop r> ;THEN
   nip zlen 2rdrop rdrop ;
 : getenv envp @ BEGIN zlen 0- 0= IF BREAK 2dup+ 1+ >r _getenv
   r> REPEAT drop nip nip 0 ;
 
-( FFPATH — search path for needed/openlib )
-( Default: lib/x86-64:lib:. — overridable via FFPATH env var )
-( Path stored as NUL-separated directory entries; double-NUL terminates )
-( Buffers allocated via variable+allot; _ffpath_alloc initializes them )
-( from a separate anonymous block [ossetup], per Primer §create+allot. )
-variable ffpath pvt 248 allot
-variable _openbuf pvt 248 allot
-variable _fnbuf pvt 120 allot
-variable _fnlen pvt
-variable _dlen pvt
+"HOME" getenv dup>r
+"FFPATH" getenv dup>r
+2r> + 54+ create ffpath allot
+":.:lib/x86-64:lib:" tuck ffpath place + >r
+0- 0= IF 2drop ELSE tuck r> place + ':' overc! 1+ >r THEN
+0- 0= IF 2drop ELSE tuck r> place + "/.local/share/ff:" dup>r rot place r> + >r THEN
+"/usr/local/share/ff:^@" r> place drop
 
-( _tryopen — try to open a file, return fd or -1 )
-:. _tryopen openr ;
+ffpath zlen over+ swap 1+ dup >r
+START dupc@ ':' = 2drop IF r> 2dup - swap 1- c! 1+ dup >r THEN 1+
+ENTER <= UNTIL 2drop r> 1- 0 swap c!
 
-( openlib — search FFPATH for a file )
-( addr len -- addr' len' | -1 -1 )
-( Absolute/relative paths starting with / or . pass through unchanged )
-:. openlib over c@ $2F = 2drop IF ;THEN
-  over c@ $2E = 2drop IF ;THEN
-  dup _fnlen ! _fnbuf @ swap cmove
-  0 _fnbuf @ _fnlen @ + c!
-  ffpath @ BEGIN dupc@ 0- 0<> WHILE drop
-    dup >r zlen _dlen !
-    _openbuf @ _dlen @ cmove
-    $2F _openbuf @ _dlen @ + c!
-    _fnbuf @ _openbuf @ _dlen @ + 1+ _fnlen @ cmove
-    0 _openbuf @ _dlen @ + _fnlen @ + 1+ c!
-    _openbuf @ zlen _tryopen
-    0- 0>= IF close drop r> drop _openbuf @ zlen ;THEN
-    drop r> zlen + 1+
-  REPEAT drop drop -1 -1 ;
+create openbuf pvt 80 allot
+:. openlib over dupc@ '.' = 2drop IF 1+ THEN
+  dupc@ '.' = 2drop IF 1+ THEN c@ '/' = 2drop IF openr ;THEN 2>r ffpath
+  START tuck 2dup openbuf place + '/' overc! 1+ 2r rot place drop over+ swap
+  r + 1+ openbuf swap openr 0- 0>= IF 2rdrop nip ;THEN drop
+  ENTER c@+ 0- 0= UNTIL 2rdrop 2drop -1 ;
 
-( _ffpath_alloc — initialize FFPATH buffers with default path )
-( Called from ossetup [separate anonymous block], so writes to the )
-( allotted area don't overwrite executing code — per Primer pattern: )
-(   create X N allot ; X N init ;   -- semicolon separates blocks )
-:. _ffpath_alloc
-  ffpath 8+ ffpath !
-  _openbuf 8+ _openbuf !
-  _fnbuf 8+ _fnbuf !
-  ffpath @
-  "lib/x86-64" drop over 10 cmove 10+ 0 over c! 1+
-  "lib" drop over 3 cmove 3+ 0 over c! 1+
-  "." drop over 1 cmove 1+ 0 over c! 1+ 0 swap c! ;
-
-( needed — load file if not already loaded )
-( Checks if word with backtick suffix exists in dictionary. )
-( If found, file already loaded — skip. If not, search FFPATH and load. )
-( Adapted from i386: openlib returns path, so we open before read/eval. )
-: needed 2dup + dup c@ >r dup >r $60 swap c! 1+
-  find 2r> c! 0= IF 2drop ;THEN 1-
-  2dup openlib 0- 0< IF 2drop type !"_not_found" ;THEN
-  openr 0- 0< IF type !"_not_found" ;THEN
-  >r 2dup marker pvtmargin 2drop
-  tp@ eob over- under r read r> close drop
+: needs` ;`  wsparse
+: needed 2dup+ dupc@ >r dup>r '`' swap c! 1+ find 2r> c! 0= IF 2drop ;THEN 1-
+  2dup openlib 0- 0< IF drop type space !"Can't_open_file." ;THEN
+  >r marker pvtmargin tp@ eob over- under r read r> close drop
   over w@ [ "#!" drop w@ ] lit = 2drop
   IF bounds BEGIN c@+ 10- 0= drop UNTIL swap over- THEN eval 0 noauto! ;
-
-( needexec — load file via needed, then execute its last definition )
 :. needexec needed H@ @ execute ;
-
-( needs` — compile-time: semicolons, reads filename, loads via needed )
-: needs` ;` wsparse needed ;
 
 ( -f` — compile-time handler for -f flag in command-line args )
 ( If loaded file defines "main", rewrite vectors for turnkey mode: )
@@ -229,6 +190,6 @@ _feat dynlink
 _feat segv
 
 ( Boot sequence — ossetup is a vector for platform-specific init )
-:^ ossetup _ffpath_alloc ;
+:^ ossetup ;
 :. _boot ossetup _postboot _top ;
 _boot ;

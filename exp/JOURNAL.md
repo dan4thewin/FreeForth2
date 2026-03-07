@@ -11477,3 +11477,159 @@ pointer. This matches on both i386 and x86-64.
 chain format (colons converted to count bytes). The existing ff64 openlib
 uses NUL-separated entries and works. Porting the i386 openlib will be a
 separate experiment to add FFPATH environment variable support.
+
+## Experiment 143 — openlib/ffpath/needed verbatim port from i386
+
+**Goal:** Replace the piecemeal NUL-separated openlib/ffpath/needed
+implementation in fflin64.boot with the original i386 code from
+fflin.boot, ported verbatim. The only changes: `4*` → `8*` (cell size)
+and `lib/x86` → `lib/x86-64` (arch directory).
+
+### Background
+
+The x86-64 port had accumulated a complex, independently-written
+openlib/ffpath system: 5 private variables (`ffpath`, `_openbuf`,
+`_fnbuf`, `_fnlen`, `_dlen`), a `_tryopen` wrapper, a multi-variable
+`openlib` that manually composed paths byte-by-byte, and a
+`_ffpath_alloc` initialization routine called from `ossetup`.
+
+Meanwhile, Christophe Lavarenne's i386 fflin.boot had a much more
+elegant implementation in roughly half the code:
+
+- **ffpath construction** happens at top level during boot: reads
+  `HOME` and `FFPATH` environment variables via `getenv`, builds a
+  colon-separated path string with `place`, then converts colons to
+  counted-string format (each colon becomes the count of the preceding
+  segment).
+
+- **openlib** walks the counted-string chain with `c@+` (which returns
+  both count and advances the pointer), composes `dir/filename` in a
+  single `openbuf`, and tries `openr` on each candidate.
+
+- **needed** uses `openlib` to find and load files, with shebang
+  (`#!`) line skipping for executable Forth scripts.
+
+The thesis: the i386 code should work verbatim on x86-64 with only
+the cell-size change. This proved correct.
+
+### Changes
+
+**`fflin64.boot`** — Replaced 64 lines (variables, `_tryopen`,
+`openlib`, `_ffpath_alloc`, `needed`, `needexec`, `needs\``) with 35
+lines ported directly from fflin.boot:
+
+| i386 original | x86-64 port | Change |
+|---|---|---|
+| `4*` | `8*` | Cell size: 4 bytes → 8 bytes |
+| `lib/x86` | `lib/x86-64` | Architecture directory |
+| `'='-` | `'='-` | Kept verbatim (DG preference over `'=-`) |
+
+Everything else — `envp`, `getenv`, `_getenv`, `env`, `ffpath`
+construction, colon-to-count conversion, `openlib`, `needed`,
+`needexec`, `needs\`` — is character-for-character identical to i386.
+
+Removed `_ffpath_alloc` call from `ossetup` (the i386 code initializes
+ffpath inline at top level, not from a deferred vector).
+
+Removed duplicate `needs\`` definition that existed below the old block.
+
+### How the i386 ffpath/openlib works
+
+**ffpath construction** (top-level boot code):
+
+```
+"HOME" getenv dup>r        \ HOME value + len on stack, len on rstack
+"FFPATH" getenv dup>r      \ FFPATH value + len on stack, len on rstack
+2r> + 54+                  \ total len + padding → allot size
+create ffpath allot        \ create counted-string buffer
+":.:lib/x86-64:lib:"      \ default path template (colons = separators)
+tuck ffpath place + >r     \ place default, r> points past it
+```
+
+Then conditionally appends FFPATH override and HOME-based paths.
+Finally converts colons to count bytes:
+
+```
+ffpath zlen over+ swap 1+ dup >r
+START dupc@ ':' = 2drop IF r> 2dup - swap 1- c! 1+ dup >r THEN 1+
+ENTER <= UNTIL 2drop r> 1- 0 swap c!
+```
+
+This walks the string forward. Each `:` found is replaced with the
+count of bytes between the previous separator and this one, written
+one byte before the separator position. The result is a chain of
+`[count][dirname]` entries terminated by a zero count.
+
+**openlib** searches the chain:
+
+```
+:. openlib over dupc@ '.' = 2drop IF 1+ THEN
+  dupc@ '.' = 2drop IF 1+ THEN c@ '/' = 2drop IF openr ;THEN
+  2>r ffpath
+  START tuck 2dup openbuf place + '/' overc! 1+ 2r rot place
+    drop over+ swap r + 1+ openbuf swap openr
+    0- 0>= IF 2rdrop nip ;THEN drop
+  ENTER c@+ 0- 0= UNTIL 2rdrop 2drop -1 ;
+```
+
+First three lines: if the filename starts with `./`, `../`, or `/`,
+it's absolute/relative — pass through to `openr` directly. Otherwise,
+save filename on rstack and walk `ffpath`: for each counted entry,
+compose `dir/filename` in `openbuf` and try to open it. `c@+` reads
+the next count and advances; zero count terminates.
+
+**needed** is also verbatim:
+
+```
+: needed 2dup+ dupc@ >r dup>r '`' swap c! 1+ find 2r> c!
+  0= IF 2drop ;THEN 1-
+  2dup openlib 0- 0< IF drop type space !"Can't_open_file." ;THEN
+  >r marker pvtmargin tp@ eob over- under r read r> close drop
+  over w@ [ "#!" drop w@ ] lit = 2drop
+  IF bounds BEGIN c@+ 10- 0= drop UNTIL swap over- THEN
+  eval 0 noauto! ;
+```
+
+It temporarily overwrites the byte past the filename with `` ` `` to
+form `filename\`` and searches the dictionary. If found, the file is
+already loaded — restore the byte and return. If not, call `openlib`
+to find the file, read it into the text buffer, skip any shebang line,
+and `eval` the contents.
+
+### Also fixed
+
+**`lib/shell.ff`** — Previous commit (`c576314`) changed
+`[64] [ELSE]` to `[64] [IF] [ELSE]` which broke i386 (both platforms
+skipped the getpid block). DG fixed this in `83c610a` with the
+idiomatic `[~] getpid [IF]` pattern — define only when missing,
+regardless of platform.
+
+### Test results
+
+9 tests in `exp/143-openlib-port`:
+
+| Test | Result |
+|---|---|
+| needs shell.ff loads | PASS |
+| needs shell.ff idempotent | PASS |
+| needs syscalls.ff loads | PASS |
+| needs ior.ff loads | PASS |
+| needed: not-found prints error | PASS |
+| getenv HOME still works | PASS |
+| FFPATH env var override | PASS |
+| FFPATH override finds files | PASS |
+| see triggers autoload via needexec | PASS |
+
+Full suite: 70 PASSED, 4 SKIPPED, 0 FAILED.
+Both platforms (i386 + x86-64) pass all tests.
+
+### Known issue: `"file" needed ;` from interpreted code
+
+`needs testfp.ff` works correctly (loads and defines `from64`), but
+`"testfp.ff" needed ;` from interpreted code crashes with SIGILL —
+execution jumps into BSS. GDB shows `$rip` in `__bss_start`. The
+`needs\`` definition does `;\ ` wsparse needed` — the leading `;\ `
+terminates any open definition first, which may be essential context.
+The `needed` word calls `eval` which compiles the loaded file's
+contents, and this may interact badly with the compile state when
+called from within an anonymous block. Debugging deferred.
