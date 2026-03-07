@@ -89,9 +89,8 @@
 : dupw@` over` $0F, ,1 $1AB7, s09 ;
 
 \ Memory store (2dup variants preserve both operands)
-( 2dupw!` falls through to 2dup!` — the $66 prefix makes the mov 16-bit, )
-( then the mov [rdx],rbx body is shared with 2dup!`. )
-: 2dupw!` $66, ,1
+( 2dupw!` can't fall through to 2dup!` — REX.W overrides the $66 prefix )
+: 2dupw!` $66, ,1 $1389, s09 ;
 : 2dup!` $48, ,1 $1389, s09 ;
 : 2dupc!` $1388, s09 ;
 : 2dup+!` $48, ,1 $1301, s09 ;

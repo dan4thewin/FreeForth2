@@ -3,7 +3,7 @@
 \ Run: ./ff64 ': prompt ;' -f test/test64.ff
 
 needs test.ff
-189 >plan
+196 >plan
 
 \ ============================================================
 \ Stack operations (from exp 023, 028, 091)
@@ -89,6 +89,20 @@ testing w@ ws@
 variable tv6
 t{ 4660 tv6 ! tv6 w@ -> 4660 }t
 t{ 65535 tv6 ! tv6 ws@ -> -1 }t
+
+testing w! 2dupw!
+t{ 0 tv6 ! $ABCD tv6 w! tv6 w@ -> $ABCD }t
+t{ $DEADBEEF'CAFE0000 tv6 ! $0102 tv6 w! tv6 @ -> $DEADBEEF'CAFE0102 }t
+\ 2dupw! preserves both operands (note stack order: value below, addr on top)
+t{ 0 tv6 ! $5678 tv6 2dupw! -> $5678 tv6 }t
+t{ 0 tv6 ! $5678 tv6 2dupw! 2drop tv6 w@ -> $5678 }t
+
+testing w! no clobber
+\ verify w! writes exactly 2 bytes, not 8 (regression: REX.W override bug)
+create _twbuf 8 allot
+t{ _twbuf 8 $AA fill $2031 _twbuf 3+ w! _twbuf 5+ c@ -> $AA }t
+t{ _twbuf 3+ c@ -> $31 }t
+t{ _twbuf 4+ c@ -> $20 }t
 
 testing dup@ dupc@ dupw@
 variable tv7

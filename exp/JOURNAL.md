@@ -12221,3 +12221,118 @@ libraries. A 108KB self-contained Unix program.
 - `ff64.asm` — reordered BSS: codebuf before tib/helpbuf/dstack
 - `Makefile` — added `fftk64s` target
 - `.gitignore` — added `fftk64s.asm`
+
+## Experiment 146: The `w!` bug — hanoi's last wall
+
+**Date:** 2026-03-07
+**Status:** COMPLETE
+**Branch:** static-elf64
+
+### Goal
+
+Fix the SEGV that prevented Lavarenne's hanoi demo from running on ff64.
+
+### Background
+
+Hanoi is a showpiece — a non-recursive Towers of Hanoi solver with
+real-time animation, written in pure FreeForth. It works perfectly on
+i386. On ff64 it initialized the display then immediately SEGVed in
+the move logic, looping infinitely through the SEGV handler.
+
+### The hunt
+
+The debugging journey was long and full of false trails:
+
+1. **Missing libraries.** Hanoi needs `console.ff` and `time.ff`,
+   auto-loaded by `ff.ff` on i386 but not on ff64. Adding explicit
+   `needs` for these got the display up — but then the moves SEGVed.
+
+2. **Wrong reproduction.** Several test files attempted to isolate the
+   crash by extracting the move body inline. These tests used `32 swap
+   c!` — but the actual hanoi code uses `32$00+`, which is completely
+   different (`32$00` = 0x2000, an animation frame value). Hours were
+   spent debugging a bug that only existed in the test files.
+
+3. **The `allot` red herring.** One theory held that `create st 30
+   allot` was overwriting subsequent code. Disproven — `allot`
+   correctly reserves space and the next definition starts after it.
+
+4. **DG's intervention: "remember this code works on i386 — keep
+   theories conservative."** This refocused the search. Same code, two
+   architectures — the bug must be in an ff64 primitive.
+
+### The discovery
+
+Comparing `w!` output between architectures:
+
+```
+i386: aa aa aa aa aa 31 20 aa aa aa   ← writes exactly 2 bytes ✓
+ff64: aa aa aa aa aa 31 20 00 00 00   ← clobbers 8 bytes      ✗
+```
+
+`w!` on ff64 was performing a 64-bit store instead of a 16-bit store.
+
+### Root cause
+
+The `2dupw!` backtick macro used a fall-through optimization:
+
+```forth
+: 2dupw!` $66, ,1          \ emit 66h (operand-size prefix for 16-bit)
+: 2dup!`  $48, ,1 $1389, s09 ;  \ emit 48h (REX.W) + mov [reg],reg
+```
+
+On i386, `2dup!` has no REX prefix, so the fall-through produces
+`66 89 13` — a correct 16-bit store. On x86-64, `2dup!` includes
+`$48` (REX.W), so the fall-through produces `66 48 89 13`. Per the
+Intel manual, **REX.W overrides the 66h prefix** — the operand size
+becomes 64 bits, not 16 bits.
+
+This is a classic x86-64 porting trap. The 66h prefix (operand-size
+override) and the REX.W prefix (64-bit operand) conflict, and REX.W
+always wins. The i386 fall-through idiom doesn't survive the port.
+
+### The fix
+
+One line. Break the fall-through, give `2dupw!` its own body:
+
+```forth
+: 2dupw!` $66, ,1 $1389, s09 ;   \ 66 89 13 — 16-bit store
+: 2dup!`  $48, ,1 $1389, s09 ;   \ 48 89 13 — 64-bit store
+```
+
+### Verification
+
+- `w!` now writes exactly 2 bytes on ff64 ✓
+- Hanoi runs with full animation on ff64 ✓
+- 7 new regression tests added to `test/test64.ff` (w!, 2dupw!,
+  no-clobber)
+- All test suites pass: `make test`, `make test64`, `make testexp`
+
+### What this reveals
+
+The `w!` bug is the third instance of a pattern: x86-64 instruction
+encoding subtleties hiding in the backtick macros.
+
+1. **The `_parse` DUP1/DROP1 bug** (exp 038) — entry sequence
+   consumed an extra stack item.
+2. **The `pick` detection bug** (exp 104) — literal encodings differ
+   between architectures.
+3. **The `w!` REX.W override** (this experiment) — prefix interactions
+   that don't exist on i386.
+
+Each was a one-line fix with outsized impact. Each was found by
+comparing actual behavior between architectures rather than theorizing
+about generated code.
+
+### Sidequest noted
+
+During debugging, ff64 would SEGV on unknown words (like `-e` when
+testing command-line flags) instead of printing the i386-style
+`<-error: ???` message. This suggests `_notfound` or the error path
+in the compiler has a bug or is incomplete on ff64. Logged for
+investigation.
+
+### Files changed
+
+- `ff64.boot` — broke `2dupw!`/`2dup!` fall-through (1 line)
+- `test/test64.ff` — added 7 w!/2dupw! regression tests

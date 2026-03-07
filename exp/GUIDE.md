@@ -5323,3 +5323,96 @@ Experiments 139 (eval proof-of-concept), 140 (tib/eob buffer
 unification), and 141 (removal of `_loadfile`) progressively replaced
 the assembly mechanism with the i386 Forth pattern. Experiment 142
 added the `.bss` section to recover the binary size.
+
+## Part 18: The x86-64 Prefix Trap (Experiment 146)
+
+### The bug class
+
+x86-64 inherited x86's prefix system but added a new player: the REX
+prefix. The REX.W bit (bit 3 of the REX byte, value `$48`) promotes
+operand size to 64 bits. This interacts badly with the older `$66`
+prefix (operand-size override to 16 bits): **when both are present,
+REX.W wins.**
+
+This is documented in the Intel manual but easy to miss during porting.
+On i386, there is no REX prefix, so fall-through patterns that prepend
+`$66` to a store macro work correctly. On x86-64, the same fall-through
+picks up a REX.W byte and silently becomes a 64-bit operation.
+
+### How it manifested
+
+FreeForth's backtick macros use elegant fall-through patterns. The i386
+`2dupw!` falls through to `2dup!`, prepending only the `$66` prefix:
+
+```forth
+\ i386 — works: 66 89 13 = mov word [ebx], dx
+: 2dupw!` $66, ,1
+: 2dup!`  $8913, s09 ;
+```
+
+The x86-64 port added REX.W to `2dup!` for 64-bit stores:
+
+```forth
+\ x86-64 — broken: 66 48 89 13 = mov qword [rbx], rdx (REX.W wins)
+: 2dupw!` $66, ,1
+: 2dup!`  $48, ,1 $1389, s09 ;
+```
+
+The fix breaks the fall-through:
+
+```forth
+\ x86-64 — fixed: separate bodies
+: 2dupw!` $66, ,1 $1389, s09 ;   \ 66 89 13 = mov word [rbx], dx
+: 2dup!`  $48, ,1 $1389, s09 ;   \ 48 89 13 = mov qword [rbx], rdx
+```
+
+### The x86-64 prefix precedence rules
+
+For the future historian, these are the rules that matter for FreeForth:
+
+| Prefixes present    | Effective operand size | Notes                    |
+|---------------------|----------------------|--------------------------|
+| (none)              | 32 bits              | Default on x86-64        |
+| `$66` alone         | 16 bits              | Operand-size override    |
+| `$48` (REX.W) alone | 64 bits             | 64-bit promotion         |
+| `$66` + `$48`       | **64 bits**          | REX.W overrides `$66`    |
+
+The `$66` prefix is only effective when no REX.W is present. Any
+fall-through from a `$66`-emitting macro into a REX.W-emitting macro
+will silently produce 64-bit operations.
+
+### Affected operations
+
+Only `2dupw!` was affected. The other 16-bit operation, `dupw@`
+(16-bit fetch with address preservation), was already correct because
+it uses `movzx` (`0F B7`), which doesn't need REX.W:
+
+```forth
+: dupw@` over` $0F, ,1 $1AB7, s09 ;   \ 0F B7 1A = movzx ebx, word [rdx]
+```
+
+The `movzx` instruction always zero-extends into the full register
+without needing a REX.W prefix. The store instruction `mov [reg], reg`
+needs explicit size control via prefixes, which is where the conflict
+arose.
+
+### The pattern of one-line port bugs
+
+This is the third one-line bug with outsized impact in the ff64 port:
+
+1. **`_parse` DUP1 vs DROP1** (exp 038): The x86-64 entry sequence
+   consumed an extra stack item on every call to `parse`. Caused
+   cumulative compile-time stack corruption visible only in large
+   files. One instruction change fixed it.
+
+2. **`_pick_detect` encoding** (exp 104): The literal-detection code
+   checked for i386-specific byte sequences. The x86-64 compiler
+   emits different sequences. One comparison mask fixed it.
+
+3. **`2dupw!` REX.W override** (exp 146): A fall-through pattern that
+   worked on i386 produced conflicting prefixes on x86-64. Breaking
+   one fall-through fixed it.
+
+Each was discovered by comparing behavior between architectures — not
+by reading the compiler source. The generated machine code is always
+the ground truth.
