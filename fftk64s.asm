@@ -51,5 +51,7 @@ _start:
         align 8
 ds0_val:  file "cmpl64.cfg"
 
+;; Reserve space matching ff64.asm BSS layout (codebuf+tib+eob+helpbuf+dstack).
+;; FASM's executable format sets memsz > filesz, so these don't bloat the file.
         align 8
-fftk64s_codebuf rb 65536
+fftk64s_codebuf rb 65536 + 1024*256 + 1024 + 131072 + 8192

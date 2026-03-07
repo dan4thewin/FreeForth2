@@ -2201,9 +2201,9 @@ if defined ffdl
 section '.bss'
 end if
 
+codebuf    rb 65536
 tib        rb 1024*256             ; terminal input and file-stack buffer (i386 layout)
 eob        rb 1024                 ; end-of-buffer scratch area
 helpbuf    rb 131072               ; 128KB buffer for help file reading
 dstack     rb 8192
 dstack_top:
-codebuf    rb 65536
