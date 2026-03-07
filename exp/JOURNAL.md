@@ -11760,3 +11760,256 @@ x86-64. The `shell.ff` and `ior.ff` features (system, shell, cd, man,
 !!, strerror, ior, ?ior) all work without libc function binding. This
 unblocks testing of these libraries even while fixup.ff (exp 080)
 remains broken.
+
+---
+
+## Side Quest: FreeRTOS heap_4 as native malloc — feasibility study
+
+**Goal**: Evaluate FreeRTOS heap_4.c as a template for a native
+FreeForth malloc/free, eliminating the last fixup.ff dependency
+on x86-64.
+
+### What heap_4 does
+
+FreeRTOS heap_4 is a first-fit allocator with coalescing. Its core
+data structure is dead simple:
+
+```c
+typedef struct A_BLOCK_LINK {
+    struct A_BLOCK_LINK *pxNextFreeBlock;  // next free block (by address)
+    size_t xBlockSize;                     // size including header
+} BlockLink_t;
+```
+
+That's 16 bytes on x86-64 (pointer + size_t). The algorithm:
+
+1. **Init**: One big free block spanning the entire heap array. An
+   `xStart` sentinel points to it. A `pxEnd` sentinel at the end.
+   Free blocks form a singly-linked list sorted by address.
+
+2. **Malloc**: Walk the free list until a block ≥ requested size is
+   found (first-fit). If the remainder is large enough, split it into
+   two blocks. Mark the allocated block with MSB of `xBlockSize`.
+   Return pointer past the header.
+
+3. **Free**: Find the insertion point in the address-sorted free list.
+   Coalesce with left neighbor if adjacent. Coalesce with right
+   neighbor if adjacent. This prevents fragmentation from accumulating.
+
+4. **No realloc**. No calloc logic beyond zeroing (we don't need that).
+
+### Why it's a good fit for FreeForth
+
+**Extreme simplicity.** The entire allocator is ~200 lines of C with
+extensive comments and defensive macros. Strip the FreeRTOS-isms
+(task suspend/resume, coverage markers, heap canary, stats tracking)
+and the core is roughly:
+
+- `prvHeapInit`: ~15 lines — align heap, set up start/end sentinels,
+  one free block.
+- `pvPortMalloc`: ~30 lines — size alignment, first-fit walk, split.
+- `vPortFree`: ~10 lines — validate, clear allocated bit, insert.
+- `prvInsertBlockIntoFreeList`: ~25 lines — address-sorted insert
+  with two-way coalescing.
+
+That's ~80 lines of C logic. In FreeForth, with its dense style,
+this might be 40-60 lines of Forth.
+
+**No external dependencies.** heap_4 operates on a static byte array
+(`ucHeap[configTOTAL_HEAP_SIZE]`). In FreeForth, this would be an
+mmap'd anonymous region or a `create ... allot` block. No libc, no
+syscalls beyond initial memory acquisition.
+
+**Single-threaded.** FreeForth is single-threaded, so we can strip
+all the `vTaskSuspendAll`/`xTaskResumeAll` locking. That removes a
+third of the code.
+
+**MIT licensed.** heap_4.c is MIT. We can derive from it freely.
+
+### Mapping to FreeForth concepts
+
+| heap_4 concept | FreeForth equivalent |
+|---|---|
+| `ucHeap[N]` static array | `create _heap N allot` or anonymous mmap |
+| `BlockLink_t` (16 bytes) | Two cells: `next-free` and `block-size` |
+| `xHeapStructSize` (16, aligned) | `2 cells` = 16 on x86-64 |
+| `heapBLOCK_ALLOCATED_BITMASK` | `1 63 <<` (MSB of 64-bit size) |
+| `portBYTE_ALIGNMENT` (8) | Natural cell alignment |
+| `xStart` sentinel | `variable _hstart 0 , ` (next + size) |
+| `pxEnd` sentinel | Pointer to end marker in heap |
+| `vTaskSuspendAll/ResumeAll` | (deleted — single-threaded) |
+
+### Key design decisions
+
+**1. Where does the heap live?**
+
+Three options:
+
+**(a) `create _heap N allot`** — Allocates N bytes in FreeForth's
+dictionary space (the RWX flat segment). Simple, zero syscalls. But
+the dictionary space is also where compiled code lives, and it grows
+linearly from `here`. A large heap (say 1MB) would push `here`
+forward, consuming dictionary space permanently. This is fine if
+malloc consumers are few and the heap is modest (64KB–256KB).
+
+**(b) Anonymous mmap** — `0 -1 MAP_ANONYMOUS MAP_PRIVATE | PROT_READ
+PROT_WRITE | N 0 mmap`. This gives a separate memory region outside
+the dictionary. Unlimited size (up to virtual memory). Requires the
+mmap syscall wrapper already in fflin64.boot. The mmap'd region
+persists until explicit munmap. This is cleanest for large heaps.
+
+**(c) sbrk via brk syscall** — Traditional Unix heap growth. FreeForth
+doesn't use brk anywhere; the entire binary lives in one RWX LOAD
+segment. Using brk would conflict with the linker's notion of data
+segment end. **Not recommended.**
+
+**Recommendation: mmap for large heaps, create/allot for small.**
+Start with create/allot (it's one line), switch to mmap if consumers
+need more.
+
+**2. What heap size?**
+
+The current `malloc.ff` consumers need to be surveyed. Since nothing
+in the codebase currently `needs malloc.ff`, the typical use case is
+user code loading it for dynamic allocation. A 64KB default with
+optional resize via mmap seems reasonable:
+
+```forth
+64 1024* equ _HEAP_SIZE
+create _heap _HEAP_SIZE allot
+```
+
+**3. Block header size**
+
+On x86-64 with 8-byte cells, the block header is naturally 16 bytes
+(one cell for next-free pointer, one cell for block size). This gives
+8-byte alignment automatically, matching FreeForth's cell alignment.
+heap_4 uses `portBYTE_ALIGNMENT` = 8, and aligns the struct size up,
+which on a 64-bit system is already 16. So the FreeForth version needs
+no extra alignment logic — two cells IS the aligned header.
+
+**4. The allocated bitmask trick**
+
+heap_4 steals the MSB of `xBlockSize` to mark allocated blocks. On
+64-bit, that's bit 63 — so max allocation is 2^63 - 1 bytes. This is
+elegant: `free` verifies the block is allocated before freeing, and the
+free list walk skips allocated blocks implicitly (their "size" would
+appear negative or huge). In FreeForth:
+
+```forth
+1 63 << equ ALLOC_BIT
+: allocated? ( blk -- f ) cell+ @ ALLOC_BIT & ;
+: allocate!  ( blk -- )   cell+ dup @ ALLOC_BIT | swap ! ;
+: free!      ( blk -- )   cell+ dup @ ALLOC_BIT invert & swap ! ;
+: blk-size   ( blk -- n ) cell+ @ ALLOC_BIT invert & ;
+```
+
+**5. Coalescing on free**
+
+This is the critical feature that distinguishes heap_4 from the
+simpler heap_2 (which doesn't coalesce). The address-sorted free list
+means adjacent free blocks can be merged. The insertion algorithm:
+
+```
+Find insertion point (walk until next > block_to_insert)
+If prev is adjacent → merge prev + block
+If block is adjacent to next → merge block + next
+Link into list
+```
+
+This prevents the pathological fragmentation that kills non-coalescing
+allocators. It's essential if malloc/free are used repeatedly with
+varying sizes.
+
+### Estimated implementation complexity
+
+**Core words** (~40-50 lines of Forth):
+
+| Word | Lines | Notes |
+|---|---|---|
+| `_heap-init` | 8-10 | Set up sentinels + one free block |
+| `malloc` | 15-18 | Size alignment, first-fit, split |
+| `free` | 8-10 | Validate, coalesce, insert |
+| `_insert-free` | 10-12 | Address-sorted insert + coalesce |
+| Constants/variables | 5-6 | ALLOC_BIT, _hstart, _hfree, etc. |
+
+**What to strip from heap_4:**
+- All `configXXX` conditionals and macros
+- `vTaskSuspendAll`/`xTaskResumeAll` (single-threaded)
+- Heap protector/canary (unnecessary complexity)
+- Stats tracking (`xNumberOfSuccessfulAllocations` etc.)
+- `mtCOVERAGE_TEST_MARKER()` coverage hooks
+- Overflow checks on size arithmetic (Forth is unchecked by design)
+- `calloc` (trivial: `malloc` + `dup N 0 fill` if needed later)
+
+**What to keep:**
+- Block header: next + size (2 cells)
+- Allocated bitmask on MSB
+- First-fit allocation with split
+- Address-sorted free list
+- Two-way coalescing on free
+- Start/end sentinels
+
+### Potential issues
+
+**1. FreeForth comparison semantics in loops.**
+The free-list walk (`WHILE block-size < wanted ...`) needs FLAGS-based
+comparisons. The pattern `blk-size wanted < WHILE` works but the
+comparison must not consume operands before the WHILE branch decision.
+This is well-understood territory (see64.ff, nexth, etc.) but requires
+care.
+
+**2. No realloc.**
+heap_4 doesn't provide `realloc`. If any consumer needs it, we'd need
+to add `malloc` + copy + `free`. Not hard, but worth noting.
+
+**3. Heap exhaustion.**
+If the heap fills up, `malloc` returns 0. The caller must check.
+heap_4's approach of returning NULL is idiomatic for FreeForth — the
+caller does `malloc 0- 0= IF !"out_of_memory" ;THEN`.
+
+**4. Thread safety.**
+Not an issue — FreeForth is single-threaded. But if signal handlers
+call malloc, reentry could corrupt the free list. FreeForth signal
+handlers (SEGV) don't allocate, so this is safe.
+
+### Verdict
+
+**Highly feasible. Recommended approach.**
+
+FreeRTOS heap_4 is almost purpose-built for this use case:
+- Small, self-contained, no dependencies
+- MIT licensed
+- Address-sorted free list with coalescing prevents fragmentation
+- Block header is exactly 2 cells — natural alignment, no waste
+- The allocated bitmask trick is elegant and costs nothing
+- Strips down to ~50 lines of Forth
+
+The main alternative — using mmap directly as "malloc" (one mmap per
+allocation, munmap to free) — wastes kernel page table entries and
+only works for page-aligned sizes. It's what DG rightly called "not
+loving" as a malloc replacement. heap_4 on top of a single mmap'd
+region (or create/allot block) gives real malloc semantics: arbitrary
+sizes, coalescing, O(n) allocation where n is free blocks not total
+allocations.
+
+The implementation would look like:
+
+```
+\ malloc.ff — native heap allocator (x86-64)
+\ Based on FreeRTOS heap_4 (MIT license) — first-fit with coalescing
+
+[64] [IF]
+\ ... 50 lines of Forth ...
+[ELSE]
+needs fixup.ff
+:. _malloc "malloc" fixup ;
+:  malloc 1 dup _malloc #call ;
+:. _free "free" fixup ;
+:  free 1 dup _free #call drop ;
+[THEN]
+" malloc" features append ;
+```
+
+This would eliminate the LAST fixup.ff dependency on x86-64, making
+the entire `lib/` directory usable without runtime libc binding.
