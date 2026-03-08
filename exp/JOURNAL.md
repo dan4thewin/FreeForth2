@@ -12688,3 +12688,114 @@ Two Makefile tests:
 
 All test gates: `make test` PASSED, `make test64` PASSED, `make testexp`
 72 PASSED / 1 SKIPPED.
+
+## Experiment 147: FFPATH — Tib-based build, no scratch buffers
+
+### Goal
+
+Rewrite the exp/146 FFPATH prototype to eliminate all `create...allot`
+scratch buffers. Per DG's directive: all build-time scratch lives in tib
+at `tp@`; only the precisely-sized final segment structure is allotted.
+
+### Motivation
+
+Exp 146 used five `create...allot` buffers totaling 3328 bytes:
+`_exedir` (256), `_homedir` (256), `_seg1` (256), `_segs` (2048),
+`_obuf` (512). DG pointed out that FreeForth headers are built with
+the same pattern — known structure, exact sizes, no over-allocation.
+The tib-based version:
+- **Exedir**: counted string at `tp@` via `/proc/self/exe` readlink
+- **Homedir**: addr/len variables pointing into the stable `getenv`
+  env block — no copy needed
+- **Seg1 scratch**: eliminated entirely via `_bhole`/`_fhole` pattern
+- **Segment output**: built directly at `tp@ + exedir_size`, then
+  allot+copy with exact measured size
+- **Runtime _obuf**: replaced by `tp@` (free space after current file
+  content, before `read` overwrites it)
+
+### The _bhole/_fhole pattern
+
+Exp 146 used `_seg1` as an intermediate buffer: build each segment's
+data into `_seg1`, measure it, then `_eseg(flag, seg1_addr, seg1_len)`
+to emit into `_segs`. This required knowing the flag before the data.
+
+The tib version writes data directly into the output with a 2-byte
+"hole" reserved at the start:
+1. `_bhole`: reserve 2 bytes (flag=0, count=0), return hole address
+2. Write data at `_wp` via `_1ch`/`_chunk`/`_expand`
+3. `_fhole(flag, hole)`: retroactively fill flag and count, append NUL
+
+This eliminates the per-chunk scratch buffer entirely.
+
+### The anonymous-code-at-HERE discovery
+
+The initial implementation used `create _segs dup allot` followed by
+`_segs swap cmove` in the same anonymous block. This SEGVed.
+
+**Root cause**: In FreeForth, anonymous top-level code is compiled at
+HERE (rbp). `create _segs` at compile time records `_segs = HERE`
+(the start of the anonymous block). At runtime, `allot` advances HERE.
+Then `cmove` writes to `_segs` — overwriting the anonymous code that
+is currently executing.
+
+This is a fundamental property of FreeForth's compilation model:
+- Anonymous blocks compile at HERE, just like `:` definitions
+- `create foo` records foo = HERE at *compile time* (start of code)
+- `here` at *runtime* also returns HERE (which equals the start of
+  the anonymous block — `;` resets rbp to [anon] before executing)
+- `allot` advances HERE during execution, claiming bytes at the
+  START of the anonymous block (already-executed code)
+- Any write to those bytes overwrites the anonymous code
+
+**Fix**: Split into two anonymous blocks with `;` between:
+```
+here _dst ! _sz @ allot ;       \ block 1: allot, advances HERE
+tp@ c@+ + 1+ _dst @ _sz @ cmove ;  \ block 2: compiled PAST allotted data
+```
+Block 2's code is compiled at HERE (= past the allotted data), so
+`cmove` to `_dst @` writes before block 2's code. No overlap.
+
+### The _split ELSE path drop bug (again)
+
+The `_split` word had an extra `drop` in the ELSE path — the same
+family of bug fixed in exp 146. After `_atq?` returns diff and
+`0- 0= drop IF` consumes it, the ELSE path starts with `(end addr)`.
+The spurious `drop` consumed `addr`, causing `2drop` to underflow
+into the caller's stack.
+
+### Variables as the only allocation
+
+The final implementation uses 6 variables (48 bytes total):
+- `_wp` — build-time write pointer into tib
+- `_pos` — parse cursor
+- `_ha`, `_hl` — HOME address and length (from getenv)
+- `_dst` — pointer to allotted segment data
+- `_sz` — segment data size
+
+The allotted segment structure is 111 bytes for the default 4-entry
+template (measured, not estimated).
+
+### Runtime scratch
+
+`openlib2` uses `tp@` as the trial-path scratch buffer. At the time
+`openlib` runs (called from `needed`), the file hasn't been `read`
+yet — space from `tp@` to `eob` is free. The helpers `_clrob`,
+`_oapp`, `_onul`, `_oopen` all compute `tp@` on each call (stable
+within one `openlib2` invocation since no `eval` or `needed` runs).
+
+### Files
+
+- `exp/147-ffpath-tib/ffpath.ff` — 181 lines (vs 146's 212)
+- `exp/147-ffpath-tib/test.ff` — same 5 lookup tests as 146
+- `exp/147-ffpath-tib/Makefile` — same 2 test targets
+
+### Test results
+
+- **test-default**: from repo root, finds `see` (x86-64 lib), `pno`
+  (generic lib), `test` (cwd), `shell` (generic lib), rejects
+  `nosuchfile`.
+- **test-subdir**: same tests from `/tmp` — `#` resolves via
+  `/proc/self/exe`.
+
+All test gates: `make test` PASSED, `make test64` PASSED, `make testexp`
+72 PASSED / 1 SKIPPED.

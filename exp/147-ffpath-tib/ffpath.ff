@@ -1,0 +1,180 @@
+\ ffpath.ff — tib-based template search path for needs/needed
+\ No create...allot scratch buffers. All build-time scratch lives in
+\ tib past tp@. Only the final segment structure is allotted.
+\
+\ Sigils: # = exe dir, ~ = $HOME, ? = name placeholder, : = separator
+\ Segment flags: 0=full, 1=partial, 2=final, $FF=end
+\ Format: [flag][count][data...][NUL] ... [$FF]
+
+\ ============================================================
+\ state
+\ ============================================================
+variable _wp       \ write pointer (into tib during build)
+variable _pos      \ parse cursor
+variable _ha       \ HOME addr (from getenv, stable env block)
+variable _hl       \ HOME len
+
+\ ============================================================
+\ exe dir: counted string at tp@ via /proc/self/exe
+\ tp@[0]=dirname_len, tp@[1..len]=dirname, tp@[len+1]=NUL
+\ ============================================================
+:. _init_exedir tp@ 256 erase
+  255 tp@ 1+ "/proc/self/exe" drop readlink
+  0- 0< IF drop ;THEN
+  0 over tp@ 1+ + c!
+  dup tp@ 1+ + BEGIN 1- dup c@ $2F - 0= drop UNTIL
+  tp@ 1+ - tp@ c!
+  0 tp@ c@+ + c! ;
+_init_exedir
+
+\ ============================================================
+\ home dir: stash getenv result (points into env block)
+\ ============================================================
+:. _init_home
+  "HOME" getenv 0- 0= IF 2drop ;THEN
+  2dup + 1- c@ $2F - 0= drop IF 1- THEN
+  _hl ! _ha ! ;
+_init_home
+
+\ ============================================================
+\ emit helpers — write bytes at _wp into growing output
+\ ============================================================
+:. _eb  _wp @ c! _wp @ 1+ _wp ! ;
+:. _eend  $FF _eb ;
+
+\ reserve 2-byte hole (flag + count), return hole address
+:. _bhole ( -- hole ) _wp @ 0 _eb 0 _eb ;
+
+\ fill hole: write flag, compute count from data written, append NUL
+:. _fhole ( flag hole -- )
+  swap over c!
+  _wp @ over - 2 - swap 1+ c!
+  0 _eb ;
+
+\ ============================================================
+\ expand sigils directly into output at _wp
+\ ============================================================
+:. _exp#  tp@ 1+ tp@ c@ _wp @ swap cmove tp@ c@ _wp +! ;
+:. _exp~  _ha @ _hl @ _wp @ swap cmove _hl @ _wp +! ;
+:. _expc  _wp @ c! _wp @ 1+ _wp ! ;
+
+\ ============================================================
+\ scanning helpers
+\ ============================================================
+:. _1ch
+  dup c@ $23 - 0= drop IF _exp# 1+ ;THEN
+  dup c@ $7E - 0= drop IF _exp~ 1+ ;THEN
+  dup c@ _expc 1+ ;
+
+:. _chunk ( end addr -- end addr' )
+  BEGIN 2dup > WHILE 2drop dup c@ $3F - 0= drop IF ;THEN _1ch
+  REPEAT 2drop ;
+
+:. _colon ( end addr -- end addr' )
+  BEGIN 2dup > WHILE 2drop dup c@ $3A - 0= drop IF ;THEN 1+
+  REPEAT 2drop ;
+
+:. _expand ( end addr -- )
+  BEGIN 2dup > WHILE 2drop _1ch REPEAT 2drop 2drop ;
+
+:. _atq? ( end addr -- end addr diff )
+  2dup > 2drop IF dup c@ $3F - ELSE -1 THEN ;
+
+\ ============================================================
+\ entry builders
+\ ============================================================
+
+\ ensure trailing / — _wp already has data, hole passes through
+:. _slash ( hole -- hole )
+  _wp @ 1- c@ $2F - 0= drop IF ;THEN $2F _expc ;
+
+:. _full ( addr len -- )
+  _bhole >r bounds _expand r> _slash 0 swap _fhole ;
+
+:. _has? ( addr len -- addr len flag ) 2dup 0 -rot bounds
+  BEGIN 2dup > WHILE 2drop
+    dup c@ $3F - 0= drop IF rot drop -1 -rot THEN 1+
+  REPEAT 2drop 2drop ;
+
+\ write chunks, decide flag after seeing what stopped the scan
+:. _split ( addr len -- ) bounds
+  BEGIN _bhole >r _chunk
+    _atq? 0- 0= drop
+    IF r> 1 swap _fhole 1+
+    ELSE r> 2 swap _fhole 2drop ;THEN
+  AGAIN ;
+
+:. _entry ( addr len -- ) _has? 0- 0= IF drop _full ;THEN drop _split ;
+
+\ ============================================================
+\ parse colon-separated template string
+\ ============================================================
+:. _parse ( addr len -- )
+  bounds
+  BEGIN
+    dup _pos ! _colon
+    _pos @ over _pos @ -
+    0- 0<> IF _entry ELSE 2drop THEN
+    2dup > 2drop IF 1+ THEN
+    2dup <= 2drop
+  UNTIL 2drop _eend ;
+
+\ ============================================================
+\ build: parse template into tib, allot exact, copy out
+\ ============================================================
+:. _build
+  tp@ c@+ + 1+ _wp !
+  "FFPATH" getenv 0- 0<> IF _parse
+  ELSE 2drop "./\?:./\?.ff:#/lib/x86-64/\?.ff:#/lib/\?.ff" _parse
+  THEN ;
+_build
+
+\ measure and allot the segment structure
+\ NOTE: create+allot and cmove MUST be in separate anonymous blocks.
+\ Anonymous code is compiled at HERE. create+allot claims bytes at HERE.
+\ cmove to that area would overwrite the executing anonymous code.
+\ The ; between them ensures block 2's code starts PAST the allotted data.
+variable _dst
+variable _sz
+tp@ c@+ + 1+ _wp @ over - _sz ! drop
+here _dst ! _sz @ allot ;
+tp@ c@+ + 1+ _dst @ _sz @ cmove ;
+
+\ ============================================================
+\ openlib — runtime lookup using tp@ as trial-path scratch
+\ tp@ is free space past current file content (before read)
+\ ============================================================
+:. _clrob tp@ 512 erase ;
+:. _oapp  tp@ append ;
+:. _onul  0 tp@ c@+ + c! ;
+:. _oopen _onul tp@ 1+ tp@ c@ openr ;
+:. _skip 1+ c@+ + 1+ ;
+:. _sdata dup _skip swap 1+ c@+ ;
+
+:. _try1 ( name len ptr -- name len ptr' fd ) _clrob
+  BEGIN dup c@
+    dup $FF - 0= drop IF drop -1 ;THEN
+    dup 0 - 0= drop IF \ full: dir + name
+      drop _sdata _oapp 2 pick 2 pick _oapp _oopen ;THEN
+    dup 1 - 0= drop IF \ partial: prefix + name
+      drop _sdata _oapp 2 pick 2 pick _oapp THEN
+    dup 2 - 0= drop IF \ final: suffix + try open
+      drop _sdata _oapp _oopen ;THEN
+  AGAIN ;
+
+: openlib2 ( addr len -- fd )
+  _dst @
+  BEGIN dup c@ $FF - 0= drop IF drop 2drop -1 ;THEN
+    _try1 0- 0>= IF nip nip nip ;THEN drop
+  AGAIN ;
+
+\ ============================================================
+\ diagnostics
+\ ============================================================
+:. .1seg
+  dup c@ 0 - 0= drop IF ."full_" THEN
+  dup c@ 1 - 0= drop IF ."part_" THEN
+  dup c@ 2 - 0= drop IF ."finl_" THEN
+  1+ c@+ 2dup ."[" type ."]" cr + 1+ ;
+: .segs _dst @ BEGIN dup c@ $FF - 0= drop IF ."[end]" cr drop ;THEN
+  .1seg AGAIN ;
