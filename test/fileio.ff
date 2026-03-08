@@ -1,0 +1,62 @@
+\ fileio.ff — file I/O tests (openr, openw, read, write, close, lseek)
+\ Uses shell.ff for temp file cleanup via !!
+needs shell.ff
+needs fileops.ff
+needs test.ff
+10 >plan
+
+testing openr and close
+variable _fd
+: _opclose "ff64.asm" openr _fd ! _fd @ close ;
+t{ _opclose -> 0 }t
+
+testing openr nonexistent returns negative
+: _nofile "no_such_file_xyz" openr ;
+t{ _nofile -2 - drop -> }t
+
+testing read returns byte count
+create _buf 64 allot
+: _rdcount "ff64.asm" openr _fd ! _buf 10 _fd @ read _fd @ close drop ;
+t{ _rdcount -> 10 }t
+
+testing lseek then read
+: _seektest
+  "ff64.asm" openr _fd !
+  5 _fd @ 0 lseek drop
+  _buf 5 _fd @ read
+  _fd @ close drop ;
+t{ _seektest -> 5 }t
+
+testing write and read round-trip
+!! rm -f _test_io_tmp
+: _wrtest
+  "_test_io_tmp" openw _fd !
+  "hello" drop 5 _fd @ write
+  _fd @ close drop ;
+t{ _wrtest -> 5 }t
+
+: _rdtest
+  "_test_io_tmp" openr _fd !
+  _buf 5 _fd @ read
+  _fd @ close drop ;
+t{ _rdtest -> 5 }t
+
+testing written data matches
+t{ _buf c@ -> $68 }t
+t{ _buf 1+ c@ -> $65 }t
+
+testing overwrite and verify
+: _owtest
+  "_test_io_tmp" openw _fd !
+  "ABCDE" drop 5 _fd @ write drop
+  _fd @ close drop
+  "_test_io_tmp" openr _fd !
+  _buf 5 _fd @ read drop
+  _fd @ close drop ;
+t{ _owtest _buf c@ -> $41 }t
+t{ _buf 4+ c@ -> $45 }t
+
+!! rm -f _test_io_tmp
+
+tally-exit ;
+

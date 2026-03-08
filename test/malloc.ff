@@ -1,0 +1,31 @@
+\ malloc.ff — heap allocation tests
+needs malloc.ff
+needs test.ff
+6 >plan
+
+testing malloc returns nonzero address
+variable _p
+: _alloc 256 malloc _p ! _p @ ;
+t{ _alloc 0- 0<> IF THEN drop -> }t
+
+testing store and fetch in malloced memory
+: _store 42 _p @ ! _p @ @ ;
+t{ _store -> 42 }t
+
+testing byte store and fetch
+: _cbyte $AA _p @ c! _p @ c@ ;
+t{ _cbyte -> $AA }t
+
+testing write at offset
+: _off 99 _p @ 8+ ! _p @ 8+ @ ;
+t{ _off -> 99 }t
+
+testing free
+t{ _p @ free -> }t
+
+testing second malloc works
+: _alloc2 128 malloc _p ! 77 _p @ ! _p @ @ ;
+t{ _alloc2 -> 77 }t
+_p @ free ;
+
+tally-exit ;

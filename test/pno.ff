@@ -1,0 +1,56 @@
+\ pno.ff — pictured numeric output tests
+\ Tests: s>d <# #s #> hold sign x#s
+needs pno.ff
+needs test.ff
+11 >plan
+
+testing s>d positive
+t{ 42 s>d -> 42 0 }t
+
+testing s>d negative
+t{ -1 s>d -> -1 -1 }t
+
+testing <# #s #> decimal length
+\ 42 → "42" = 2 chars
+: n42 <# 42 s>d #s #> nip ;
+t{ n42 -> 2 }t
+
+testing <# #s #> decimal content
+\ 42 → "42": first byte '4'=$34, second '2'=$32
+: n42c <# 42 s>d #s #> drop c@ ;
+t{ n42c -> $34 }t
+
+testing hold inserts character
+\ <# 'X' hold 42 s>d #s #> → "42X"
+: n42x <# 'X' hold 42 s>d #s #> nip ;
+t{ n42x -> 3 }t
+
+testing sign on negative
+\ <# -42 dup negate s>d #s rot sign #> nip → "-42" = 3 chars
+: nsign <# -42 dup negate s>d #s rot sign #> nip ;
+t{ nsign -> 3 }t
+
+testing sign on positive (no dash)
+: psign <# 42 dup s>d #s rot sign #> nip ;
+t{ psign -> 2 }t
+
+testing zero formats as "0"
+: nz <# 0 s>d #s #> nip ;
+t{ nz -> 1 }t
+
+testing x#s hex
+\ $FF → "ff" = 2 chars
+: nff <# $FF s>d x#s #> nip ;
+t{ nff -> 2 }t
+
+testing x#s hex content
+\ $FF → "ff": first byte 'f'=$66
+: nffc <# $FF s>d x#s #> drop c@ ;
+t{ nffc -> $66 }t
+
+testing large number
+\ 12345 → "12345" = 5 chars
+: nbig <# 12345 s>d #s #> nip ;
+t{ nbig -> 5 }t
+
+tally-exit ;

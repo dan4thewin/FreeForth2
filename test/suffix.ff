@@ -1,0 +1,71 @@
+\ suffix.ff — compiler suffix and number literal tests
+\ Covers: arithmetic suffixes, bitwise suffixes, @/!/_ suffixes,
+\ named constant suffixes, number prefixes, date/time literals
+needs test.ff
+25 >plan
+
+\ ============================================================
+\ Arithmetic suffixes (exp 048)
+\ ============================================================
+
+testing 5+ 3- 7* 4/ 5%
+t{ 10 5+ -> 15 }t
+t{ 10 3- -> 7 }t
+t{ 6 7* -> 42 }t
+t{ 20 4/ -> 5 }t
+t{ 17 5% -> 2 }t
+
+testing bitwise suffixes
+t{ $FF $0F& -> 15 }t
+t{ $F0 $0F| -> 255 }t
+t{ $FF $0F^ -> 240 }t
+
+testing @ ! _ suffixes
+variable _sx
+: _sfetch 42 _sx ! _sx@ ;
+t{ _sfetch -> 42 }t
+: _sstore 99 _sx! _sx @ ;
+t{ _sstore -> 99 }t
+t{ 42 99_ -> 99 }t
+
+testing named constant suffixes
+10 constant _N
+3 constant _M
+t{ 5 _N+ -> 15 }t
+t{ 17 _M% -> 2 }t
+
+testing large immediate suffixes
+t{ 1 $1000+ -> 4097 }t
+t{ 1000 256/ -> 3 }t
+
+\ ============================================================
+\ Number literal formats (exp 081)
+\ ============================================================
+
+testing hex literal
+t{ $FF -> 255 }t
+
+testing binary literal
+t{ %1010 -> 10 }t
+
+testing negative literal
+t{ -7 -> 0 7 - }t
+
+testing character literal
+t{ 'A -> 65 }t
+
+testing base change
+t{ 8#77 -> 63 }t
+
+testing skip chars in numbers
+t{ 1'000'000 -> 1000000 }t
+
+testing date literals
+t{ 2000-3-1 -> 730485 }t
+t{ 1970-1-1 -> 719468 }t
+
+testing time literals
+t{ 24:0:0 -> 86400 }t
+t{ 1:0:0 -> 3600 }t
+
+tally-exit ;

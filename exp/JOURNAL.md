@@ -12513,3 +12513,88 @@ shell.ff and pno.ff automatically. On ff64, there's no equivalent auto-loader.
 - `make test` — all PASSED (including test/mmap.ff on all 4 i386 configs)
 - `make test64` — all PASSED (mmap.ff now runs, 12/12)
 - `make testexp` — 72 PASSED, 1 SKIPPED (073-turnkey only)
+
+---
+
+## Experiment 150: Test suite consolidation
+
+**Date:** 2026-03-07
+**Goal:** Distill useful coverage from exp/ tests into t{ }t test suite under test/.
+
+### Background
+
+The exp/ directory had grown to 72 test targets, many testing features already
+covered by test/test64.ff, test/common1.ff, and test/loops.ff. Meanwhile,
+several important areas had zero coverage in test/: catch/throw exception
+handling, file I/O operations, pictured numeric output (PNO), heap allocation,
+and shell/process words.
+
+### Audit findings
+
+**Already well covered** (test64.ff consolidates 23 experiments):
+stack ops, arithmetic, comparisons, flow control, literals, memory ops,
+variables, constants, aliases, create/allot, vectors, dot conditionals,
+character literals, cmove, fill/erase, ++/--
+
+**Major gaps identified:**
+- catch/throw: only one trivial assertion (mmap.ff test 12)
+- File I/O: zero t{ }t coverage for openr/openw/read/write/close/lseek
+- PNO: zero coverage for s>d, <#, #s, #>, hold, sign, x#s
+- malloc/free: zero coverage
+- shell/process: zero coverage for getpid, getenv, system, !!, cd
+
+### New test files
+
+**test/catch.ff** (8 assertions):
+- catch returns 0 on success
+- throw delivers exception code to catch
+- Nested catch/throw propagates correctly
+- Stack preservation above/below catch frame
+- Sequential double catch
+- Throw across word boundary
+
+**test/fileio.ff** (10 assertions):
+- openr and close (existing file, nonexistent returns -2)
+- read returns byte count
+- lseek then read (seek-to-5 pattern)
+- write/read round-trip (verify written bytes via c@)
+- Overwrite and verify content
+
+**test/pno.ff** (11 assertions):
+- s>d positive and negative
+- <# #s #> decimal: length and first-byte content
+- hold inserts character
+- sign on negative (adds '-') vs positive (no dash)
+- Zero formats as "0"
+- x#s hex: length and content ($FF → "ff")
+- Large number (12345 → 5 chars)
+
+**test/malloc.ff** (6 assertions):
+- malloc returns nonzero address
+- Store/fetch in malloced memory
+- Byte store/fetch
+- Write at offset
+- free
+- Second malloc works after free
+
+**test/shell.ff** (8 assertions):
+- getpid returns positive, is consistent across calls
+- getenv HOME returns nonzero length
+- getenv nonexistent returns zero length
+- system echo returns 0
+- system false returns nonzero
+- !! runs command (depth check)
+- cd to current directory
+
+### Discovery: $- is broken on ff64
+
+During PNO test development, `$-` (string comparison) was found to SEGV on
+ff64. The disassembly shows corrupted opcodes at `movzx` after `repz cmpsb`.
+Not fixed here — documented for future work.
+
+### Test results
+
+All 5 new test files pass on both i386 (4 configs) and ff64.
+- `make test` — all PASSED (13 test files × 4 configs)
+- `make test64` — all PASSED (11 test files, 2 SKIPPED)
+- `make testexp` — 72 PASSED, 1 SKIPPED

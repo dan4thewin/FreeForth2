@@ -50,7 +50,7 @@ clean:
 
 test1:
 	@set -o pipefail; \
-	for d in `ls test/* | grep -v 64`; do \
+	for d in `ls test/*.ff | grep -v 64`; do \
 		echo -n $$d; printf %$$((20-$${#d}))s; \
 		$(FF) $(ARGS) -f $$d | tail -1; let e+=$$?; \
 	done; exit $$e
@@ -58,7 +58,7 @@ test1:
 test64: ff64
 	@set -o pipefail; e=0; \
 	skip="core1.ff core2.ff"; \
-	for d in test/*; do \
+	for d in test/*.ff; do \
 		b=$$(basename $$d); \
 		echo -n $$d; printf %$$((20-$${#d}))s; \
 		case " $$skip " in *" $$b "*) echo "SKIPPED"; continue;; esac; \

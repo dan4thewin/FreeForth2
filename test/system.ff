@@ -1,0 +1,272 @@
+\ system.ff — system-level subprocess tests (ff64 only)
+\ i386 ff needs FFPATH fix to run from non-root dirs (TODO)
+[64] [IF]
+needs shell.ff
+needs fileops.ff
+needs stat.ff
+needs test.ff
+18 >plan
+
+\ ============================================================
+\ Temp file infrastructure
+\ ============================================================
+\ chdir to test/tmp; filenames are <pid>.<n>.{in,out,err,lib}
+\ Shell !! commands use $PPID for the pid prefix.
+\ Forth side uses putc->appendc trick (see tempnm.ff).
+variable _fd
+create _sbuf 512 allot
+create _pfx 32 allot
+create _nm 64 allot
+create _src 512 allot
+
+\ Build PID prefix string once (e.g. "31337.")
+:. _ba _pfx appendc ;
+: _initpfx
+  _pfx 32 erase
+  _ba ' putc !^ getpid .\ putc ^^
+  $2E _pfx appendc ;
+_initpfx
+
+\ Append decimal N to _nm via putc trick
+create _dig 16 allot
+:. _da _dig appendc ;
+: _napp ( n -- )
+  _dig 16 erase
+  _da ' putc !^ .\ putc ^^
+  _dig c@+ _nm append ;
+
+\ Build filename: <pid>.<n>.<ext> into _nm
+variable _ea  variable _el
+: _bname ( ext len n -- )
+  >r swap _ea ! _el !
+  _nm 64 erase
+  _pfx c@+ _nm append
+  r> _napp
+  $2E _nm appendc _ea @ _el @ _nm append
+  0 _nm c@+ + c! ;
+
+\ Named builders
+: _in  ( n -- ) >r "in"  r> _bname ;
+: _out ( n -- ) >r "out" r> _bname ;
+: _err ( n -- ) >r "err" r> _bname ;
+: _lib ( n -- ) >r "lib" r> _bname ;
+
+\ Write (addr len) to .in file for test N
+: _wf ( addr len n -- )
+  _in _nm c@+ openw _fd ! _fd @ write drop _fd @ close drop ;
+
+\ Write (addr len) to .lib file for test N
+: _wlib ( addr len n -- )
+  _lib _nm c@+ openw _fd ! _fd @ write drop _fd @ close drop ;
+
+\ Read .out file into _sbuf, return byte count
+: _rd ( n -- count )
+  _out _nm c@+ openr _fd ! _sbuf 500 _fd @ read _fd @ close drop ;
+: _clr ( -- ) _sbuf 512 erase ;
+
+\ Unlink temp files for test N
+: _clean ( n -- )
+  dup _in  _nm c@+ drop unlink drop
+  dup _out _nm c@+ drop unlink drop
+  dup _err _nm c@+ drop unlink drop
+      _lib _nm c@+ drop unlink drop ;
+
+\ Clean if last assertion passed
+: _ok ( n -- ) ok- 0<> IF drop ;THEN _clean ;
+
+:. _s swap -rot > IF 0_ ;THEN
+  2>r 2dup r1 $- drop 2r> swap -rot 0<> IF ;THEN
+  2drop 2drop rdrop -1 ;
+: scan ( ndl@ ndl# hay@ hay# -- BOOL )
+  START _s swap 1+ swap 1-
+  ENTER 0 > drop WHILE REPEAT 2drop 2drop 0 ;
+
+\ Search for substring in _sbuf ( @s #s #buf -- BOOL ) -1=found
+: _has ( @s #s #buf -- BOOL )
+  _sbuf swap scan ;
+
+\ Build a needs line with actual PID-based lib filename
+: _needslib ( n -- ) \ appends "needs <pid>.N.lib^J" to _src
+  "needs " _src append
+  _pfx c@+ _src append
+  _dig 16 erase
+  _da ' putc !^ .\ putc ^^
+  _dig c@+ _src append
+  ".lib^J" _src append ;
+
+\ ============================================================
+\ Setup: create test/tmp and chdir into it
+\ ============================================================
+!! mkdir -p test/tmp
+!! ln -sf ../../ff64 test/tmp/ff
+"test/tmp" zt chdir drop
+
+\ After chdir, ./ff is a symlink to ff64
+\ !! commands use $PPID which == getpid in Forth
+
+\ ============================================================
+\ fsize sanity (validates chdir + stat)
+\ ============================================================
+
+testing fsize on known file
+t{ "../../Makefile" fsize 0- 0> IF THEN drop -> }t
+
+\ ============================================================
+\ REPL auto-execute (exp 051)
+\ ============================================================
+
+testing REPL auto-execute literal
+"42 . cr 0 exit ;" 2 _wf ;
+!! timeout 3 ./ff 'ui n^' -f $PPID.2.in > $PPID.2.out 2>$PPID.2.err
+t{ 2 _rd drop _sbuf c@ _clr -> $34 }t
+2 _ok
+
+testing REPL auto-execute arithmetic
+"3 4 + . cr 0 exit ;" 3 _wf ;
+!! timeout 3 ./ff 'ui n^' -f $PPID.3.in > $PPID.3.out 2>$PPID.3.err
+t{ 3 _rd drop _sbuf c@ _clr -> $37 }t
+3 _ok
+
+testing REPL define and call
+": sq dup * ; 5 sq . cr 0 exit ;" 4 _wf ;
+!! timeout 3 ./ff 'ui n^' -f $PPID.4.in > $PPID.4.out 2>$PPID.4.err
+t{ 4 _rd drop _sbuf c@ _clr -> $32 }t
+4 _ok
+
+\ ============================================================
+\ SEGV handling (exp 064, 088)
+\ ============================================================
+
+testing SEGV caught message
+"0 @" 5 _wf ;
+!! timeout 3 ./ff 'ui n^' < $PPID.5.in > $PPID.5.out 2>$PPID.5.err
+t{ "SEGV" 5 _rd _has _clr -> -1 }t
+5 _ok
+
+testing SEGV recovery continues REPL
+"0 @^J42 . cr^J0 exit" 6 _wf ;
+!! timeout 3 ./ff 'ui n^' < $PPID.6.in > $PPID.6.out 2>$PPID.6.err
+t{ "42" 6 _rd _has _clr -> -1 }t
+6 _ok
+
+\ ============================================================
+\ Tail-call optimization (exp 042)
+\ ============================================================
+
+testing tail-call chain prints value
+": foo 42 . cr ; : bar foo ; bar 0 exit ;" 7 _wf ;
+!! timeout 3 ./ff 'ui n^' -f $PPID.7.in > $PPID.7.out 2>$PPID.7.err
+t{ 7 _rd drop _sbuf c@ _clr -> $34 }t
+7 _ok
+
+testing tail-call generates jmp opcode
+": foo 42 . ; : bar foo ; bar H@ @ c@ .x cr 0 exit ;" 8 _wf ;
+!! timeout 3 ./ff 'ui n^' -f $PPID.8.in > $PPID.8.out 2>$PPID.8.err
+t{ 8 _rd drop _sbuf c@ _clr -> $34 }t
+8 _ok
+
+\ ============================================================
+\ Hidepvt (exp 049)
+\ ============================================================
+
+testing private word callable from public
+":. secret 42 ; : pub secret . cr ; pub 0 exit ;" 9 _wf ;
+!! timeout 3 ./ff 'ui n^' -f $PPID.9.in > $PPID.9.out 2>$PPID.9.err
+t{ 9 _rd drop _sbuf c@ _clr -> $34 }t
+9 _ok
+
+testing hidepvt hides private word
+":. secret 42 ; hidepvt^Jsecret . cr ;" 10 _wf ;
+!! timeout 3 ./ff 'ui n^' < $PPID.10.in > $PPID.10.out 2>$PPID.10.err
+t{ "error" 10 _rd _has _clr -> -1 }t
+10 _ok
+
+\ ============================================================
+\ Boot/argv -f (exp 053, 066)
+\ ============================================================
+
+testing -f flag loads file
+": w66 42 ; w66 . cr 0 exit ;" 11 _wf ;
+!! timeout 3 ./ff 'ui n^' -f $PPID.11.in > $PPID.11.out 2>$PPID.11.err
+t{ 11 _rd drop _sbuf c@ _clr -> $34 }t
+11 _ok
+
+\ ============================================================
+\ Features -v (exp 072, 087)
+\ ============================================================
+
+testing -v shows features string
+"bye" 12 _wf ;
+!! timeout 3 ./ff 'ui n^' -v -f $PPID.12.in > $PPID.12.out 2>$PPID.12.err
+t{ "features" 12 _rd _has _clr -> -1 }t
+12 _ok
+
+\ ============================================================
+\ Needs/needed (exp 065, 141)
+\ ============================================================
+
+testing needs loads file
+": w65 42 ;" 13 _wlib
+_src 512 erase 13 _needslib "w65 . cr^J0 exit ;" _src append
+_src c@+ 13 _wf ;
+!! timeout 3 ./ff 'ui n^' < $PPID.13.in > $PPID.13.out 2>$PPID.13.err
+t{ 13 _rd drop _sbuf c@ _clr -> $34 }t
+13 _ok
+
+testing needs guard is idempotent
+": w65g 55 ;" 14 _wlib
+_src 512 erase 14 _needslib 14 _needslib "w65g . cr^J0 exit ;" _src append
+_src c@+ 14 _wf ;
+!! timeout 3 ./ff 'ui n^' < $PPID.14.in > $PPID.14.out 2>$PPID.14.err
+t{ 14 _rd drop _sbuf c@ _clr -> $35 }t
+14 _ok
+
+\ ============================================================
+\ Help system (exp 067)
+\ ============================================================
+
+testing help dup shows output
+"help dup bye" 15 _wf ;
+!! timeout 3 ./ff 'ui n^' -f $PPID.15.in > $PPID.15.out 2>$PPID.15.err
+t{ 15 _out _nm c@+ fsize 10 - 0- 0> IF THEN drop -> }t
+15 _ok
+
+\ ============================================================
+\ Dynamic linking (exp 068)
+\ ============================================================
+
+testing dynlink loads libc
+"\"libc.so.6\" #lib 0- 0<> drop IF 42 . THEN cr bye ;" 16 _wf ;
+!! timeout 3 ./ff 'ui n^' -f $PPID.16.in > $PPID.16.out 2>$PPID.16.err
+t{ 16 _rd drop _sbuf c@ _clr -> $34 }t
+16 _ok
+
+\ ============================================================
+\ Error recovery (exp 052)
+\ ============================================================
+
+testing error recovery continues
+"badword^J99 . cr^J0 exit" 17 _wf ;
+!! timeout 3 ./ff 'ui n^' < $PPID.17.in > $PPID.17.out 2>$PPID.17.err
+t{ "99" 17 _rd _has _clr -> -1 }t
+17 _ok
+
+\ ============================================================
+\ Anon flush on variable (exp 089)
+\ ============================================================
+
+testing variable flushes anonymous code
+"65 emit variable d 66 emit cr 0 exit ;" 18 _wf ;
+!! timeout 3 ./ff 'ui n^' -f $PPID.18.in > $PPID.18.out 2>$PPID.18.err
+t{ 18 _rd drop _sbuf c@ _clr -> $41 }t
+18 _ok
+
+\ ============================================================
+\ Cleanup: chdir back, remove test/tmp if empty
+\ ============================================================
+"../.." zt chdir drop
+!! rm -rf test/tmp 2>/dev/null
+
+tally-exit ;
+[ELSE] 0 exit ;
+[THEN]

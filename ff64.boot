@@ -344,10 +344,6 @@ variable mrk 0 mrk 8+ !
 ( Output )
 : on -1 swap ! ;
 : off 0 swap ! ;
-( space/putc — on i386, space falls through to putc which is a vector )
-( for emit. On ff64, emit is assembly; putc is just an alias. )
-: space 32 emit ;
-: putc emit ;
 
 ( Memory )
 : fill rot rot BEGIN 0- 0> WHILE 1- -rot 2dup c! 1+ rot REPEAT drop 2drop ;
@@ -408,6 +404,9 @@ H@ @ constant _nop pvt
 :. _?` ?@ dup 0- 0= drop IF drop $75 THEN
   $0F c, $10+ c, dup here 4+ - d, drop ;
 : ?` -call 0; _?` ;
+
+: space 32
+:^ putc emit ;
 
 ( Range check — uses FLAGS tail-call pattern )
 : within over- -rot - u> 2drop nzTRUE ? zFALSE ;
@@ -472,10 +471,10 @@ variable base
 ( .digit — convert digit value 0-35 to character and emit )
 ( Lavarenne's char-literal version: '0'+ checks if past '9', )
 ( adjusts for A-F, checks 'z' overflow, falls back to '?' )
-: .digit '0'+ '9' u> drop IF 39+ 'z' u> drop IF '?'_ THEN THEN emit ;
+: .digit '0'+ '9' u> drop IF 39+ 'z' u> drop IF '?'_ THEN THEN putc ;
 : .ub\ _d .digit ;
 : .ub .ub\ space ;
-:. .sign 0- 0< IF '-' emit negate THEN ;
+:. .sign 0- 0< IF '-' putc negate THEN ;
 : .\ .sign base@ .ub\ ;
 : . .\ space ;
 : .dec\ .sign 10 .ub\ ;
@@ -485,7 +484,7 @@ variable base
 : .ux\ $10 .ub\ ;
 : .ux .ux\ space ;
 ( .x\ — Lavarenne's hex display: shows $ prefix for values > 9 )
-: .x\ .sign 9 > drop IF '$' emit THEN $10 .ub\ ;
+: .x\ .sign 9 > drop IF '$' putc THEN $10 .ub\ ;
 : .x .x\ space ;
 
 ( Hex digit output — .#s prints N hex digits of a value )
@@ -512,7 +511,7 @@ variable base
 ( Debug output — .s` shows compile-time stack, ds shows runtime stack )
 ( _s recurses depth-many times: 0; exits on zero count, depth 2 < )
 ( exits when stack is too shallow. On unwind, prints each saved value. )
-:^ ui : prompt space depth .\ ';' anon@ 0- 0= drop IF 1- THEN emit space ;
+:^ ui : prompt space depth .\ ';' anon@ 0- 0= drop IF 1- THEN putc space ;
 :. _s 0; depth 2 < drop IF drop ;THEN drop 1- swap >r _s r . r> ;
 : .s` prompt depth _s cr ;
 : ds prompt depth _s cr ;

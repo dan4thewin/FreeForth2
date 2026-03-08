@@ -1,0 +1,36 @@
+\ catch.ff — catch/throw exception handling tests
+needs test.ff
+8 >plan
+
+testing catch returns 0 on success
+: ok-word 42 ;
+t{ ok-word ' catch -> 42 0 }t
+
+testing throw delivers exception to catch
+: bomb 99 throw ;
+t{ bomb ' catch -> 99 }t
+
+testing nested catch/throw
+: inner 55 throw ;
+: outer inner ' catch ;
+t{ outer -> 55 }t
+
+testing catch preserves stack below
+t{ 111 ok-word ' catch -> 111 42 0 }t
+
+testing throw preserves stack below
+t{ 222 bomb ' catch -> 222 99 }t
+
+testing catch with noop (no throw)
+: noop ;
+t{ noop ' catch -> 0 }t
+
+testing double catch (sequential)
+t{ ok-word ' catch bomb ' catch -> 42 0 99 }t
+
+testing throw across word boundary
+: thrower 77 throw ;
+: caller thrower ;
+t{ caller ' catch -> 77 }t
+
+tally-exit ;

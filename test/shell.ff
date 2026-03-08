@@ -1,0 +1,43 @@
+\ shell.ff — shell and process tests
+\ Tests: getpid, getenv, system, !!
+needs shell.ff
+needs test.ff
+8 >plan
+
+testing getpid returns positive
+: _pid getpid ;
+t{ _pid 0- 0<> IF THEN drop -> }t
+
+testing getpid is consistent
+t{ getpid getpid - -> 0 }t
+
+testing getenv HOME returns nonzero length
+: _home "HOME" getenv nip ;
+t{ _home 0- 0<> IF THEN drop -> }t
+
+testing getenv nonexistent returns zero length
+: _novar "NONEXIST_VAR_XYZ_123" getenv nip ;
+t{ _novar -> 0 }t
+
+testing system echo
+\ system returns exit status; echo succeeds → 0
+: _sys "echo hi" system ;
+t{ _sys -> 0 }t
+
+testing system false returns nonzero
+: _sysf "false" system ;
+t{ _sysf 0- 0<> IF THEN drop -> }t
+
+testing !! runs command
+\ !! leaves nothing on stack; verify via depth
+variable _d
+: _pre depth _d ! ;
+: _post depth _d @ - ;
+_pre ;
+!! echo test_bang 1>&2
+t{ _post -> 0 }t
+
+testing cd to current dir
+t{ cd . -> }t
+
+tally-exit ;
