@@ -12598,3 +12598,93 @@ All 5 new test files pass on both i386 (4 configs) and ff64.
 - `make test` — all PASSED (13 test files × 4 configs)
 - `make test64` — all PASSED (11 test files, 2 SKIPPED)
 - `make testexp` — 72 PASSED, 1 SKIPPED
+
+## Experiment 146: FFPATH — Lua-inspired template search path
+
+### Goal
+
+Replace FreeForth's cwd-relative `ffpath` with a template-based search
+path inspired by Lua's `package.path`. Sigils: `#` = exe dir (via
+`/proc/self/exe`), `~` = `$HOME`, `?` = name placeholder, `:` =
+separator. Entries are pre-compiled into a segment data structure at
+boot time for fast runtime lookup.
+
+### Design (from DG's new-ffpath.md)
+
+Each FFPATH entry is split at `?` into segments:
+- **flag=0 (full)**: plain directory, no `?`. Runtime appends `/` + name.
+- **flag=1 (partial)**: prefix before `?`. Runtime appends name, reads next seg.
+- **flag=2 (final)**: suffix after last `?`. Runtime appends this, tries open.
+- **flag=$FF (end)**: sentinel.
+
+Format: `[flag][count][data...][NUL]...[FF]`
+
+Default template: `#/?:#/lib/x86-64/?:#/lib/?.ff:#/lib/?:./?:~/.local/share/ff/?:/usr/local/share/ff`
+
+### Architecture: small words
+
+DG's directive: "build smaller words, with later words using earlier."
+Pointed to `lib/x86/see.ff` as exemplar. The result: 25 private helper
+words, 2 public words (`openlib2`, `.segs`). Each helper does one thing
+with a documented stack effect.
+
+**Build-time layer** (runs once at boot):
+- `_init_exedir` — reads `/proc/self/exe`, strips to dirname
+- `_init_home` — reads `$HOME`, strips trailing `/`
+- `_eb`, `_edata`, `_eseg`, `_eend` — emit segments to `_segs` buffer
+- `_clr1`, `_exp#`, `_exp~`, `_expc` — expand sigils into `_seg1` scratch
+- `_1ch` — process one template char (expand `#`/`~` or copy literal)
+- `_chunk` — copy chars until `?` or end, expanding sigils
+- `_colon` — advance past one colon-separated entry
+- `_expand` — expand full entry (no `?`) into `_seg1`
+- `_atq?` — peek: are we at `?` or past end?
+- `_slash` — ensure trailing `/` on directory segments
+- `_full` — emit one full (flag=0) segment
+- `_has?` — scan for `?` in entry, return flag
+- `_split` — emit partial(1)/final(2) segments for `?`-containing entry
+- `_entry` — dispatch between `_full` and `_split`
+- `_parse` — parse complete colon-separated template string
+- `_build` — read FFPATH env var or use default, call `_parse`
+
+**Runtime layer** (called per `needs`):
+- `_clrob`, `_oapp`, `_onul`, `_oopen` — build trial path in `_obuf`
+- `_skip`, `_sdata` — navigate segment data structure
+- `_try1` — try one template entry (walk partial→final, attempt open)
+- `openlib2` — walk all entries, return fd or -1
+
+### Key bugs found and fixed
+
+1. **`_split` extra `drop` in ELSE path.** The `IF...ELSE` structure:
+   `_atq? 0- 0= drop IF (partial) ELSE drop (final)`. The `drop`
+   before `IF` removes the diff value. When `IF` fires (partial path),
+   correct. When `IF` skips to `ELSE`, the diff is already gone — the
+   `ELSE drop` eats an extra stack item. Fix: remove `drop` from ELSE.
+   This was the root cause of `_parse` only emitting the first template
+   entry.
+
+2. **`~` in FreeForth strings toggles bit 7.** `~` is a string escape
+   character. Use `\~` for a literal tilde in string literals. (In env
+   vars, `~` is literal — no escaping needed.)
+
+3. **Double `/` from exedir.** `_init_exedir` originally included the
+   trailing `/` in the dirname. Templates like `#/lib/` would expand
+   to `.../FreeForth2//lib/`. Fix: store exedir without trailing `/`;
+   `_slash` adds `/` when needed.
+
+4. **Pre-existing boot bug: ffpath allot too small.** The boot's
+   `ffpath` allotment is `FFPATH_len + HOME_len + 54` but the actual
+   content needs `+57`. Long FFPATH env vars (>~180 chars) overflow the
+   buffer and SEGV at boot time. Not fixed here — will be eliminated
+   when this code replaces the boot ffpath.
+
+### Test results
+
+Two Makefile tests:
+- **test-default**: from repo root, finds `pno` (via `#/lib/?.ff`),
+  `pno.ff`/`test.ff`/`shell.ff` (via `#/lib/?`), `see.ff` (via
+  `#/lib/x86-64/?`), rejects `nosuchfile`.
+- **test-subdir**: same tests from `/tmp` — `#` resolves via
+  `/proc/self/exe` regardless of cwd.
+
+All test gates: `make test` PASSED, `make test64` PASSED, `make testexp`
+72 PASSED / 1 SKIPPED.

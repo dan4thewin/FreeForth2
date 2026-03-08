@@ -1,0 +1,164 @@
+\ ffpath.ff — template search path for needs/needed
+\ Sigils: # = exe dir, ~ = $HOME, ? = name placeholder, : = separator
+\ Segment flags: 0=full, 1=partial, 2=final, $FF=end
+\ Format: [flag][count][data...][NUL] ... [$FF]
+
+\ ============================================================
+\ buffers
+\ ============================================================
+create _exedir 256 allot
+create _homedir 256 allot
+create _segs 2048 allot
+variable _wp
+create _seg1 256 allot
+create _obuf 512 allot
+
+\ ============================================================
+\ exe dir via /proc/self/exe (no trailing /)
+\ ============================================================
+:. _init_exedir _exedir 256 erase
+  255 _exedir 1+ "/proc/self/exe" drop readlink
+  0- 0< IF drop ;THEN
+  0 over _exedir 1+ + c!
+  dup _exedir 1+ + BEGIN 1- dup c@ $2F - 0= drop UNTIL
+  _exedir 1+ - _exedir c!
+  0 _exedir c@+ + c! ;
+_init_exedir
+
+\ ============================================================
+\ home dir from $HOME (no trailing /)
+\ ============================================================
+:. _init_home _homedir 256 erase
+  "HOME" getenv 0- 0= IF 2drop ;THEN
+  \ strip trailing / if present
+  2dup + 1- c@ $2F - 0= drop IF 1- THEN
+  dup _homedir c!
+  _homedir 1+ swap cmove
+  0 _homedir c@+ + c! ;
+_init_home
+
+\ ============================================================
+\ emit helpers — write bytes at _wp
+\ ============================================================
+:. _eb    _wp @ c! _wp @ 1+ _wp ! ;
+:. _edata ( addr len -- )
+  dup>r swap r _wp @ place drop drop r> _wp @ + _wp ! ;
+:. _eseg ( flag addr len -- )
+  >r swap _eb r _eb r> _edata 0 _eb ;
+:. _eend  $FF _eb ;
+
+\ ============================================================
+\ expand — replace # and ~ into _seg1
+\ ============================================================
+:. _clr1  _seg1 256 erase ;
+:. _exp#  _exedir c@+ _seg1 append ;
+:. _exp~  _homedir c@+ _seg1 append ;
+:. _expc  _seg1 appendc ;
+
+\ ============================================================
+\ scanning helpers
+\ ============================================================
+:. _1ch
+  dup c@ $23 - 0= drop IF _exp# 1+ ;THEN
+  dup c@ $7E - 0= drop IF _exp~ 1+ ;THEN
+  dup c@ _expc 1+ ;
+
+:. _chunk ( end addr -- end addr' ) _clr1
+  BEGIN 2dup > WHILE 2drop dup c@ $3F - 0= drop IF ;THEN _1ch
+  REPEAT 2drop ;
+
+:. _colon ( end addr -- end addr' )
+  BEGIN 2dup > WHILE 2drop dup c@ $3A - 0= drop IF ;THEN 1+
+  REPEAT 2drop ;
+
+:. _expand ( end addr -- ) _clr1
+  BEGIN 2dup > WHILE 2drop _1ch REPEAT 2drop 2drop ;
+
+\ at-?: 0 if at ?, nonzero otherwise, -1 if past end
+:. _atq? ( end addr -- end addr diff )
+  2dup > 2drop IF dup c@ $3F - ELSE -1 THEN ;
+
+\ ============================================================
+\ entry: full (no ?) or split at ?
+\ ============================================================
+:. _slash _seg1 c@ 0- 0= drop IF ;THEN
+  _seg1 c@+ + 1- c@ $2F - 0= drop IF ;THEN $2F _expc ;
+
+:. _full ( addr len -- ) bounds _expand _slash 0 _seg1 c@+ _eseg ;
+
+:. _has? ( addr len -- addr len flag ) 2dup 0 -rot bounds
+  BEGIN 2dup > WHILE 2drop
+    dup c@ $3F - 0= drop IF rot drop -1 -rot THEN 1+
+  REPEAT 2drop 2drop ;
+
+:. _split ( addr len -- ) bounds
+  BEGIN _chunk _atq? 0- 0= drop
+    IF 1 _seg1 c@+ _eseg 1+
+    ELSE 2 _seg1 c@+ _eseg 2drop ;THEN
+  AGAIN ;
+
+:. _entry ( addr len -- ) _has? 0- 0= IF drop _full ;THEN drop _split ;
+
+\ ============================================================
+\ parse colon-separated string
+\ ============================================================
+variable _pos
+
+:. _parse ( addr len -- )
+  _segs 2048 erase _segs _wp !
+  bounds
+  BEGIN
+    dup _pos ! _colon
+    _pos @ over _pos @ -
+    0- 0<> IF _entry ELSE 2drop THEN
+    2dup > 2drop IF 1+ THEN
+    2dup <= 2drop
+  UNTIL 2drop _eend ;
+
+\ ============================================================
+\ build from FFPATH or default
+\ ============================================================
+:. _build "FFPATH" getenv 0- 0<> IF _parse
+  ELSE 2drop "#/\?:#/lib/x86-64/\?:#/lib/\?.ff:#/lib/\?:./\?:\~/.local/share/ff/\?:/usr/local/share/ff" _parse
+  THEN ;
+_build
+
+\ ============================================================
+\ openlib2 — runtime lookup
+\ ============================================================
+:. _clrob _obuf 512 erase ;
+:. _oapp  _obuf append ;
+:. _onul  0 _obuf c@+ + c! ;
+:. _oopen _onul _obuf 1+ _obuf c@ openr ;
+:. _skip 1+ c@+ + 1+ ;
+:. _sdata dup _skip swap 1+ c@+ ;
+
+:. _try1 ( name len ptr -- name len ptr' fd ) _clrob
+  BEGIN dup c@
+    dup $FF - 0= drop IF drop -1 ;THEN
+    dup 0 - 0= drop IF \ full: dir + name
+      drop _sdata _oapp 2 pick 2 pick _oapp _oopen ;THEN
+    dup 1 - 0= drop IF \ partial: prefix + name
+      drop _sdata _oapp 2 pick 2 pick _oapp THEN
+    dup 2 - 0= drop IF \ final: suffix + try open
+      drop _sdata _oapp _oopen ;THEN
+  AGAIN ;
+
+: openlib2 ( addr len -- fd )
+  _segs
+  BEGIN dup c@ $FF - 0= drop IF drop 2drop -1 ;THEN
+    _try1 0- 0>= IF nip nip nip ;THEN drop
+  AGAIN ;
+
+\ ============================================================
+\ diagnostics (public, useful for debugging FFPATH)
+\ ============================================================
+:. .1seg
+  dup c@ 0 - 0= drop IF ."full_" THEN
+  dup c@ 1 - 0= drop IF ."part_" THEN
+  dup c@ 2 - 0= drop IF ."finl_" THEN
+  1+ c@+ 2dup ."[" type ."]" cr + 1+ ;
+: .segs _segs BEGIN dup c@ $FF - 0= drop IF ."[end]" cr drop ;THEN
+  .1seg AGAIN ;
+: .exedir ."exedir:[" _exedir c@+ type ."]" cr ;
+: .homedir ."homedir:[" _homedir c@+ type ."]" cr ;
