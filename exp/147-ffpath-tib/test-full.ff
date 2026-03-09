@@ -1,0 +1,16 @@
+\ test-full.ff — full-path entries (no ? sigil)
+\ Exercises _full/_expand/_exp# — not covered by default template
+variable _pass variable _fail
+:. _ok 1 _pass +! ."." ;
+:. _bad 1 _fail +! ."F" ;
+:. _check 0- 0< IF _bad ;THEN close drop _ok ;
+:. _notfound 0- 0< IF _ok ;THEN close drop _bad ;
+
+\ FFPATH=#/lib/x86-64:#/lib — full directory entries
+"see.ff" openlib2 _check
+"pno.ff" openlib2 _check
+"shell.ff" openlib2 _check
+"nosuch.ff" openlib2 _notfound
+
+_fail @ 0- 0= IF ."_ok" ELSE cr ."FAIL" cr THEN cr
+; bye

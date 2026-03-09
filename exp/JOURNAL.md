@@ -12799,3 +12799,49 @@ within one `openlib2` invocation since no `eval` or `needed` runs).
 
 All test gates: `make test` PASSED, `make test64` PASSED, `make testexp`
 72 PASSED / 1 SKIPPED.
+
+### Idiomatic Forth refinements (post-commit)
+
+DG directed a series of incremental refinements to `ffpath.ff`,
+testing after each change:
+
+**Structural simplifications:**
+- **Fall-through**: swapped `_eend`/`_eb` so `_eend` falls through to
+  `_eb`; eliminated `_expc` (was identical to `_eb`).
+- **`c@+` simplification**: `tp@ 1+ tp@ c@` → `tp@ c@+` in `_exp#`
+  and `_oopen`.
+- **`_has?` early return**: replaced flag-in-the-middle pattern
+  (`0 -rot ... rot drop -1 -rot`) with `;THEN` early exit — 3 words
+  shorter.
+- **Eliminated `_atq?`**: `_chunk` guarantees it stops at `?` or end,
+  so `>` after `_chunk` is the complete test. Entire word eliminated.
+- **Non-consuming comparisons**: `>`, `<=` etc. are `( x y -- x y )`
+  with FLAGS only. Removed 12 redundant words (6× `2dup` + 6× `2drop`)
+  across 6 sites.
+- **Combined lines**: `_init_exedir` lines 23–24 merged with `overc!`
+  and line break at `BEGIN`.
+
+**Readability:**
+- **Character literals**: `$2F` → `'/'`, `$23` → `'#'`, `$7E` → `'~'`,
+  `$3F` → `'?'`, `$3A` → `':'` with closing quotes for readability.
+- **Variable suffix notation**: `_wp @` → `_wp@`, `_wp !` → `_wp!`, etc.
+  (`+!` does NOT work as suffix — kept as `_wp +!`).
+- **Compound words**: `2dup +` → `2dup+`, `over -` → `over-`, `2 -` → `2-`.
+- **`tuck`**: eliminated redundant variable accesses in `_eb`, `_exp#`,
+  `_exp~`.
+- **`overc!`**: replaced `swap over c!` in `_fhole`.
+- **`CASE`/`;THEN`**: `_1ch` sigil dispatch, `_try1` segment type
+  dispatch, `.1seg` label dispatch. `BEGIN...END AGAIN` SEGVs on both
+  architectures (both consume BEGIN's cstack entry), so `_try1` uses
+  default fall-through for the continue-loop case instead of BREAK/END.
+- **Stack comments**: added `( -- )` etc. to all words that lacked them.
+- **Formatting**: one-liners by default, `;THEN` exits on own line,
+  `BEGIN` starts new line, tab-indented continuations.
+
+**Test coverage expanded:**
+- **test-full**: `FFPATH=#/lib/x86-64:#/lib` — full directory entries
+  (no `?`), exercises `_full`/`_expand`/`_exp#`.
+- **test-tilde**: `HOME=$PWD FFPATH=~/lib/?.ff:~/lib` — both partial
+  and full entries with `~`, exercises `_exp~`.
+
+All test gates: `make testall` 120 PASSED / 1 SKIPPED.
