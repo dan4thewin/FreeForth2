@@ -4,7 +4,7 @@
 \
 \ Sigils: # = exe dir, ~ = $HOME, ? = name placeholder, : = separator
 \ Segment flags: 0=full, 1=partial, 2=final, $FF=end
-\ Format: [flag][count][data...][NUL] ... [$FF]
+\ Format: [flag][count][data...] ... [$FF]
 
 \ ============================================================
 \ state
@@ -45,11 +45,10 @@ _init_home
 \ reserve 2-byte hole (flag + count), return hole address
 :. _bhole ( -- hole ) _wp @ 0 _eb 0 _eb ;
 
-\ fill hole: write flag, compute count from data written, append NUL
+\ fill hole: write flag, compute count from data written
 :. _fhole ( flag hole -- )
   swap over c!
-  _wp @ over - 2 - swap 1+ c!
-  0 _eb ;
+  _wp @ over - 2 - swap 1+ c! ;
 
 \ ============================================================
 \ expand sigils directly into output at _wp
@@ -148,7 +147,7 @@ tp@ c@+ + 1+ _dst @ _sz @ cmove ;
 :. _oapp  tp@ append ;
 :. _onul  0 tp@ c@+ + c! ;
 :. _oopen _onul tp@ 1+ tp@ c@ openr ;
-:. _skip 1+ c@+ + 1+ ;
+:. _skip 1+ c@+ + ;
 :. _sdata dup _skip swap 1+ c@+ ;
 
 :. _try1 ( name len ptr -- name len ptr' fd ) _clrob
@@ -175,6 +174,6 @@ tp@ c@+ + 1+ _dst @ _sz @ cmove ;
   dup c@ 0 - 0= drop IF ."full_" THEN
   dup c@ 1 - 0= drop IF ."part_" THEN
   dup c@ 2 - 0= drop IF ."finl_" THEN
-  1+ c@+ 2dup ."[" type ."]" cr + 1+ ;
+  1+ c@+ 2dup ."[" type ."]" cr + ;
 : .segs _dst @ BEGIN dup c@ $FF - 0= drop IF ."[end]" cr drop ;THEN
   .1seg AGAIN ;
