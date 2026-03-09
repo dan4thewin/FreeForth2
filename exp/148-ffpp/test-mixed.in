@@ -1,0 +1,14 @@
+\ ffpath.ff — tib-based template search path
+\ Comment line 2
+
+:. _eb ( byte -- )   _wp@   tuck   c!   1+   _wp! ;
+:. _1ch ( addr -- addr' )
+	dup c@ ( grab the char )
+		'#' CASE _exp# 1+ ;THEN  \ match hash
+		'~' CASE _exp~ 1+ ;THEN  \ match tilde
+		_eb 1+ ;
+
+."hello   world"  ( not a comment"  )  42
+( multiline
+  comment spanning
+  several lines ) done

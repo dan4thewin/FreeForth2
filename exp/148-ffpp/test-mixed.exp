@@ -1,0 +1,8 @@
+:. _eb _wp@ tuck c! 1+ _wp! ;
+:. _1ch
+dup c@
+'#' CASE _exp# 1+ ;THEN
+'~' CASE _exp~ 1+ ;THEN
+_eb 1+ ;
+."hello   world" 42
+done

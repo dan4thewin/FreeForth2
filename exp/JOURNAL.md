@@ -12845,3 +12845,60 @@ testing after each change:
   and full entries with `~`, exercises `_exp~`.
 
 All test gates: `make testall` 120 PASSED / 1 SKIPPED.
+
+## Experiment 148: ffpp — FreeForth Preprocessor in Assembly
+
+### Goal
+
+Replace the Perl one-liner used to minify ff64.boot with a
+self-contained x86-64 tool buildable by FASM alone — zero external
+dependencies.
+
+### Design
+
+A byte-at-a-time state machine in ~400 lines of x86-64 assembly:
+
+- **Strip `( ... )` comments** — word-delimited: `(` must be preceded
+  AND followed by whitespace; `)` must be preceded AND followed by
+  whitespace (or EOF). Handles escaped parens `\(` `\)` correctly
+  because `\` is not whitespace.
+- **Strip `\ ` line comments** — word-delimited (whitespace both sides),
+  discards to end of line.
+- **Preserve `"..."` strings** — any `"` opens string mode, all
+  whitespace inside preserved verbatim until closing `"`.
+- **Collapse whitespace** — multiple spaces/tabs → single space.
+  Trailing whitespace before newlines stripped.
+- **Collapse newlines** — multiple blank lines → single newline.
+- **`‸path` includes** — U+2038 caret followed by path (ends at
+  whitespace). Recursive, 8-level nesting limit. Error to stderr
+  on file-not-found, continues processing.
+- **CLI** — filenames as args; stdin if no args. Output to stdout.
+
+I/O: reads entire file via brk + read loop. Output buffered (8KB),
+flushed when full or at end.
+
+### Key bug: `\(` and `\)` in paren comments
+
+The initial implementation only checked if `)` was followed by
+whitespace. Source like `( \( addr \) — comment )` would close at `\)`
+because `)` was followed by space. Fix: `)` must also be *preceded* by
+whitespace, matching the Perl regex's `(?<=\s)` lookbehind.
+
+### Promotion to root
+
+After passing all tests, ffpp was promoted from `exp/148-ffpp/` to the
+repository root. The Makefile now builds `ffpp` from `ffpp.asm` and uses
+it instead of Perl to generate `ff64.boot.min`.
+
+### Files
+
+- `ffpp.asm` — x86-64 FASM static ELF64 preprocessor (~400 LOC)
+- `Makefile` — ffpp build target, replaces Perl in ff64.boot.min rule
+- `exp/148-ffpp/` — experiment with 7 test cases
+
+### Test results
+
+- `make -C exp/148-ffpp test` — 7/7 PASSED (comments, whitespace,
+  strings, includes, nested includes, missing-include error, mixed)
+- `make test64` with ffpp-minified boot — all PASSED
+- `make testall` — 120 PASSED / 1 SKIPPED

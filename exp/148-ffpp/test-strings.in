@@ -1,0 +1,4 @@
+."hello  world"   ."tab	here"
+"multi   space   string" drop
+: a(b) 1 ;
+\backslash 2

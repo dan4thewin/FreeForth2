@@ -28,6 +28,7 @@
 !/fftk.asm
 !/fftk64.asm
 !/fftk64s.asm
+!/ffpp.asm
 !/hanoi
 !/hello
 !/lib/

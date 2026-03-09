@@ -4,14 +4,18 @@ LD64=ld -m elf_x86_64 -lc -ldl --dynamic-linker=/lib64/ld-linux-x86-64.so.2
 
 all: ff ff64 ff64s
 
+ffpp: ffpp.asm
+	fasm $< $@
+	chmod +x $@
+
 ff.o: fflin.asm ff.asm fflinio.asm ff.boot fflin.boot
 	fasm $< $@
 
 ff: ff.o
 	$(LD) -o $@ $<
 
-ff64.boot.min: ff64.boot fflin64.boot
-	perl -gpe 's/(^|\s+)\\(\s.*|$$)//g; s/(^|\s+)\(\s.*?(?<=\s)\)(?=\s)//gs; s/^\s*\n//gm' $^ > $@
+ff64.boot.min: ff64.boot fflin64.boot ffpp
+	./ffpp $< $(word 2,$^) > $@
 
 ff64.o: fflin64.asm ff64.asm ff64.boot.min
 	fasm $< $@
@@ -46,7 +50,7 @@ fftk64s: fftk64s.asm
 	chmod +x $@
 
 clean:
-	rm -f ff ff64 ff64s fftk fftk64 fftk64s *.o ff64.boot.min cmpl64 cmpl64.cfg
+	rm -f ff ff64 ff64s fftk fftk64 fftk64s ffpp *.o ff64.boot.min cmpl64 cmpl64.cfg
 
 test1:
 	@set -o pipefail; \

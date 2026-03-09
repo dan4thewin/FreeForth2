@@ -1,0 +1,5 @@
+: top 0 ;
+: outer 1 ;
+: inner 99 ;
+: outer2 2 ;
+: top2 3 ;

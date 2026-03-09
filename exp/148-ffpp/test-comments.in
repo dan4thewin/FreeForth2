@@ -1,0 +1,4 @@
+\ This is a line comment
+: test ( n -- n*2 ) 2 * ;
+: test2 \ another comment
+  3 + ;
