@@ -266,15 +266,18 @@ to, and everything built on top rests on a false floor.
 
 Every task must end with:
 
-1. Run `make -C exp test` — **all tests must pass**. Do not dismiss
+1. Run `make testall` — **all tests must pass**. Do not dismiss
    failures as "pre-existing" without verifying they existed before
    your changes. If you broke it, fix it.
 2. Update `exp/JOURNAL.md` — experiment entry with goals, actions,
    reasoning
 3. Update `exp/GUIDE.md` — if new concepts or architecture introduced
 4. Add novel user-facing words to `ff64.help`
-5. `git commit` with descriptive message
-6. `git push` (use `source ~/.bash_ssh` for SSH agent)
+5. Update `QUICKREF` - if new/changed non-private words
+6. Update `.github/copilot-instructions.md` - if any change to SOP
+   or new high-value lessons
+7. `git commit` with descriptive message
+8. `git push` (use `source ~/.bash_ssh` for SSH agent)
 
 Do not mark the task complete until all steps are done.
 
@@ -287,10 +290,76 @@ Do not mark the task complete until all steps are done.
   - `make test64` — ff64: test/* via `-f` (skips core1/core2/mmap which
     need compat.ff)
   - `make -C exp test` — all experiment Makefiles
-- `./ff64 -f ff64.boot` loads the standard library (via ff64.boot.min
-  which includes fflin64.boot)
 - Assembler is FASM (flat assembler, version 1.73.32)
 - Linker warning about RWX segment is expected
+
+## Writing Forth: hard-won lessons
+
+### Anonymous code compiles at HERE
+
+Top-level code (between `;` boundaries) compiles at HERE (rbp).
+`create foo` at compile time records `foo = HERE` — the start of
+the anonymous block. At runtime, `allot` advances HERE, claiming
+bytes at the start of the block (already-executed code). Any write
+to `foo` (e.g., `cmove`) overwrites the executing anonymous code.
+
+**Fix**: split `allot` and the write across a `;` boundary:
+```forth
+here _dst ! _sz @ allot ;          \ block 1: allot
+tp@ c@+ + 1+ _dst @ _sz @ cmove ; \ block 2: code compiles PAST data
+```
+
+### ELSE inherits the IF-entry stack
+
+After `0- 0= drop IF`, the `drop` already consumed the test value.
+ELSE inherits the stack as it was at the IF keyword — no cleanup
+needed. An extra `drop` in ELSE silently underflows into the
+caller's stack. **Trace the stack at IF; that's the ELSE stack.**
+
+### What sets flags, what preserves them, what stores Jcc
+
+The `-` suffix convention signals "this word sets CPU flags via
+subtraction" — `$2F -` is `sub reg, 0x2F`, ZF=1 means was 0x2F.
+But nearly every ALU operation sets ZF usefully:
+
+**Flag-setting** (all set ZF when result is zero):
+`-` (sub), `+` (add), `1+` (inc), `1-` (dec),
+`&` (and), `|` (or), `^` (xor), `0-` (or reg,reg),
+`=`, `<`, `>`, `<>` (cmp/sub of two items).
+Examples: `1- 0= IF` = "was it 1?", `$FF & 0<> IF` = "low bits
+set?", `3 & 0= IF` = "aligned?".
+
+Words that **only store a Jcc opcode** (no runtime code):
+`0=`, `0<>`, `0<`, `0>` — they read the flags already set by a
+preceding operation. Then `IF`/`WHILE`/`UNTIL` emit the jump.
+
+**Flags-preserving** (safe between a flag-setter and IF):
+`drop`, `nip`, `2drop` (mov+lea), `r>`, `>r` (push/pop),
+`dup`, `over`, `swap` (mov), `@`, `c@` (mov/movzx),
+`!`, `c!` (mov to memory + drop).
+
+### Park values with `>r` across comparisons
+
+When a saved value (e.g., a hole address) would corrupt a
+comparison like `2dup >`, stash it with `>r` before the test.
+Retrieve with `r>` between `drop` and `IF` — `r>` is
+flags-preserving, so it won't disturb the condition:
+```forth
+_atq? 0- 0= drop r> IF ...   \ r> after drop, before IF — flags intact
+```
+
+### `cmove` vs `place`
+
+`cmove ( src dest count )` copies raw bytes.
+`place ( src len dest )` writes a counted string (len at dest[0]).
+When appending into a growing buffer at a write pointer, use
+`cmove`. Use `place` only when building a counted string.
+
+### String encoding traps
+
+`~` toggles bit 7 of the *previous* byte — use `\~` for a literal
+tilde. `_` means space — use `\_` for literal underscore. Forgetting
+`\` silently corrupts adjacent characters with no error message.
 
 ## Quick Reference
 
@@ -402,7 +471,7 @@ ff64 port. The i386 closes `TIMES` with `REPEAT`. ff64 accepts both
 ### Test pattern
 
 ```bash
-timeout 5 ./ff64 ': prompt ;' -f test.ff
+timeout 5 ./ff64 -f test.ff bye
 ```
-Boot is baked in. Suppress prompt via argv. Top-level code in loaded
-files needs trailing `;` to execute.
+Boot is baked in. Top-level code in loaded files needs trailing `;` to execute.
+NB. Many words bake-in a call to `;` like needs and `:`.

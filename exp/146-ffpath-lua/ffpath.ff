@@ -119,7 +119,7 @@ variable _pos
 \ build from FFPATH or default
 \ ============================================================
 :. _build "FFPATH" getenv 0- 0<> IF _parse
-  ELSE 2drop "#/\?:#/lib/x86-64/\?:#/lib/\?.ff:#/lib/\?:./\?:\~/.local/share/ff/\?:/usr/local/share/ff" _parse
+  ELSE 2drop "./\?:./\?.ff:#/lib/x86-64/\?.ff:#/lib/\?.ff" _parse
   THEN ;
 _build
 

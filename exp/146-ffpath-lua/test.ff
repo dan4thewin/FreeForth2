@@ -1,15 +1,17 @@
-\ test.ff — test ffpath template lookup (standalone, no needs)
+\ test.ff — test ffpath template lookup (standalone)
 variable _pass variable _fail
 :. _ok 1 _pass +! ."." ;
 :. _bad 1 _fail +! ."F" ;
 :. _check 0- 0< IF _bad ;THEN close drop _ok ;
 :. _notfound 0- 0< IF _ok ;THEN close drop _bad ;
 
+\ #/lib/x86-64/?.ff — platform lib
+"see" openlib2 _check
+\ #/lib/?.ff — generic lib
 "pno" openlib2 _check
-"pno.ff" openlib2 _check
-"test.ff" openlib2 _check
-"shell.ff" openlib2 _check
-"see.ff" openlib2 _check
+"test" openlib2 _check
+"shell" openlib2 _check
+\ not found
 "nosuchfile" openlib2 _notfound
 
 _fail @ 0- 0= IF ."_ok" ELSE cr ."FAIL" cr THEN cr

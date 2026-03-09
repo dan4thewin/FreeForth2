@@ -591,6 +591,40 @@ preserve the condition. This is essential because our x86-64 port uses
 R15 for the data stack (unlike the original which uses ESP with push/pop,
 which naturally preserves FLAGS).
 
+### The flag-setting vocabulary
+
+Nearly every ALU word in FreeForth sets CPU flags, and those flags
+are meaningful. The `-` suffix is a naming convention signaling
+"subtraction" — `$2F -` compiles `sub reg, 0x2F`, so ZF=1 means
+the value was 0x2F — but the pattern extends far beyond subtraction.
+
+**Flag-setting words** (all set ZF when the result is zero):
+
+| Word | x86 instruction | ZF=1 means |
+|------|-----------------|------------|
+| `0-` | `or reg,reg` | value was zero |
+| `-` | `sub rdx,rbx` | operands were equal |
+| `$2F -` | `sub reg, 0x2F` | value was 0x2F |
+| `+` | `add rdx,rbx` | sum is zero |
+| `1+` | `inc reg` | value was -1 |
+| `1-` | `dec reg` | value was 1 |
+| `&` | `and rdx,rbx` | no common bits |
+| `$FF &` | `and reg, 0xFF` | low byte is zero |
+| `3 &` | `and reg, 3` | aligned (low 2 bits clear) |
+| `\|` | `or rdx,rbx` | both were zero |
+| `^` | `xor rdx,rbx` | operands were equal |
+| `=`,`<`,`>` | `cmp rdx,rbx` | (per condition) |
+
+**Flags-preserving words** (use only `mov`, `lea`, `push`, `pop`):
+`drop`, `nip`, `2drop`, `dup`, `over`, `swap`, `r>`, `>r`,
+`@`, `c@`, `!`, `c!`.
+
+This means almost any computation can feed a conditional. The
+idiom `$2F - 0= drop IF` is not a comparison *followed by* a
+boolean test — it is a subtraction that sets ZF, a Jcc selector
+(`0=`), a flags-preserving cleanup (`drop`), and a jump (`IF`).
+The CPU flags flow through the entire sequence unbroken.
+
 ### Words that remain as runtime calls
 
 | Category | Words | Why |
@@ -2235,7 +2269,7 @@ experiments, all passing.
 
 ---
 
-## Part 20: Dictionary State Save/Restore — mark/marker
+## Part 26: Dictionary State Save/Restore — mark/marker
 
 ### The Problem
 
@@ -2338,7 +2372,7 @@ experiments, all passing.
 
 ---
 
-## Part 21: -call, Postfix Tick, and Vector Manipulation
+## Part 27: -call, Postfix Tick, and Vector Manipulation
 
 ### Postfix Tick — `'` (tick)
 
@@ -2600,7 +2634,7 @@ experiments, all passing.
 
 ---
 
-## Part 22: System Words and the _semi_exec Bug
+## Part 28: System Words and the _semi_exec Bug
 
 ### Exception Handling: catch/throw
 
@@ -2705,7 +2739,7 @@ experiments, all passing.
 
 ---
 
-## Part 23: The Suffix Mechanism — Inline Optimization (Exp 048)
+## Part 29: The Suffix Mechanism — Inline Optimization (Exp 048)
 
 FreeForth's literal compiler suffix mechanism is one of its most
 distinctive features. When the compiler encounters a token, it first
@@ -2815,7 +2849,7 @@ experiments, all passing.
 
 ---
 
-## Part 24: Compile-time Stack and REPL Infrastructure
+## Part 30: Compile-time Stack and REPL Infrastructure
 
 ### The Data Stack Pollution Problem
 
@@ -2890,7 +2924,7 @@ experiments, all passing.
 
 ---
 
-## Part 25: REPL Auto-Execute and Compile-Time Macros (Exp 051)
+## Part 31: REPL Auto-Execute and Compile-Time Macros (Exp 051)
 
 ### The Missing Piece: Auto-Execute
 
@@ -2956,7 +2990,7 @@ experiments, all passing.
 
 ---
 
-## Part 26: Forth-based REPL (_top) (Experiment 052)
+## Part 32: Forth-based REPL (_top) (Experiment 052)
 
 The culmination of the REPL work: a self-contained Forth REPL that can
 be launched from the assembly REPL.
@@ -3103,7 +3137,7 @@ experiments, all passing.
 
 ---
 
-## Part 27: Boot Sequence and Command-Line Access (Experiment 053)
+## Part 33: Boot Sequence and Command-Line Access (Experiment 053)
 
 ### The boot architecture
 
@@ -4808,7 +4842,7 @@ values.  Fixed to `depth +r` (the locals word adjusts rsp directly).
 
 ---
 
-## Part 14: Static Binary and Syscall Architecture
+## Part 34: Static Binary and Syscall Architecture
 
 ### The Problem: Why Dynamic Linking?
 
@@ -4986,7 +5020,7 @@ Correct: `"str" buf place N + 0 swap c!` with known length N.
 
 After this experiment, 52 of 76 Perl syscall builtins are covered (68%).
 
-## Part 15: Cross-Architecture Constants and Test Porting
+## Part 35: Cross-Architecture Constants and Test Porting
 
 ### The `cell` and `[64]` Constants
 
@@ -5066,7 +5100,7 @@ test uses a nonzero check instead of the i386's `sp@ @ → NOS` test.
 
 ---
 
-## Part 16: Library Unification (Experiments 117–123)
+## Part 36: Library Unification (Experiments 117–123)
 
 With the x86-64 port functionally complete and a growing library of
 Forth files, the next challenge was structural: the same logical
@@ -5211,7 +5245,7 @@ lib/
 
 ---
 
-## Part 17: File Loading and Memory Layout (Experiments 139–142)
+## Part 37: File Loading and Memory Layout (Experiments 139–142)
 
 ### The eval-based file loading design
 
@@ -5324,7 +5358,7 @@ unification), and 141 (removal of `_loadfile`) progressively replaced
 the assembly mechanism with the i386 Forth pattern. Experiment 142
 added the `.bss` section to recover the binary size.
 
-## Part 18: The x86-64 Prefix Trap (Experiment 146)
+## Part 38: The x86-64 Prefix Trap (Experiment 146)
 
 ### The bug class
 
@@ -5416,4 +5450,273 @@ This is the third one-line bug with outsized impact in the ff64 port:
 Each was discovered by comparing behavior between architectures — not
 by reading the compiler source. The generated machine code is always
 the ground truth.
+
+## Part 39: Anonymous Code at HERE — An Instruction-Level Walkthrough
+
+FreeForth's compiler has no interpreter. Every token — even at the
+REPL — is compiled to machine code and then executed. This has a
+subtle consequence: **anonymous top-level code and the data you
+`create` inside it share the same address.** Writing to that address
+overwrites the code that is currently executing.
+
+This section walks through the bug instruction-by-instruction.
+
+### The compilation model
+
+When FreeForth encounters tokens between `;` boundaries, it compiles
+them into an anonymous block at HERE (the register `rbp`, the
+compilation pointer). When `;` is reached, it appends a `ret`,
+**resets HERE back to the block's start address** (de-allocating
+the compiled code), then calls the block. After the block returns,
+HERE stays wherever the block left it — if `allot` ran during
+execution, HERE has advanced and the allotted space is preserved.
+
+`create foo` is a compile-time operation: it makes a dictionary header
+and records `foo = HERE` at that moment. It emits no code into the
+block. So `foo`'s address equals the address where the anonymous
+block's code begins.
+
+### Proof: `create` and `here` return the same address
+
+```forth
+create _t
+."_t__=_" _t . cr
+."here=_" here . cr
+."diff=_" _t here - . cr
+0 exit ;
+```
+
+Output:
+```
+_t  = 4343838
+here= 4343838
+diff= 0
+```
+
+Wait — `here` at runtime returns the *current* rbp. Shouldn't rbp
+have advanced past the compiled code? No: `_semi` resets rbp to
+`[anon]` (the block's start address) before calling the block — the
+i386 comment says "de-allocate." The compiled code bytes are treated
+as temporary; HERE rewinds to reclaim them. So at runtime, both `_t`
+and `here` return the block's start. They are the same address. And
+the compiled machine code *lives at that address* (still executable
+even though HERE has rewound past it).
+
+### The safe version — annotated machine code
+
+Here is the `see` output for a version that doesn't crash (using
+`2drop drop` instead of `cmove`). The source:
+
+```forth
+create _t 64 dup allot _t swap 2drop drop ;
+```
+
+The compiled machine code, annotated with Forth-level operations:
+
+```
+          ┌─ _t points here (= start of anonymous block)
+          │
+ ADDRESS  │  BYTES           INSTRUCTION         FORTH
+ ──────── ▼  ──────────────  ──────────────────── ──────────────
+ 42481e:     4d 8d 7f f8     lea r15,[r15-8]    ┐
+ 424822:     49 89 17        mov [r15],rdx      ┤ push 64
+ 424825:     48 89 da        mov rdx,rbx        ┤ (literal: NOS→mem,
+ 424828:     bb 40000000     mov ebx,0x40       ┘  TOS=64)
+
+ 42482d:     4d 8d 7f f8     lea r15,[r15-8]    ┐
+ 424831:     49 89 17        mov [r15],rdx      ┤ dup
+ 424834:     48 89 da        mov rdx,rbx        ┘ (NOS=TOS, copy 64)
+
+ 424837:     48 01 dd        add rbp,rbx        ← allot: HERE += 64
+ 42483a:     49 8b 1f        mov rbx,[r15]      ┐ drop
+ 42483d:     4d 8d 7f 08     lea r15,[r15+8]    ┘ (consume dup'd 64)
+
+ 424841:     48 87 da        xchg rbx,rdx       ← swap
+
+ 424844:     4d 8d 7f f8     lea r15,[r15-8]    ┐
+ 424848:     49 89 17        mov [r15],rdx      ┤ push _t
+ 42484b:     48 89 da        mov rdx,rbx        ┤ (literal: loads
+ 42484e:     bb 1e484200     mov ebx,0x42481e   ┘  address 0x42481e)
+                                 ▲
+                                 └─ THIS IS THE SAME ADDRESS
+                                    as the first instruction!
+
+ 424853:     49 8b 17        mov rdx,[r15]      ┐
+ 424856:     4d 8d 7f 08     lea r15,[r15+8]    ┤ 2drop drop
+ 42485a:     49 8b 1f        mov rbx,[r15]      ┤ (discard 3 items:
+ 42485d:     4d 8d 7f 08     lea r15,[r15+8]    ┤  _t, 64, src)
+ 424861:     49 8b 17        mov rdx,[r15]      ┤
+ 424864:     4d 8d 7f 08     lea r15,[r15+8]    ┘
+ 424868:     c3              ret                ← return to REPL
+```
+
+The critical detail is at offset `42484e`: `mov ebx, 0x42481e`.
+That instruction loads the address `0x42481e` — the value of `_t` —
+which is *the address of the first instruction in this very block*.
+
+### The crash version — what cmove does
+
+Now consider the real pattern — a source buffer on the stack, then
+`create` + `allot` + `cmove`:
+
+```forth
+\ Assume (src-addr) is on the stack from an earlier computation.
+\ In exp/147, this was tp@ pointing at tib data (111 bytes).
+
+src-addr 111
+create _t dup allot _t swap cmove ;
+```
+
+Stack trace through the Forth words (stack grows to the right,
+TOS on the right, matching standard `( -- )` notation):
+
+```
+                                3rd        NOS         TOS
+ src-addr 111             →             src-addr       111
+ create _t                →             src-addr       111   (compile-time: _t = HERE)
+ dup                      →  src-addr     111          111
+ allot                    →             src-addr       111   (HERE += 111)
+ _t                       →  src-addr     111       0x42481e
+ swap                     →  src-addr   0x42481e      111
+ cmove ( src dest count ) →                                  (copies 111 bytes
+                                                              from src-addr
+                                                              to 0x42481e)
+```
+
+The compiled machine code is the same prefix as the safe version
+(offsets `42481e` through `424841`) but with `cmove` instead of
+`2drop drop`:
+
+```
+          ┌─ _t points here (= start of block)
+          │
+ ADDRESS  │  BYTES           INSTRUCTION        FORTH
+ ──────── ▼  ──────────────  ────────────────── ──────
+ 42481e:     4d 8d 7f f8     lea r15,[r15-8]   ┐ push 111
+    ...      (same as above through allot)      ┘
+ 424841:     48 87 da        xchg rbx,rdx      ← swap
+ 424844:     4d 8d 7f f8     lea r15,[r15-8]   ┐
+    ...                                        ┤ push _t
+ 42484e:     bb 1e484200     mov ebx,0x42481e  ┘
+
+ 424853:     48 89 df        mov rdi,rbx       ┐ cmove setup:
+ 424856:     48 89 d1        mov rcx,rdx       ┤  rdi = dest = _t = 0x42481e
+ 424859:     49 8b 37        mov rsi,[r15]     ┤  rcx = count = 111
+ 42485c:     49 8b 57 08     mov rdx,[r15+8]   ┤  rsi = source = src-addr
+ 424860:     49 83 c7 10     add r15,0x10      ┤  (pop 2 items from mem stack)
+ 424864:     f3 a4           rep movsb          ┘ THE COPY: 111 bytes → 0x42481e
+
+ 424866:     49 8b 1f        mov rbx,[r15]     ┐ post-cmove
+ 424869:     4d 8d 7f 08     lea r15,[r15+8]   ┤ cleanup +
+ 42486d:     48 87 da        xchg rbx,rdx      ┤ swap +
+ 424870:     c3              ret                ┘ return
+```
+
+`rep movsb` at `424864` copies bytes one at a time, from `rsi`
+(source) to `rdi` (destination = `_t` = `0x42481e`), `rcx` times.
+
+**It writes directly over the machine code starting at `42481e`.**
+
+The `rep movsb` instruction is at offset 70 (`424864 − 42481e`).
+The post-cmove cleanup starts at offset 72 (`424866`).
+
+With a **small** count (say 64): the overwrite covers offsets 0–63.
+The cleanup at offset 72 is untouched. The CPU finishes `rep movsb`,
+fetches the intact instruction at `424866`, and continues.
+*This barely doesn't crash.*
+
+With **111 bytes** (the real exp/147 case): the overwrite covers
+offsets 0–110 — well past offset 72. After `rep movsb` finishes,
+the CPU fetches the byte at `424866`, which is now whatever data
+was in the source buffer. It tries to decode this as an instruction
+and crashes.
+
+### A picture of the damage
+
+```
+Memory address:  42481e                424864  424866  424870
+                 │                      │       │       │
+Before cmove:    [  machine code ...    │ rep   │cleanup│ ret ]
+                 │                      │movsb  │       │
+                 ▼ _t points here       │       │       │
+After cmove:     [ source data ........ │ rep   │ data  │ data]
+                 │◄── 64 bytes ────────►│movsb  │       │
+                                               ▲
+                 Safe: 64 < 70                 │
+                                               │
+After cmove:     [ source data .................................]
+                 │◄────────── 111 bytes ───────────────────────►│
+                                               ▲
+                 CRASH: 111 > 70 ──────────────┘
+                 CPU fetches garbage at 424866
+```
+
+### Why small allots survive (the see.ff pattern)
+
+Lavarenne's code and DG's `see.ff` use patterns like:
+
+```forth
+create regs64 pvt 32 allot "rax_rcx_rdx_rbx..." regs64 swap move
+```
+
+This works because 32 bytes is much smaller than the anonymous code
+that follows it. The `move` instruction (at some offset like 80+)
+is far past the 32-byte blast radius. The overwritten bytes are all
+*before* the currently-executing instruction — already fetched and
+decoded by the CPU. No crash.
+
+The exp/147 FFPATH prototype allotted 111 bytes — the full segment
+structure — which exceeded the anonymous code size and destroyed
+the instructions after `cmove`.
+
+### The fix: split with `;`
+
+Separate the allot and the write into two anonymous blocks:
+
+```forth
+\ Block 1: measure and claim space
+here _dst ! _sz @ allot ;
+
+\ Block 2: copy data into the claimed space
+tp@ c@+ + 1+ _dst @ _sz @ cmove ;
+```
+
+Why this works — the `_semi` mechanism in detail:
+
+1. Block 1 compiles at HERE (rbp). The compiled code includes the
+   inlined `allot` (`add rbp,TOS`). When `;` fires, `_semi` does
+   four things:
+   - Appends `ret` (0xC3) and advances rbp past it.
+   - **Rewinds rbp to `[anon]`** — the block's start address.
+     The compiled code is still in memory but HERE no longer
+     points past it.
+   - **Calls the block.** During execution, `allot` runs
+     `add rbp, _sz`, advancing rbp past the allotted data.
+     Now rbp = `[anon]` + `_sz`.
+   - **Saves rbp to `[anon]`** — `mov [anon], rbp`. The new
+     `[anon]` is past the allotted space. This is how `allot`'s
+     effect survives: `_semi` captures whatever rbp the block
+     left behind.
+
+2. Block 2 compiles at the *new* `[anon]` — past the allotted space.
+   `cmove` writes to `_dst` (= old `[anon]` = start of allotted
+   space), which is *before* block 2's code. No overlap. No crash.
+
+```
+ Block 1's code  │  Allotted data   │  Block 2's code
+ ────────────────│──────────────────│─────────────────
+                 │◄── _sz bytes ──►│
+                 ▲                  ▲
+                 _dst               HERE when block 2 compiles
+                                    (cmove writes ← not here →)
+```
+
+### The lesson
+
+`create` in an anonymous block records *the address of the code you
+are currently writing*. Writing to that address is writing over
+yourself. The compiler, the data, and the executing code all share
+the same address space — there is no separation. This is not a bug;
+it is the consequence of a system with no interpreter, no separate
+data segment, and no memory protection. Everything is HERE.
 

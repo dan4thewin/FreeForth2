@@ -99,9 +99,9 @@ _init_home
 \ write chunks, decide flag after seeing what stopped the scan
 :. _split ( addr len -- ) bounds
   BEGIN _bhole >r _chunk
-    _atq? 0- 0= drop
-    IF r> 1 swap _fhole 1+
-    ELSE r> 2 swap _fhole 2drop ;THEN
+    _atq? 0- 0= drop r>
+    IF 1 swap _fhole 1+
+    ELSE 2 swap _fhole 2drop ;THEN
   AGAIN ;
 
 :. _entry ( addr len -- ) _has? 0- 0= IF drop _full ;THEN drop _split ;

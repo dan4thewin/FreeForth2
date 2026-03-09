@@ -52,7 +52,7 @@ test1:
 	@set -o pipefail; \
 	for d in `ls test/*.ff | grep -v 64`; do \
 		echo -n $$d; printf %$$((20-$${#d}))s; \
-		$(FF) $(ARGS) -f $$d | tail -1; let e+=$$?; \
+		timeout 10 $(FF) $(ARGS) -f $$d | tail -1; let e+=$$?; \
 	done; exit $$e
 
 test64: ff64
@@ -68,7 +68,7 @@ test64: ff64
 	done; exit $$e
 
 testexp: ff64
-	$(MAKE) --no-print-directory -C exp test | perl -pe 's/\S+\s+//' | sort | uniq -c
+	timeout 60 $(MAKE) -C exp test
 
 test: ff
 	@echo ff; \
@@ -76,15 +76,23 @@ test: ff
 	echo ff +longconds; \
 	$(MAKE) -s ff FF='./ff +longconds' test1; \
 	echo fftk; \
-	./ff -f test.ff -f mkimage.ff && $(MAKE) -s fftk >/dev/null; \
+	timeout 10 ./ff -f test.ff -f mkimage.ff && $(MAKE) -s fftk >/dev/null; \
 	$(MAKE) -s FF=./fftk test1; \
 	echo fftk +longconds; \
-	./ff +longconds -f test.ff -f mkimage.ff && $(MAKE) -s fftk >/dev/null; \
+	timeout 10 ./ff +longconds -f test.ff -f mkimage.ff && $(MAKE) -s fftk >/dev/null; \
 	$(MAKE) -s FF=./fftk test1
+
+testnc:
+	$(MAKE) ARGS=nocolor test
+
+testall:
+	@timeout 60 $(MAKE) testnc testexp 2>/dev/null | \
+	perl -lne 'print "$$1$$2" if m/^(not.*)|^(?!make)\S+\s+([A-Z].*)/' | \
+	sort | uniq -c
 
 ci:
 	sudo apt-get install -y fasm gcc-multilib
-	$(MAKE) ARGS=nocolor test
+	$(MAKE) testnc
 
 PREFIX=$$HOME/.local
 FFBIN=$(PREFIX)/bin
