@@ -1,0 +1,4 @@
+lib/x86-{64}/see.ff
+needs pno{64}.ff
+: test{64} 42 ;
+{64} only

@@ -12902,3 +12902,34 @@ it instead of Perl to generate `ff64.boot.min`.
   strings, includes, nested includes, missing-include error, mixed)
 - `make test64` with ffpp-minified boot — all PASSED
 - `make testall` — 120 PASSED / 1 SKIPPED
+
+### Enhancement: `{64}` macro and Ctrl-V includes
+
+Two enhancements to ffpp after the initial promotion:
+
+**`{64}` macro** — When `--64` is passed as an argument, `{64}` anywhere
+in input expands to the literal text `64`. Without `--64`, `{64}` is
+deleted entirely. This enables conditional filenames like
+`lib/x86-{64}/see.ff` → `lib/x86-64/see.ff` (with flag) or
+`lib/x86-/see.ff` (without). The scanner checks for `64}` after any
+`{` character; if not matched, `{` passes through literally.
+
+**Ctrl-V include sigil** — Replaced the UTF-8 U+2038 caret (3 bytes:
+E2 80 B8) with Ctrl-V (1 byte: 0x16). Simpler to type, simpler to
+detect. The include sigil must be preceded by whitespace; the path
+following it ends at the next whitespace, newline, or EOF.
+
+**`--64` argument parsing** — ffpp scans argv for `--64` before
+processing files. `--64` entries are skipped when iterating filenames.
+If `--64` is the only argument, ffpp reads from stdin.
+
+**Macro deletion whitespace** — When `{64}` is deleted (no `--64`),
+`prev_was_ws` is left unchanged so surrounding whitespace collapses
+naturally. E.g., `needs pno{64}.ff` → `needs pno.ff` (single space
+preserved, no extra spaces introduced).
+
+### Updated test results
+
+- `make -C exp/148-ffpp test` — 9/9 PASSED (added test-macro64-on,
+  test-macro64-off; updated include tests for Ctrl-V)
+- `make testall` — 120 PASSED / 1 SKIPPED

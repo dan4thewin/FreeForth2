@@ -9,12 +9,13 @@
 ;;;   - Preserves "..." strings verbatim (no " inside strings)
 ;;;   - Collapses multiple whitespace to single space
 ;;;   - Collapses multiple newlines to single newline
-;;;   - ‸path includes (U+2038, recursive, 8-level limit)
+;;;   - {64} macro: expands to "64" with --64 flag, deleted otherwise
+;;;   - ^V path includes (Ctrl-V, recursive, 8-level limit)
 ;;;   - Reads files from args or stdin if none given
 ;;;
 ;;; Build: fasm ffpp.asm ffpp
 ;;;
-;;; Usage: ffpp [file ...]       (stdin if no args)
+;;; Usage: ffpp [--64] [file ...]   (stdin if no args)
 ;;;        echo 'code' | ffpp
 
 format elf64 executable 3
@@ -61,22 +62,50 @@ _start:
         xor     eax, eax
         mov     [depth], eax           ; include depth = 0
         mov     [obuf_pos], eax        ; output buffer position = 0
+        mov     [flag_64], eax         ; --64 not set
         mov     byte [prev_was_ws], 1  ; start as if prev was whitespace (BOF)
         mov     byte [prev_was_nl], 1  ; suppress leading blank lines
 
-        ;; If argc <= 1, read stdin
+        ;; Scan args for --64 flag; collect file args
         cmp     r12, 1
         jle     .do_stdin
 
-        ;; Process each filename arg
+        ;; First pass: find --64, count file args
         mov     r14, 1                 ; arg index (skip argv[0])
 .arg_loop:
         cmp     r14, r12
-        jge     .done
+        jge     .args_done
         mov     rdi, [r13 + r14*8]    ; argv[i]
+        ;; Check for --64: '-','-','6','4',0
+        cmp     byte [rdi], '-'
+        jne     .arg_file
+        cmp     byte [rdi+1], '-'
+        jne     .arg_file
+        cmp     byte [rdi+2], '6'
+        jne     .arg_file
+        cmp     byte [rdi+3], '4'
+        jne     .arg_file
+        cmp     byte [rdi+4], 0
+        jne     .arg_file
+        mov     dword [flag_64], 1
+        inc     r14
+        jmp     .arg_loop
+
+.arg_file:
         call    process_file
         inc     r14
         jmp     .arg_loop
+
+.args_done:
+        ;; If no file args were processed (only --64), read stdin
+        ;; Check: did we process any files? r14 > r12 means we finished.
+        ;; If flag_64 is set and argc==2, that was the only arg.
+        cmp     dword [flag_64], 0
+        je      .done
+        cmp     r12, 2
+        jne     .done
+        ;; argc==2 and --64 was set — only arg was --64, read stdin
+        jmp     .do_stdin
 
 .do_stdin:
         call    process_stdin
@@ -266,8 +295,12 @@ process_buf:
         cmp     al, '\'
         je      .maybe_line
 
-        ;; Check for ‸ (U+2038): E2 80 B8
-        cmp     al, 0xE2
+        ;; Check for { — possible {64} macro
+        cmp     al, '{'
+        je      .maybe_macro
+
+        ;; Check for Ctrl-V (0x16) — include
+        cmp     al, 0x16
         je      .maybe_include
 
         ;; Regular character — emit it
@@ -427,23 +460,14 @@ process_buf:
         inc     r13
         jmp     .normal
 
-        ;; ---- Include: ‸ (E2 80 B8) ----
+        ;; ---- Include: Ctrl-V (0x16) ----
 .maybe_include:
-        ;; Need at least 3 bytes for ‸
-        lea     rcx, [r13 + 2]
-        cmp     rcx, r12
-        jg      .not_include
-        cmp     byte [rbp + r13 + 1], 0x80
-        jne     .not_include
-        cmp     byte [rbp + r13 + 2], 0xB8
-        jne     .not_include
-
         ;; Must be preceded by whitespace (or BOF)
         cmp     byte [prev_was_ws], 0
         je      .not_include
 
-        ;; It's a ‸ — skip the 3 UTF-8 bytes
-        add     r13, 3
+        ;; Skip the Ctrl-V byte
+        inc     r13
 
         ;; Accumulate path into pbuf until whitespace/newline/EOF
         xor     ecx, ecx              ; path length
@@ -519,8 +543,44 @@ process_buf:
         jmp     .normal
 
 .not_include:
-        ;; Emit E2 as regular byte
-        mov     al, 0xE2
+        ;; Emit Ctrl-V as regular byte
+        mov     al, 0x16
+        call    ob_putc
+        mov     byte [prev_was_ws], 0
+        mov     byte [prev_was_nl], 0
+        inc     r13
+        jmp     .normal
+
+        ;; ---- {64} macro ----
+.maybe_macro:
+        ;; Check for {64} — need at least 3 more bytes: '6','4','}'
+        lea     rcx, [r13 + 3]
+        cmp     rcx, r12
+        jg      .not_macro
+        cmp     byte [rbp + r13 + 1], '6'
+        jne     .not_macro
+        cmp     byte [rbp + r13 + 2], '4'
+        jne     .not_macro
+        cmp     byte [rbp + r13 + 3], '}'
+        jne     .not_macro
+
+        ;; It's {64} — skip all 4 bytes
+        add     r13, 4
+
+        ;; If --64 flag is set, emit "64"
+        cmp     dword [flag_64], 0
+        je      .normal           ; deleted — leave prev_was_ws unchanged
+        mov     al, '6'
+        call    ob_putc
+        mov     al, '4'
+        call    ob_putc
+        mov     byte [prev_was_ws], 0
+        mov     byte [prev_was_nl], 0
+        jmp     .normal
+
+.not_macro:
+        ;; Emit { as regular char
+        mov     al, '{'
         call    ob_putc
         mov     byte [prev_was_ws], 0
         mov     byte [prev_was_nl], 0
@@ -644,6 +704,7 @@ obuf            rb OBUF_SZ
 obuf_pos        dd 0
 prev_was_ws     db 0
 prev_was_nl     db 0
+flag_64         dd 0
 depth           dd 0
 pbuf            rb PBUF_SZ
 inc_stack       rb MAX_DEPTH * FRAME_SZ

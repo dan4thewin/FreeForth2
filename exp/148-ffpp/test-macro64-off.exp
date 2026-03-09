@@ -1,0 +1,4 @@
+lib/x86-/see.ff
+needs pno.ff
+: test 42 ;
+only
