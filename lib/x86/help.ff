@@ -1,0 +1,6 @@
+" help" features append
+"help`" find 2drop '_' 8 which@ tuck ct|! h.nm+ c! \ to be deleted by hidepvt
+: help` \ <name> -- ; display help for <name>, or for "help" by default
+  wsparse 0= IF 2drop "help" THEN
+  [` 2>r "ff.help" needed 2r> _] 0; \ dup this line for your own help file(s)
+  !"no_help_found_for_this_word"

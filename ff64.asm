@@ -175,37 +175,6 @@ _strcmp: push rsi                ; $- ( @1 @2 # -- n ) 0=match
         pop rsi
         ret
 
-;; Emit a single character
-_emit:  push rax                ; emit ( char -- )
-        push rdi
-        push rsi
-        push rdx
-        mov [numbuf], bl        ; reuse numbuf as temp
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [numbuf]
-        mov rdx, 1
-        syscall
-        pop rdx
-        pop rsi
-        pop rdi
-        pop rax
-        mov rbx, rdx
-        mov rdx, [r15]
-        add r15, 8
-        ret
-
-;; Memory access words
-_fetch: mov rbx, [rbx]          ; @ ( addr -- val )
-        ret
-
-_cfetch: movzx rbx, byte [rbx]  ; c@ ( addr -- char )
-        ret
-
-_dfetch: movsxd rbx, dword [rbx] ; d@ ( addr -- sval ) sign-extended 32-bit fetch
-        ret
-
-
 ;; More stack manipulation
 _rot:   xchg rdx, [r15]         ; rot ( a b c -- b c a )
         xchg rbx, rdx
@@ -2072,6 +2041,9 @@ WORD64 "?#", cond_jmp, 1, 2
 WORD64 "callmark", callmark, 1, 8
 WORD64 "anon", anon, 1, 4
 WORD64 "H", H, 1, 1
+WORD64 "h.ct", h.ct, 1, 4
+WORD64 "h.sz", h.sz, 1, 4
+WORD64 "h.nm", h.nm, 1, 4
 WORD64 "CS0", CS0, 1, 3
 WORD64 "_bootxt", bootxt, 1, 7
 WORD64 "sigrestorer", _segv_restorer, 1, 11
@@ -2086,8 +2058,6 @@ WORD64 "xfp", xfp, 1, 3
 WORD64 ">S0", _rst, 0, 3
 WORD64 "cmove>", _cmove_up, 0, 6
 WORD64 "$-", _strcmp, 0, 2
-WORD64 "emit", _emit, 0, 4
-WORD64 "d@", _dfetch, 0, 2
 WORD64 "depth", _depth, 0, 5
 WORD64 "DS0", _DS0, 0, 3
 WORD64 "call,", _call_comma, 0, 5
@@ -2189,7 +2159,7 @@ headbuf    rb 65536
 heads64:   GENWORDS64
 
         align 8
-boot64:    file "ff64.boot.min"
+boot64:    file "ff64.boot"
 boot64_end:
     boot64_size = boot64_end - boot64
 

@@ -1327,7 +1327,6 @@ heads:  GENWORDS                ; generate all postponed headers
         align 4
     headers_size = $-heads
 boot:   file "ff.boot"          ; boot source code, initially moved to tib
-        OSFILE                  ; embed also OS-specific boot code
         align 4
     boot_size = $-boot
 

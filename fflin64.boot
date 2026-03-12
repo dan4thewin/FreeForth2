@@ -170,9 +170,6 @@ variable mainxt pvt
 ( help` — on first call, loads help.ff which redefines help` )
 : help` ;` "help.ff" needexec ;
 
-( doargv — evaluate command line arguments as FreeForth words )
-:. doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap eval. ;
-
 ( _postboot — doargv + FFHIDE check + hidepvt; nop'd for turnkey )
 :. _ffhide "FFHIDE" getenv 0- 0<> IF swap c@ '0'- 0= IF hide off THEN THEN 2drop ;
 :^ _postboot _ffhide doargv _hidepvt ;
@@ -190,8 +187,3 @@ _feat boot
 _feat help
 _feat dynlink
 _feat segv
-
-( Boot sequence — ossetup is a vector for platform-specific init )
-:^ ossetup ;
-:. _boot ossetup _postboot _top ;
-_boot ;

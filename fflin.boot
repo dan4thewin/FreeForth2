@@ -11,7 +11,6 @@ create SEGVact pvt 140 allot SEGVact 140 0 fill
 SEGVhndlr ' SEGVact!
 $40000000 SEGVact 132+ ! \ SA_NODEFER
 :. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
-:. linsetup dlsetup SEGVthrow ;
 
 \ Syscall wrappers — match x86-64 fflin64.boot signatures
 \ Lets lib/ files use named words instead of _sys.N constants
@@ -67,14 +66,18 @@ create openbuf pvt 80 allot
   over w@ [ "#!" drop w@ ] lit = 2drop
   IF bounds BEGIN c@+ 10- 0= drop UNTIL swap over- THEN eval 0 noauto! ;
 :. needexec needed H@ @ execute ;
+: help` ;` "help.ff" needexec ;
 : see` "see.ff" needexec ;
 : -d` "debug.ff" needexec ;
 : +longconds` "longconds.ff" needexec ;
+
 
 variable mainxt pvt
 :. _main mainxt @ execute 0 exit
 : -f` needs` "main" find 0- 0= drop IF mainxt ! _main ' _top !^ doargv n^ ELSE drop THEN ;
 : quit _top ^^ _top ;
 
-linsetup ' ossetup !^ _boot ' >r
-"ff.ff" needed ' _exec ;
+:. _ffhide "FFHIDE" getenv 0- 0<> IF swap c@ '0'- 0= IF hide off THEN THEN 2drop ;
+
+:. linsetup dlsetup SEGVthrow _ffhide ;
+linsetup ' ossetup !^ _boot ' >r ;

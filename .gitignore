@@ -11,11 +11,9 @@
 !/docs/
 !/exp/
 !/ff.asm
-!/ff.boot
-!/ff.ff
+!/ff2.boot
 !/ff.help
 !/ff64.asm
-!/ff64.boot
 !/ff64.help
 !/QUICKREF
 !/TINYREF

@@ -14,10 +14,13 @@ ff.o: fflin.asm ff.asm fflinio.asm ff.boot fflin.boot
 ff: ff.o
 	$(LD) -o $@ $<
 
-ff64.boot.min: ff64.boot fflin64.boot ffpp
-	./ffpp $< $(word 2,$^) > $@
+ff.boot: ff2.boot ffpp
+	./ffpp $< > $@
 
-ff64.o: fflin64.asm ff64.asm ff64.boot.min
+ff64.boot: ff2.boot ffpp
+	./ffpp --64 $< > $@
+
+ff64.o: fflin64.asm ff64.asm ff64.boot
 	fasm $< $@
 
 ff64: ff64.o

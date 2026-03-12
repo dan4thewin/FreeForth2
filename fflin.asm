@@ -39,11 +39,6 @@ end if
 macro OSINCLUDE { include "fflinio.asm" }
 
 ;;; -----------------------------------------------------
-;;; OSFILE defines OS-specific FF source to "file"
-
-macro OSFILE { file "fflin.boot" }
-
-;;; -----------------------------------------------------
 ;;; all macros ready: compile all:
 
 include "ff.asm"

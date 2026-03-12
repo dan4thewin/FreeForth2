@@ -1,0 +1,9 @@
+" callback" features append
+: 'callback:`  '` :` \ xt <name> -- ; .. arg1 arg0 ret -C- .. arg1 arg0 ; 28/
+  \ 5A(pop edx)8D8424.00FFFFFF(lea eax,[esp-256])94(xchg eax,esp)
+  \ 52(push edx)60(pusha) \ -- ret eax ecx edx ebx esp ebp esi edi
+  \ 94(xchg eax,esp)5B(pop ebx)5A(pop edx)94(xchg eax,esp)E8.long(call xt)
+  $24848D5A, ,4 $FFFF'FF00, ,4 $94605294, ,4 $E8945A5B, ,4  here 4+ - ,
+  \ 895C24.1C(mov[esp+28],ebx)61(popa)C2.0001(ret 256)
+  $1C245C89, ,4 $0100C261, ,4  anon:`
+;
