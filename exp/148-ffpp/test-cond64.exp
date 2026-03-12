@@ -1,0 +1,7 @@
+: nipdup` $48, ,1 $DA89, s09 ;
+":.:lib/x86-64:lib:"
+bar[64] is not a marker
+: both shared ;
+: big64 stuff ;
+: more64 things ;
+: after always ;

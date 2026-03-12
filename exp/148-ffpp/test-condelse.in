@@ -1,0 +1,4 @@
+\ IF/ELSE/THEN test
+[64] [IF] ":.:lib/x86-64:lib:" [ELSE] ":.:lib/x86:lib:" [THEN] foo
+[32] [IF] old-32 [ELSE] new-64 [THEN]
+plain [64] [IF] mid [THEN] end

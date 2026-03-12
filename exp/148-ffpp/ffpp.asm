@@ -9,7 +9,8 @@
 ;;;   - Preserves "..." strings verbatim (no " inside strings)
 ;;;   - Collapses multiple whitespace to single space
 ;;;   - Collapses multiple newlines to single newline
-;;;   - {64} macro: expands to "64" with --64 flag, deleted otherwise
+;;;   - [64]/[32]/[0]/[1] boolean markers with [IF]/[ELSE]/[THEN]
+;;;   - [~] detected and rejected (requires Forth dictionary)
 ;;;   - ^V path includes (Ctrl-V, recursive, 8-level limit)
 ;;;   - Reads files from args or stdin if none given
 ;;;
@@ -295,23 +296,28 @@ process_buf:
         cmp     al, '\'
         je      .maybe_line
 
-        ;; Check for { — possible {64} macro
-        cmp     al, '{'
-        je      .maybe_macro
+        ;; Check for [ — possible conditional marker
+        cmp     al, '['
+        je      .maybe_bracket
 
         ;; Check for Ctrl-V (0x16) — include
         cmp     al, 0x16
         je      .maybe_include
 
-        ;; Regular character — emit it
+        ;; Regular character — emit if not suppressing
+        cmp     byte [suppressing], 0
+        jne     .skip_char
         call    ob_putc
         mov     byte [prev_was_ws], 0
         mov     byte [prev_was_nl], 0
+.skip_char:
         inc     r13
         jmp     .normal
 
         ;; ---- Newline handling ----
 .got_newline:
+        cmp     byte [suppressing], 0
+        jne     .skip_newline          ; suppress newlines too
         call    ob_rstrip              ; strip trailing whitespace
         cmp     byte [prev_was_nl], 0
         jne     .skip_newline          ; collapse multiple newlines
@@ -325,6 +331,8 @@ process_buf:
 
         ;; ---- Space/tab handling ----
 .got_space:
+        cmp     byte [suppressing], 0
+        jne     .skip_space            ; suppress whitespace too
         cmp     byte [prev_was_ws], 0
         jne     .skip_space            ; collapse multiple spaces
         ;; Don't emit space if previous was newline (leading space)
@@ -339,6 +347,8 @@ process_buf:
 
         ;; ---- String mode: " ... " ----
 .got_quote:
+        cmp     byte [suppressing], 0
+        jne     .suppress_string       ; skip entire string in suppress mode
         ;; Emit the quote
         mov     al, '"'
         call    ob_putc
@@ -355,6 +365,20 @@ process_buf:
         cmp     al, '"'
         jne     .string_loop
         ;; Closing quote emitted, back to normal
+        jmp     .normal
+
+.suppress_string:
+        ;; Skip entire string (including quotes) when suppressing
+        inc     r13                    ; skip opening quote
+.suppress_string_loop:
+        cmp     r13, r12
+        jge     .buf_done
+        cmp     byte [rbp + r13], '"'
+        je      .suppress_string_done
+        inc     r13
+        jmp     .suppress_string_loop
+.suppress_string_done:
+        inc     r13                    ; skip closing quote
         jmp     .normal
 
         ;; ---- Paren comment: ( ... ) ----
@@ -492,6 +516,10 @@ process_buf:
         mov     byte [pbuf + rcx], 0   ; NUL terminate path
         add     r13, rcx               ; advance past path
 
+        ;; If suppressing, skip the include entirely
+        cmp     byte [suppressing], 0
+        jne     .normal
+
         ;; Check nesting depth
         mov     eax, [depth]
         cmp     eax, MAX_DEPTH
@@ -551,39 +579,237 @@ process_buf:
         inc     r13
         jmp     .normal
 
-        ;; ---- {64} macro ----
-.maybe_macro:
-        ;; Check for {64} — need at least 3 more bytes: '6','4','}'
+        ;; ---- Bracket conditionals: [64] [32] [IF] [ELSE] [THEN] ----
+.maybe_bracket:
+        ;; [ is a marker only if preceded by whitespace
+        cmp     byte [prev_was_ws], 0
+        je      .bracket_literal
+
+        ;; Try matching [64], [32], [IF], [ELSE], [THEN]
+        ;; All must end with ] followed by whitespace or EOF
+
+        ;; Check [64] — need 3 more bytes: '6','4',']'
         lea     rcx, [r13 + 3]
         cmp     rcx, r12
-        jg      .not_macro
+        jg      .bracket_literal
         cmp     byte [rbp + r13 + 1], '6'
-        jne     .not_macro
+        jne     .try_32
         cmp     byte [rbp + r13 + 2], '4'
-        jne     .not_macro
-        cmp     byte [rbp + r13 + 3], '}'
-        jne     .not_macro
-
-        ;; It's {64} — skip all 4 bytes
-        add     r13, 4
-
-        ;; If --64 flag is set, emit "64"
-        cmp     dword [flag_64], 0
-        je      .normal           ; deleted — leave prev_was_ws unchanged
-        mov     al, '6'
-        call    ob_putc
-        mov     al, '4'
-        call    ob_putc
-        mov     byte [prev_was_ws], 0
-        mov     byte [prev_was_nl], 0
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 3], ']'
+        jne     .bracket_literal
+        ;; Check followed by ws or EOF
+        lea     rcx, [r13 + 4]
+        cmp     rcx, r12
+        jge     .got_64                ; EOF after ] is ok
+        movzx   edx, byte [rbp + rcx]
+        cmp     dl, ' '
+        je      .got_64
+        cmp     dl, 9
+        je      .got_64
+        cmp     dl, 10
+        je      .got_64
+        jmp     .bracket_literal       ; not followed by ws
+.got_64:
+        add     r13, 4                 ; skip [64]
+        mov     eax, [flag_64]
+        mov     [last_bool], eax
         jmp     .normal
 
-.not_macro:
-        ;; Emit { as regular char
-        mov     al, '{'
+.try_32:
+        cmp     byte [rbp + r13 + 1], '3'
+        jne     .try_0
+        cmp     byte [rbp + r13 + 2], '2'
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 3], ']'
+        jne     .bracket_literal
+        lea     rcx, [r13 + 4]
+        cmp     rcx, r12
+        jge     .got_32
+        movzx   edx, byte [rbp + rcx]
+        cmp     dl, ' '
+        je      .got_32
+        cmp     dl, 9
+        je      .got_32
+        cmp     dl, 10
+        je      .got_32
+        jmp     .bracket_literal
+.got_32:
+        add     r13, 4                 ; skip [32]
+        mov     eax, [flag_64]
+        xor     eax, 1                 ; invert
+        mov     [last_bool], eax
+        jmp     .normal
+
+.try_0:
+        ;; Check [0] — 3 bytes: '[','0',']'
+        cmp     byte [rbp + r13 + 1], '0'
+        jne     .try_1
+        cmp     byte [rbp + r13 + 2], ']'
+        jne     .bracket_literal
+        lea     rcx, [r13 + 3]
+        cmp     rcx, r12
+        jge     .got_0
+        movzx   edx, byte [rbp + rcx]
+        cmp     dl, ' '
+        je      .got_0
+        cmp     dl, 9
+        je      .got_0
+        cmp     dl, 10
+        je      .got_0
+        jmp     .bracket_literal
+.got_0:
+        add     r13, 3                 ; skip [0]
+        mov     dword [last_bool], 0
+        jmp     .normal
+
+.try_1:
+        ;; Check [1] — 3 bytes: '[','1',']'
+        cmp     byte [rbp + r13 + 1], '1'
+        jne     .try_tilde
+        cmp     byte [rbp + r13 + 2], ']'
+        jne     .bracket_literal
+        lea     rcx, [r13 + 3]
+        cmp     rcx, r12
+        jge     .got_1
+        movzx   edx, byte [rbp + rcx]
+        cmp     dl, ' '
+        je      .got_1
+        cmp     dl, 9
+        je      .got_1
+        cmp     dl, 10
+        je      .got_1
+        jmp     .bracket_literal
+.got_1:
+        add     r13, 3                 ; skip [1]
+        mov     dword [last_bool], 1
+        jmp     .normal
+
+.try_tilde:
+        ;; Check [~] — 3 bytes: '[','~',']'
+        cmp     byte [rbp + r13 + 1], '~'
+        jne     .try_if
+        cmp     byte [rbp + r13 + 2], ']'
+        jne     .bracket_literal
+        lea     rcx, [r13 + 3]
+        cmp     rcx, r12
+        jge     .got_tilde
+        movzx   edx, byte [rbp + rcx]
+        cmp     dl, ' '
+        je      .got_tilde
+        cmp     dl, 9
+        je      .got_tilde
+        cmp     dl, 10
+        je      .got_tilde
+        jmp     .bracket_literal
+.got_tilde:
+        ;; [~] requires dictionary lookup — not supported in ffpp
+        mov     edi, STDERR
+        lea     rsi, [err_tilde]
+        mov     edx, err_tilde_len
+        mov     eax, SYS_WRITE
+        syscall
+        mov     edi, 1
+        mov     eax, SYS_EXIT
+        syscall
+
+.try_if:
+        ;; Check [IF] — need 3 more bytes: 'I','F',']'
+        cmp     byte [rbp + r13 + 1], 'I'
+        jne     .try_else
+        cmp     byte [rbp + r13 + 2], 'F'
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 3], ']'
+        jne     .bracket_literal
+        lea     rcx, [r13 + 4]
+        cmp     rcx, r12
+        jge     .got_if
+        movzx   edx, byte [rbp + rcx]
+        cmp     dl, ' '
+        je      .got_if
+        cmp     dl, 9
+        je      .got_if
+        cmp     dl, 10
+        je      .got_if
+        jmp     .bracket_literal
+.got_if:
+        add     r13, 4                 ; skip [IF]
+        cmp     dword [last_bool], 0
+        jne     .normal                ; condition true — keep emitting
+        mov     byte [suppressing], 1
+        jmp     .normal
+
+.try_else:
+        ;; Check [ELSE] — need 5 more bytes: 'E','L','S','E',']'
+        lea     rcx, [r13 + 5]
+        cmp     rcx, r12
+        jg      .try_then
+        cmp     byte [rbp + r13 + 1], 'E'
+        jne     .try_then
+        cmp     byte [rbp + r13 + 2], 'L'
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 3], 'S'
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 4], 'E'
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 5], ']'
+        jne     .bracket_literal
+        lea     rcx, [r13 + 6]
+        cmp     rcx, r12
+        jge     .got_else
+        movzx   edx, byte [rbp + rcx]
+        cmp     dl, ' '
+        je      .got_else
+        cmp     dl, 9
+        je      .got_else
+        cmp     dl, 10
+        je      .got_else
+        jmp     .bracket_literal
+.got_else:
+        add     r13, 6                 ; skip [ELSE]
+        xor     byte [suppressing], 1  ; toggle
+        jmp     .normal
+
+.try_then:
+        ;; Check [THEN] — need 5 more bytes: 'T','H','E','N',']'
+        lea     rcx, [r13 + 5]
+        cmp     rcx, r12
+        jg      .bracket_literal
+        cmp     byte [rbp + r13 + 1], 'T'
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 2], 'H'
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 3], 'E'
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 4], 'N'
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 5], ']'
+        jne     .bracket_literal
+        lea     rcx, [r13 + 6]
+        cmp     rcx, r12
+        jge     .got_then
+        movzx   edx, byte [rbp + rcx]
+        cmp     dl, ' '
+        je      .got_then
+        cmp     dl, 9
+        je      .got_then
+        cmp     dl, 10
+        je      .got_then
+        jmp     .bracket_literal
+.got_then:
+        add     r13, 6                 ; skip [THEN]
+        mov     byte [suppressing], 0
+        jmp     .normal
+
+.bracket_literal:
+        ;; [ is not a marker — emit if not suppressing
+        cmp     byte [suppressing], 0
+        jne     .bracket_skip
+        mov     al, '['
         call    ob_putc
         mov     byte [prev_was_ws], 0
         mov     byte [prev_was_nl], 0
+.bracket_skip:
         inc     r13
         jmp     .normal
 
@@ -696,6 +922,9 @@ err_open_len    = $ - err_open
 err_depth       db 'ffpp: include nesting too deep', 10
 err_depth_len   = $ - err_depth
 
+err_tilde       db 'ffpp: [~] requires dictionary lookup — not supported', 10
+err_tilde_len   = $ - err_tilde
+
 ;; =====================================================================
 ;; BSS (uninitialized)
 ;; =====================================================================
@@ -704,7 +933,9 @@ obuf            rb OBUF_SZ
 obuf_pos        dd 0
 prev_was_ws     db 0
 prev_was_nl     db 0
+suppressing     db 0
 flag_64         dd 0
+last_bool       dd 0
 depth           dd 0
 pbuf            rb PBUF_SZ
 inc_stack       rb MAX_DEPTH * FRAME_SZ

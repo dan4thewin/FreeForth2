@@ -1,4 +1,0 @@
-lib/x86-64/see.ff
-needs pno64.ff
-: test64 42 ;
-64 only

@@ -1,0 +1,11 @@
+\ Conditional compilation tests
+: nipdup` [64] [IF] $48, ,1 [THEN] $DA89, s09 ;
+[32] [IF] ":.:lib/x86:lib:" [THEN]
+[64] [IF] ":.:lib/x86-64:lib:" [THEN]
+bar[64] is not a marker
+: both shared ;
+[64] [IF]
+: big64 stuff ;
+: more64 things ;
+[THEN]
+: after always ;

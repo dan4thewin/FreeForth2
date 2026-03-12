@@ -1,5 +1,6 @@
 TESTS = test-comments test-whitespace test-strings test-include \
-        test-nested test-incerr test-mixed test-macro64-on test-macro64-off
+        test-nested test-incerr test-mixed test-cond64 test-cond32 \
+        test-condelse
 
 .PHONY: test clean
 
@@ -12,8 +13,9 @@ test: ffpp
 	for t in $(TESTS); do \
 		echo -n "$$t: "; \
 		case $$t in \
-			*-on) ./ffpp --64 test-macro64.in > /tmp/ffpp-out;; \
-			*-off) ./ffpp test-macro64.in > /tmp/ffpp-out;; \
+			test-cond64) ./ffpp --64 test-cond.in > /tmp/ffpp-out;; \
+			test-cond32) ./ffpp test-cond.in > /tmp/ffpp-out;; \
+			test-condelse) ./ffpp --64 test-condelse.in > /tmp/ffpp-out;; \
 			test-incerr) ./ffpp $$t.in > /tmp/ffpp-out 2>/dev/null;; \
 			*) ./ffpp $$t.in > /tmp/ffpp-out;; \
 		esac; \

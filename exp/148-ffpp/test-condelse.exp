@@ -1,0 +1,3 @@
+":.:lib/x86-64:lib:" foo
+new-64
+plain mid end
