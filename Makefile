@@ -26,7 +26,7 @@ ff64.o: fflin64.asm ff64.asm ff64.boot
 ff64: ff64.o
 	$(LD64) -o $@ $<
 
-ff64s: fflin64s.asm ff64.asm ff64.boot.min
+ff64s: fflin64s.asm ff64.asm ff64.boot
 	fasm $< $@
 	chmod +x $@
 

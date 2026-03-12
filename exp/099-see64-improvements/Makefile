@@ -25,7 +25,7 @@ test:
 		"echo 'see words\` depth .\ cr bye' | timeout $(TIMEOUT) $(FF) ': prompt ;' 'hide off' -f ../../lib/x86-64/see.ff | sed '/^$$/d' | tail -1" \
 		"0"; \
 	run "see max clean stack" \
-		"echo 'see max depth .\ cr bye' | timeout $(TIMEOUT) $(FF) ': prompt ;' 'hide off' -f ../../lib/x86-64/see.ff | sed '/^$$/d' | tail -1" \
+		"echo 'see max\` depth .\ cr bye' | timeout $(TIMEOUT) $(FF) ': prompt ;' 'hide off' -f ../../lib/x86-64/see.ff | sed '/^$$/d' | tail -1" \
 		"0"; \
 	run "see h.next clean stack" \
 		"echo 'see h.next depth .\ cr bye' | timeout $(TIMEOUT) $(FF) ': prompt ;' 'hide off' -f ../../lib/x86-64/see.ff | sed '/^$$/d' | tail -1" \

@@ -39,11 +39,11 @@ test:
 	if echo "$$OUT" | grep -qaF -- '-v'; then \
 		echo "  PASS: -v is public"; \
 	else echo "  FAIL: -v not in words"; exit 1; fi
-	@# Test 8: count reads counted string
-	@OUT=$$(printf '%s\n' 'features count type cr ;' | $(FF64) 2>/dev/null); \
+	@# Test 8: c@+ reads counted string (count removed)
+	@OUT=$$(printf '%s\n' 'features c@+ type cr ;' | $(FF64) 2>/dev/null); \
 	if echo "$$OUT" | grep -q 'boot'; then \
-		echo "  PASS: count reads counted string"; \
-	else echo "  FAIL: count: $$OUT"; exit 1; fi
+		echo "  PASS: c@+ reads counted string"; \
+	else echo "  FAIL: c@+: $$OUT"; exit 1; fi
 	@# Test 9: move copies forward
 	@OUT=$$(printf '%s\n' 'create b1 20 allot ;' '"hello" drop b1 5 move ;' 'b1 5 type cr ;' | $(FF64) 2>/dev/null); \
 	if echo "$$OUT" | grep -q 'hello'; then \
