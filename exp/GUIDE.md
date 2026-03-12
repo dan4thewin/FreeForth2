@@ -155,6 +155,71 @@ The i386 headers used 4-byte xt fields (offset h.ct was 4, h.sz was 5,
 h.nm was 6). The x86-64 port doubled the xt field to 8 bytes, shifting
 all subsequent offsets.
 
+### How headers are generated: the FASM macro-nesting trick
+
+The assembly-defined words (primitives like `drop`, `emit`, variables
+like `H`, `SC`) need dictionary headers so Forth can find them. FASM's
+macro system generates these at assembly time using a clever nesting
+technique invented by Lavarenne.
+
+Each `WORD64` invocation **redefines** the `GENWORDS64` macro to emit
+that word's header and then call the previous definition of `GENWORDS64`:
+
+```nasm
+macro WORD64 name, xt_val, ct_val, namelen {
+    macro GENWORDS64 \{
+        dq xt_val
+        db ct_val
+        db namelen
+        db name
+        db 0
+        GENWORDS64          ;; calls the PREVIOUS definition
+    \}
+}
+```
+
+The base case emits a sentinel:
+
+```nasm
+macro GENWORDS64 {
+        dq 0                ;; don't-care xt
+        db -1               ;; $FF ct — stop value for hidepvt
+        db 0                ;; sz=0 — stop value for words
+        db 0                ;; empty name
+}
+```
+
+When `GENWORDS64` is finally invoked (at the end of the `.flat`
+section), FASM unwinds the nested macros — each redefinition calls the
+one before it, emitting headers in reverse order (last defined word
+first, base sentinel last). This produces a contiguous block of headers
+at assembly time with no runtime cost.
+
+The i386 `WORD` / `GENWORDS` macros work identically, just with `dd`
+(4-byte xt) and a counted-string `CDB` macro instead of an explicit
+length byte.
+
+### Memory layout and the headbuf tradeoff
+
+At runtime, new headers grow **downward** from the `H` pointer into
+`headbuf`. The assembly-generated headers sit at the top of headbuf
+(at label `heads64`), and `H` starts there. As Forth defines new words,
+`H` decreases.
+
+In the i386 binary, headers are emitted into the `.flat` section but
+**relocated** at startup — `_start` does a `rep movsd` to copy headers
+(and boot source) from their file position to the runtime location in
+`.bss`. This keeps the binary small: the header growth area is in `.bss`
+(uninitialized, not stored on disk).
+
+The x86-64 port takes a different approach: `headbuf` (64KB) is placed
+directly in the `.flat` section (PROGBITS), and `heads64` / `GENWORDS64`
+emit headers right after it. No relocation is needed — `_start` simply
+sets `[H]` to point at `heads64` and begins compiling. The tradeoff is
+that 64KB of zeros are stored on disk (the unused portion of headbuf),
+accounting for roughly 64% of the ~100KB binary. The i386 binary avoids
+this with ~6 instructions of startup relocation code.
+
 ---
 
 ## Part 3: The Compiler — From Text to Machine Code
@@ -1957,6 +2022,24 @@ sentinel. Each entry: xt(8) + ct(1) + sz(1) + name(sz) + NUL(1).
 `words` walks upward from H@ (latest entry), printing names until the
 sentinel (sz=0). The sentinel's zero-length name causes `0- 0<>` to fail,
 exiting the WHILE loop.
+
+### Two sentinels in the header chain
+
+The GENWORDS64 base case emits a single sentinel entry that serves two
+purposes via two distinct fields:
+
+1. **sz=0** — stops `words` and other header-walking loops. The
+   `h.sz+ c@ 0- 0<>` test fails on zero-length names.
+
+2. **ct=$FF** — stops `hidepvt` and `xhidepvt`, which walk headers to
+   remove private (`:. `) definitions after compilation. These words
+   check `dup h.ct+ c@ dup $ff-` — when ct equals $FF, the subtraction
+   yields zero, terminating the scan. Without this sentinel, hidepvt
+   would walk off the end of the header space.
+
+The two stop conditions are independent: `words` checks sz, `hidepvt`
+checks ct. Both hit the same physical sentinel entry but read different
+fields.
 
 ### Debugging Technique: GDB
 
