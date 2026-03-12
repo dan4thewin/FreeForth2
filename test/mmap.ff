@@ -1,4 +1,5 @@
 needs shell.ff
+needs fileops.ff
 needs pno.ff
 needs mmap.ff
 needs test.ff

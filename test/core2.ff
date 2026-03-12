@@ -1,4 +1,5 @@
 needs test.ff
+needs pno.ff
 526 >plan
 
 testing core words adapted for FreeForth2
