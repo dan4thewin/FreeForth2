@@ -829,7 +829,7 @@ _boot ;
 :. _exec catch 0;  _back ."_<-error:_" c@+ type cr  2drop
   anon@ 0- 0= IF drop H@ dup@ swap h.sz+ c@+ + 1+ H! THEN
   here - allot  0 SC c! anon:` 0<>`  START _eval ENTER
-:^ _top pvt ui 0 noauto! tib 1024 under accept 0- 0= UNTIL
+:^ _top pvt ui 0 noauto! tib 1024 under accept 0- 0= UNTIL 0 exit
 :^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap _eval ;
 :^ _postboot doargv hidepvt` ;
 :. _boot ossetup _postboot _top ;
