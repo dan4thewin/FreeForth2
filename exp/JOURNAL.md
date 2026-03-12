@@ -12933,3 +12933,90 @@ preserved, no extra spaces introduced).
 - `make -C exp/148-ffpp test` — 9/9 PASSED (added test-macro64-on,
   test-macro64-off; updated include tests for Ctrl-V)
 - `make testall` — 120 PASSED / 1 SKIPPED
+
+---
+
+## Experiment 149 — fflin unification: sigrestorer and light-touch alignment
+
+**Goal:** Bring the i386 `fflin.boot` closer to `fflin64.boot` by
+eliminating unnecessary divergences. The headline change is replacing the
+libc-dependent SEGV handler with raw `rt_sigaction`, matching ff64's
+approach. Several other light-touch items reduce the delta between the two.
+
+### Changes
+
+**1. i386 sigrestorer (fflinio.asm)**
+
+The x86-64 SEGV handler uses raw `rt_sigaction` (syscall 13) with a
+hand-written `sigrestorer` trampoline in ff64.asm. The i386 version used
+libc's `sigaction` wrapper, requiring a 140-byte `struct sigaction` and
+a working libc — an unnecessary dependency.
+
+Added `_segv_restorer` to fflinio.asm:
+```asm
+_segv_restorer:
+        mov eax, 173            ; sys_sigreturn
+        int $80
+```
+Exposed as `WORD "sigrestorer", _segv_restorer, 1` — a constant
+holding the restorer's address, exactly matching ff64's pattern.
+
+**2. Raw rt_sigaction in fflin.boot**
+
+Replaced the old libc-based SEGV setup:
+```forth
+\ Old: 140-byte struct, libc sigaction
+create SEGVact pvt 140 allot SEGVact 140 0 fill
+SEGVhndlr ' SEGVact!
+$40000000 SEGVact 132+ !           \ SA_NODEFER
+:. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
+```
+With the new raw syscall version:
+```forth
+\ New: 20-byte kernel struct, raw rt_sigaction (syscall 174)
+create _ksa pvt 20 allot _ksa 20 0 fill
+SEGVhndlr ' _ksa !
+$44000000 _ksa 4+ !               \ SA_NODEFER | SA_RESTORER
+sigrestorer _ksa 8+ !
+:. SEGVthrow 8 0 _ksa 11 4 174 syscall drop ;
+```
+
+The i386 `struct kernel_sigaction` is 20 bytes:
+handler(4) + sa_flags(4) + sa_restorer(4) + sa_mask(8).
+
+Both architectures now use:
+- A `_ksa` buffer (20 bytes i386, 32 bytes x86-64)
+- `sigrestorer` constant from assembly
+- Raw `rt_sigaction` syscall (174 on i386, 13 on x86-64)
+- `SA_RESTORER` flag ($04000000) — kernel requires it
+
+**3. envp uses cell\***
+
+Changed `4*` to `cell*` in fflin.boot's `envp` definition. DG added
+`cell*` to ff2.boot as a portable cell-width multiply — 4\* on i386,
+8\* on x86-64. Now both architectures can share `envp CS0@ dup @ 2+ cell* +`.
+
+**4. features tracking (_feat)**
+
+Added `_feat` macro and base feature registration to fflin.boot,
+matching fflin64.boot. The i386 binary now reports
+`\ features: locals hidepvt boot help dynlink segv` via `-v`.
+
+### Unification catalog — remaining differences
+
+| Item | Effort | Notes |
+|------|--------|-------|
+| ffpath lib dir | trivial | `lib/x86` vs `lib/x86-64` — single `[64] [IF]` |
+| ffpath itself | N/A | DG plans to replace entirely |
+| syscall numbers | mechanical | 15 shared words, different numbers |
+| _stat.sz / st.size | trivial | 98/44 vs 144/48 |
+| _postboot / -f` | medium | ff64 has _postboot vector + _f_main helper |
+| read/openr/openw/close | N/A | i386 in asm, ff64 in Forth — by design |
+| +longconds` / -d` | trivial | i386-only, could add to ff64 |
+
+### Test results
+
+- Experiment 149: 7/7 PASSED
+- `make test` (4 configs): all PASSED
+- `make test64`: all PASSED (2 expected skips)
+- `make testexp`: all PASSED (1 expected skip)

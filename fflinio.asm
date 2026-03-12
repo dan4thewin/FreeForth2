@@ -101,6 +101,17 @@ nipeax: mov ebx,eax             ; TOS = syscall result
         ret
 
 ;;; ---------------------------------------------------
+;;; sigrestorer — required for raw rt_sigaction (syscall 174)
+;;; The kernel needs SA_RESTORER + a restorer function that calls
+;;; sys_sigreturn.  Exposed as a constant so Forth SEGV setup can use it.
+
+_segv_restorer:
+        mov eax, 173            ; sys_sigreturn
+        int $80
+
+WORD "sigrestorer", _segv_restorer, 1
+
+;;; ---------------------------------------------------
 ;;; FreeForth interface to Linux dynamic-link libraries
 
 saveSP  dd 0

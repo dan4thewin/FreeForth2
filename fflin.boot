@@ -6,11 +6,14 @@ dlsetup
 : libc.` wsparse libc@ #fun lit` #call ' call, ;
 : libc_ libc@ #fun #call ; \ runtime version, turnkey safe
 
-create SEGVact pvt 140 allot SEGVact 140 0 fill
+\ SEGV handler — raw rt_sigaction (no libc dependency)
+\ i386 struct kernel_sigaction: handler(4) sa_flags(4) sa_restorer(4) sa_mask(8) = 20 bytes
+create _ksa pvt 20 allot _ksa 20 0 fill
 :. SEGVhndlr !"SEGV caught" ;
-SEGVhndlr ' SEGVact!
-$40000000 SEGVact 132+ ! \ SA_NODEFER
-:. SEGVthrow 0 SEGVact 11 3 "sigaction" libc_ drop ;
+SEGVhndlr ' _ksa !
+$44000000 _ksa 4+ !           \ SA_NODEFER | SA_RESTORER
+sigrestorer _ksa 8+ !
+:. SEGVthrow 8 0 _ksa 11 4 174 syscall drop ;
 
 \ Syscall wrappers — match x86-64 fflin64.boot signatures
 \ Lets lib/ files use named words instead of _sys.N constants
@@ -31,7 +34,7 @@ $40000000 SEGVact 132+ ! \ SA_NODEFER
  98 constant _stat.sz
  44 constant st.size
 
-: envp CS0@ dup @ 2+ 4* + ;
+: envp CS0@ dup @ 2+ cell* + ;
 : env envp @ BEGIN zlen 0<> WHILE 2dup+ -rot type cr 1+ REPEAT 2drop ;
 :. _getenv swap -rot >= drop IF nip ;THEN
   >r 2dup r $- drop 0<> IF drop r> ;THEN
@@ -78,6 +81,12 @@ variable mainxt pvt
 : quit _top ^^ _top ;
 
 :. _ffhide "FFHIDE" getenv 0- 0<> IF swap c@ '0'- 0= IF hide off THEN THEN 2drop ;
+
+:. _feat` ;` $20 features appendc wsparse features append ;
+_feat boot
+_feat help
+_feat dynlink
+_feat segv
 
 :. linsetup dlsetup SEGVthrow _ffhide ;
 linsetup ' ossetup !^ _boot ' >r ;
