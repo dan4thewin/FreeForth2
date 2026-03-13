@@ -6,8 +6,8 @@ test:
 	@echo "=== Exp 072: features buffer and new words ==="
 	@# Test 1: -v shows base features
 	@OUT=$$(printf '%s\n' '-v ;' | $(FF64) 2>/dev/null); \
-	if echo "$$OUT" | grep -q 'features:.*boot.*help.*dynlink'; then \
-		echo "  PASS: -v shows boot help dynlink"; \
+	if echo "$$OUT" | grep -q 'features:.*locals.*hidepvt'; then \
+		echo "  PASS: -v shows locals hidepvt"; \
 	else echo "  FAIL: -v output: $$OUT"; exit 1; fi
 	@# Test 2: append adds to features
 	@OUT=$$(printf '%s\n' '"_testing" features append ;' '-v ;' | $(FF64) 2>/dev/null); \
@@ -41,7 +41,7 @@ test:
 	else echo "  FAIL: -v not in words"; exit 1; fi
 	@# Test 8: c@+ reads counted string (count removed)
 	@OUT=$$(printf '%s\n' 'features c@+ type cr ;' | $(FF64) 2>/dev/null); \
-	if echo "$$OUT" | grep -q 'boot'; then \
+	if echo "$$OUT" | grep -q 'locals'; then \
 		echo "  PASS: c@+ reads counted string"; \
 	else echo "  FAIL: c@+: $$OUT"; exit 1; fi
 	@# Test 9: move copies forward

@@ -1,11 +1,81 @@
-( syscalls.ff — x86-64 Linux syscall numbers )
-  4 constant _sys.stat
-  8 constant _sys.lseek
- 16 constant _sys.ioctl
- 23 constant _sys.select
- 35 constant _sys.nanosleep
- 80 constant _sys.chdir
- 96 constant _sys.gettimeofday
-144 constant _stat.sz      ( struct stat size )
- 48 constant st.size       ( offset of st_size )
-201 constant _sys.time
+\ syscalls.ff — x86-64 Linux syscall wrappers
+\ All words match i386 stack effects; only syscall numbers differ.
+\ Loaded at boot via ^V from fflin2.boot. Also loadable via needs.
+
+\ File I/O
+: read       ( addr # fd -- n ) >r swap r> 3 0 syscall ;
+: openr      ( addr # -- fd ) zt $1A4  0 rot 3 2 syscall ;
+: openw      ( addr # -- fd ) zt $1A4 $142 rot 3 2 syscall ;
+: openw0     ( addr # -- fd ) zt $1A4 $342 rot 3 2 syscall ;
+: close      ( fd -- n )  1 3 syscall ;
+: _lseek     ( whence offset fd -- pos )  3 8 syscall ;
+: _fstat     ( buf fd -- ior )  2 5 syscall ;
+: _stat      ( buf addr -- ior )  2 4 syscall ;
+: _lstat     ( buf addr -- ior )  2 6 syscall ;
+: access     ( mode addr -- ior )  2 21 syscall ;
+: dup2       ( newfd oldfd -- fd )  2 33 syscall ;
+: fcntl2     ( arg cmd fd -- ior )  3 72 syscall ;
+: pipe       ( pipefd[2] -- ior )  1 22 syscall ;
+: ioctl3     ( arg req fd -- ior )  3 16 syscall ;
+: select     ( timeout exceptfds writefds readfds nfds -- n )  5 23 syscall ;
+: ftruncate  ( len fd -- ior )  2 77 syscall ;
+
+\ Memory management
+: mmap       ( off fd flags prot len addr -- ptr )  6 9 syscall ;
+: munmap     ( len addr -- ior )  2 11 syscall ;
+: mprotect   ( prot len addr -- ior )  3 10 syscall ;
+: brk        ( addr -- newbrk )  1 12 syscall ;
+
+\ Struct constants — stat
+144 constant _stat.sz
+ 48 constant st.size
+
+\ Process control
+: getpid     ( -- pid )  0 39 syscall ;
+: fork       ( -- pid )  0 57 syscall ;
+: execve     ( envp argv filename -- ior )  3 59 syscall ;
+: wait4      ( rusage options status pid -- pid )  4 61 syscall ;
+: kill       ( sig pid -- ior )  2 62 syscall ;
+: exit_group ( status -- )  1 231 syscall ;
+
+\ Directory / filesystem
+: getcwd     ( size buf -- addr )  2 79 syscall ;
+: chdir      ( addr -- ior )  1 80 syscall ;
+: mkdir      ( mode addr -- ior )  2 83 syscall ;
+: rmdir      ( addr -- ior )  1 84 syscall ;
+: unlink     ( addr -- ior )  1 87 syscall ;
+: rename     ( newpath oldpath -- ior )  2 82 syscall ;
+: link       ( new old -- ior )  2 86 syscall ;
+: symlink    ( new old -- ior )  2 88 syscall ;
+: readlink   ( size buf addr -- n )  3 89 syscall ;
+: chroot     ( addr -- ior )  1 161 syscall ;
+
+\ File metadata
+: fchmod     ( mode fd -- ior )  2 91 syscall ;
+: fchown     ( gid uid fd -- ior )  3 93 syscall ;
+: truncate   ( len fd -- ior )  2 77 syscall ;
+: flock      ( op fd -- ior )  2 73 syscall ;
+: umask      ( mask -- prev )  1 95 syscall ;
+: getdents64 ( count buf fd -- n )  3 217 syscall ;
+
+\ Time
+: time       ( tloc -- sec )  1 201 syscall ;
+: alarm      ( seconds -- prev )  1 37 syscall ;
+: nanosleep  ( rem req -- ior )  2 35 syscall ;
+: times      ( buf -- ior )  1 100 syscall ;
+: gettimeofday ( tz tv -- ior )  2 96 syscall ;
+
+\ Process extras
+: getppid     ( -- pid )  0 110 syscall ;
+: setpgid     ( pgid pid -- ior )  2 109 syscall ;
+: getpgrp     ( pid -- pgid )  1 111 syscall ;
+: getpriority ( who which -- pri )  2 140 syscall ;
+: setpriority ( pri who which -- ior )  3 141 syscall ;
+
+\ Miscellaneous
+: uname      ( buf -- ior )  1 63 syscall ;
+: getrandom  ( flags len buf -- n )  3 318 syscall ;
+
+\ Compound words
+: tell  ( fd -- pos ) 1 0 rot _lseek ;
+: wait  ( status -- pid ) 0 0 rot -1 wait4 ;

@@ -145,23 +145,41 @@ to be red herrings. One GDB session showing `jmp 0x9` immediately
 revealed that the compile-time stack was corrupted by a constant value.
 **Always check the generated code first.**
 
+### Compile-time stack leak debugging
+
+For compile-time stack leaks (a value silently accumulating on the
+stack during compilation), use DG's `ss` binary search technique:
+
+1. Place `ss ;` anonymous blocks at various points in the boot source.
+   Rebuild. The stack depth reveals where the leak starts.
+2. Move the `ss` calls to narrow down to one line.
+3. For intra-word diagnosis, define `: Z\` ss ;` and place `Z` inside
+   the suspect word — each `Z` runs at compile time, showing the
+   compile-time stack at that point.
+4. Comment out suspect words to confirm.
+
+**Spiral limit:** after 2–3 failed hypotheses, stop theorizing.
+Switch to empirical methods: simplest repro, i386 cross-check, or
+GDB disassembly. Spiralling without empirical progress is the single
+biggest time sink in this project.
+
 ## OS/Architecture separation
 
 The port follows Lavarenne's cross-platform pattern:
 
 - **`ff64.asm` + `ff64.boot`** — architecture-specific (x86-64):
   compiler, backtick macros, stack ops, flow control, SWAPbit, REPL
-- **`fflin64.boot`** — OS-specific (Linux): dlopen/dlsym, file
+- **`fflin2.boot`** — OS-specific (Linux): dlopen/dlsym, file
   loading, command-line processing, SEGV handler, boot sequence
 
 The Makefile concatenates both into `ff64.boot.min` for embedding.
 Future ports: ARM64 would replace ff64.asm/ff64.boot but reuse
-fflin64.boot; macOS would replace fflin64.boot but reuse ff64.boot.
+fflin2.boot; macOS would replace fflin2.boot but reuse ff64.boot.
 
 ## File loading: eval, not assembly
 
 File loading is pure Forth — there is no assembly `_loadfile`.
-`needed` (in fflin64.boot) opens a file, reads it into the tib
+`needed` (in fflin2.boot) opens a file, reads it into the tib
 buffer, and calls `eval`. `eval` saves/restores `>in`/`tp` around
 a call to `compiler`. This matches the i386 design exactly.
 

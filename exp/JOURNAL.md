@@ -13112,3 +13112,138 @@ Part 32 updated with note that it's superseded by Part 40.
 
 - loops.ff: 96/96 PASSED (5 new tests)
 - `make testall`: 115 PASSED, 6 SKIPPED, 0 FAILED
+
+## Experiment 151: Unified Linux Boot — fflin2.boot
+
+### Goal
+
+Unify `fflin.boot` (i386) and `fflin64.boot` (x86-64) into a single
+`fflin2.boot` using ffpp's `[64] [IF]` conditional compilation and
+`^V` file includes. Minimize architecture-specific conditionals by
+extracting syscall wrappers into `lib/{x86,x86-64}/syscalls.ff`.
+
+### Actions
+
+**1. Extracted syscall wrappers into separate files**
+
+Created `lib/x86/syscalls.ff` (~75 lines) and
+`lib/x86-64/syscalls.ff` (~80 lines), each defining complete Forth
+words with baked-in syscall numbers. The x86-64 file includes
+`read`/`openr`/`openw`/`openw0`/`close` (pure Forth); the i386
+file omits these since they live in `fflinio.asm` (assembly).
+
+Fixed a latent bug: x86-64 `openw` was `$241` (O_WRONLY|O_CREAT|
+O_TRUNC) instead of the correct `$142` (O_RDWR|O_CREAT|O_NOCTTY).
+The i386 semantics are: `openw` opens without truncating, `openw0`
+truncates. Both now match.
+
+**2. Created fflin2.boot with three `[64] [IF]` blocks**
+
+The unified file has only three architecture-conditional blocks:
+
+1. `variable libc` — x86-64 only (i386 has asm `DATA "libc"`)
+2. `_ksa` SEGV handler struct — different sizes/field offsets
+3. `^V` syscalls.ff include — picks the right `lib/` subdirectory
+
+Plus one `[32] [IF]` block for i386-only lazy loaders (`-d\``,
+`+longconds\``), and an arch-specific ffpath directory string.
+
+Everything else — dlsetup, libc., SEGV handler logic, envp/getenv,
+ffpath construction, openlib, needed/needs, -f\`, quit, linsetup —
+is shared code, identical for both architectures.
+
+**3. Discovered and fixed the `variable libc` shadow bug**
+
+On i386, `ff.asm` defines `DATA "libc",_libc,0` — an assembly
+variable. Adding `variable libc` in fflin2.boot created a Forth
+variable that shadowed it. `dlsetup` stored the dlopen handle
+into the Forth variable (found first by `find`), but `#fun` in
+`fflinio.asm` hardcodes the asm `_libc` address for `dlsym` —
+reading from the asm variable, which stayed 0. Result: SEGV when
+any `#fun` call ran in the fftk turnkey image.
+
+DG's debugging approach: wrap `variable libc` in a conditional.
+Fix: `[64] [IF] variable libc [THEN]` — x86-64 defines its own
+Forth variable (no asm equivalent), i386 uses the asm DATA.
+
+This bug only manifested in fftk (turnkey rebuild) because the
+baked image preserves variable values; on fresh boot, the asm
+variable happened to be populated by a different code path.
+
+**4. Removed features registration from boot**
+
+DG's design decision: `features` should reflect libraries loaded
+via `needs`, not boot capabilities. Removed `_feat` and the four
+`_feat boot/help/dynlink/segv` lines. Features now shows only
+`locals hidepvt` (from ff2.boot). Updated three experiment tests
+(072, 074, 087) that expected the old `boot help dynlink` string.
+
+**5. Ported comments from fflin.boot and fflin64.boot**
+
+Added DG's original dlsetup comment ("do dlopen now, and hook it
+to _boot to do dlopen for the turnkey case") and section comments
+from fflin64.boot explaining the SEGV handler, syscall wrappers,
+needed/needs, turnkey -f\`, and the boot hook pattern.
+
+**6. Preserved git history via `git mv`**
+
+`git mv fflin64.boot fflin2.boot` preserves blame and log history.
+`fflin.boot` removed via `git rm`. Both removed from `.gitignore`;
+`fflin2.boot` added.
+
+### Debugging interlude: the exp 150 `_back` stack leak
+
+The compile-time stack leak in `_back` (experiment 150) was tracked
+down by DG using a technique worth documenting:
+
+1. **Compile-time `ss` binary search.** Place `ss ;` as anonymous
+   blocks at various points in `ff2.boot`. Rebuild. The stack depth
+   shown reveals where the leak starts. Move the `ss` calls around
+   to narrow to one line — in this case, the line defining `_back`.
+
+2. **Intra-word `Z\`` macro.** Define `: Z\` ss ;` then place `Z`
+   inside the `_back` definition. Each `Z` runs at compile time,
+   showing the compile-time stack at that point in the word's
+   compilation. This narrowed the leak to the loop words.
+
+3. **Comment-out to confirm.** Commenting out the loop words stopped
+   the leak. Commenting out `_back` entirely unblocked further work.
+
+4. **DG's intervention.** When the AI began spiralling through
+   hypotheses without empirical progress, DG interrupted with two
+   forcing functions: (a) find the simplest reproduction, and
+   (b) cross-check against i386. The AI then found the
+   `_resolve_fwds` fix quickly.
+
+Lesson: after 2–3 failed hypotheses, stop theorizing and switch
+to empirical methods — simplest repro, i386 cross-check, or GDB.
+
+### Reasoning
+
+Lavarenne's cross-platform pattern separates architecture (ff64.asm/
+ff64.boot) from OS (fflin*.boot). The unified fflin2.boot makes this
+cleaner — one file instead of two near-duplicates, with syscall
+numbers (the only truly arch-specific part) factored into lib files.
+
+The `variable libc` shadow bug illustrates a deep FreeForth hazard:
+assembly DATA variables and Forth `variable` words occupy the same
+namespace but different storage. `find` returns the most recently
+defined — which may not be the one assembly code hardcodes. The fix
+(conditional compilation) is cleaner than any runtime workaround.
+
+Removing features registration from boot is a design choice: the
+features string should be a manifest of dynamically loaded libraries,
+not a list of built-in capabilities. Boot capabilities are always
+present; advertising them is noise.
+
+### Guide
+
+Part 41 added to GUIDE.md: OS/architecture separation and the
+fflin2.boot unification.
+
+### Test results
+
+- `make test`: 52 PASSED (4 configs × 13 tests)
+- `make test64`: 13 PASSED
+- `make -C exp test`: 106 PASSED, 0 FAILED
+- `make testall`: 106 PASSED, 0 FAILED

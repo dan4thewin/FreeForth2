@@ -812,6 +812,6 @@ xhidepvt` ' alias hidepvt`
 :^ _top pvt ui 0 noauto! tib 4096 under accept 0- 0= UNTIL
 : bye` ;` cr 0 exit ;
 :^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap _eval ;
-[64] [IF] fflin64.boot [ELSE] fflin.boot [THEN]
+fflin2.boot
 :. _boot ossetup _postboot _top ;
 _boot ' _bootxt! _boot ' >r ;

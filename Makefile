@@ -8,7 +8,7 @@ ffpp: ffpp.asm
 	fasm $< $@
 	chmod +x $@
 
-ff.o: fflin.asm ff.asm fflinio.asm ff.boot fflin.boot
+ff.o: fflin.asm ff.asm fflinio.asm ff.boot fflin2.boot
 	fasm $< $@
 
 ff: ff.o
@@ -20,13 +20,13 @@ ff.boot: ff2.boot ffpp
 ff64.boot: ff2.boot ffpp
 	./ffpp --64 $< > $@
 
-ff64.o: fflin64.asm ff64.asm ff64.boot
+ff64.o: fflin64.asm ff64.asm ff64.boot fflin2.boot
 	fasm $< $@
 
 ff64: ff64.o
 	$(LD64) -o $@ $<
 
-ff64s: fflin64s.asm ff64.asm ff64.boot
+ff64s: fflin64s.asm ff64.asm ff64.boot fflin2.boot
 	fasm $< $@
 	chmod +x $@
 

@@ -6136,3 +6136,88 @@ provides the backward jump (loop back when NOT done), END resolves
 WHILE's forward reference (no backward jump from END itself), and
 `drop` between the flag-setter (`10-`) and TILL is flags-preserving.
 
+## Part 41: OS/Architecture Separation — The fflin2.boot Unification (Experiment 151)
+
+FreeForth's cross-platform architecture separates three layers:
+
+1. **Assembly** (`ff64.asm`, `fflin64.asm`) — register allocation,
+   compiler core, ELF binary layout, syscall ABI
+2. **Architecture-specific Forth** (`ff64.boot` via `ff2.boot`) —
+   compiler macros, stack ops, flow control, SWAPbit
+3. **OS-specific Forth** (`fflin2.boot`) — dlopen, SEGV handler,
+   file loading, environment, command-line processing
+
+Previously, the OS layer was duplicated: `fflin.boot` for i386 and
+`fflin64.boot` for x86-64. These files were 90% identical. Experiment
+151 unified them into `fflin2.boot`, loaded via `^V` from `ff2.boot`.
+
+### What's architecture-specific
+
+Only three things differ between i386 and x86-64 at the OS layer:
+
+**Syscall numbers.** Linux assigns different numbers to the same
+operations on i386 vs x86-64 (e.g., `write` is 4 vs 1, `open` is
+5 vs 2, `rt_sigaction` is 174 vs 13). These are extracted into
+`lib/x86/syscalls.ff` and `lib/x86-64/syscalls.ff`, loaded via a
+conditional `^V` include:
+
+```forth
+[64] [IF] lib/x86-64/syscalls.ff
+[ELSE] lib/x86/syscalls.ff
+[THEN]
+```
+
+**The `libc` variable.** On i386, `ff.asm` defines `DATA "libc"` —
+an assembly-level variable that `#fun` in `fflinio.asm` hardcodes
+for `dlsym` lookups. On x86-64, there's no assembly equivalent, so
+Forth defines `variable libc`. Adding a Forth `variable libc` on
+i386 would shadow the assembly one — `find` returns the most
+recently defined, but `#fun` still reads the assembly address.
+This caused a SEGV in turnkey (fftk) builds where `dlsetup` stored
+the handle in the wrong variable.
+
+```forth
+[64] [IF] variable libc [THEN]
+```
+
+**SEGV handler struct layout.** The `kernel_sigaction` struct has
+different field sizes (4-byte vs 8-byte) and the `rt_sigaction`
+syscall number differs (174 vs 13).
+
+### What's shared
+
+Everything else is identical: `dlsetup` (with its `0<>;` guard for
+static builds and turnkey re-entry), `libc.`/`libc_` (compile-time
+vs runtime dlsym wrappers), environment access (`envp`/`getenv`),
+ffpath construction, `openlib` (search-path file opener),
+`needed`/`needs` (file loading via `eval`), `-f\`` (turnkey support),
+`quit`, and `linsetup` (boot hook wired to the `ossetup` vector).
+
+### The dlsetup pattern
+
+```forth
+:. dlsetup libc@ 0<>; drop "libc.so.6" #lib libc! ;
+dlsetup                        \ eager init at boot load time
+```
+
+`dlsetup` runs twice: once immediately when fflin2.boot loads (eager
+init), and again via `linsetup` → `ossetup` at `_boot` time. The
+second call is for turnkey re-entry — a baked image starts fresh with
+`_boot`, which calls `ossetup`, which calls `linsetup`, which calls
+`dlsetup`. The `libc@ 0<>;` guard makes the second call a no-op
+when libc is already loaded.
+
+On static builds (`ff64s`), `#lib` doesn't exist — `dlsetup` returns
+early and libc stays 0. All `libc.` calls then get a null handle,
+which is harmless (dlsym returns null, `#call` does nothing).
+
+### Future ports
+
+The separation makes future ports straightforward:
+
+- **ARM64 Linux**: replace `ff64.asm`/`ff64.boot`, add
+  `lib/aarch64/syscalls.ff`, reuse `fflin2.boot` unchanged
+- **macOS x86-64**: replace `fflin2.boot` with `ffmac2.boot`,
+  reuse `ff64.asm`/`ff64.boot` unchanged
+- **macOS ARM64**: replace both layers, reuse `ff2.boot` core
+

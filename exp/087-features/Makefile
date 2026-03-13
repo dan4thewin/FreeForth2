@@ -7,10 +7,10 @@ test: test-base-features test-see-features \
 	@echo "SKIP: test-lib-features (needs fixup.ff port)"
 	@echo "=== All exp/087-features tests PASSED ==="
 
-# Base features from boot
+# Base features from boot (only locals hidepvt from ff2.boot)
 test-base-features:
 	@result=$$(echo '-v bye' | $(FF) 2>&1); \
-	echo "$$result" | grep -q 'boot help dynlink segv' && echo "PASS $@" || (echo "FAIL $@ (got: $$result)"; exit 1)
+	echo "$$result" | grep -q 'locals hidepvt' && echo "PASS $@" || (echo "FAIL $@ (got: $$result)"; exit 1)
 
 # Library files append to features
 test-lib-features:

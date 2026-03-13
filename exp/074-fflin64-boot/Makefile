@@ -13,7 +13,7 @@ test:
 	}; \
 	run "features list" \
 		'echo "-v" | $(FF)' \
-		"boot help dynlink"; \
+		"locals hidepvt"; \
 	run "dlsetup libc" \
 		'echo "libc@ . cr 0 exit ;" | $(FF)' \
 		"0"; \
