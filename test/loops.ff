@@ -12,7 +12,7 @@
 \   drop preserves FLAGS.
 
 needs test.ff
-91 >plan
+96 >plan
 
 \ ============================================================
 \ Group A: Plain loops — sanity baseline
@@ -486,6 +486,32 @@ testing nested START/ENTER/UNTIL
   ENTER 1- dup 0- 0= drop UNTIL drop
   ENTER 1- dup 0- 0= drop UNTIL drop r> ;
 t{ _v1 -> 4 }t
+
+\ ============================================================
+\ Group W: BEGIN/WHILE/END and TILL
+\ ============================================================
+
+\ _back pattern: BEGIN guard WHILE body TILL adjust END
+testing BEGIN/WHILE/REPEAT countdown
+: _w1 0 5 BEGIN dup 0- 0> drop WHILE swap 1+ swap 1- REPEAT drop ;
+t{ _w1 -> 5 }t
+
+testing BEGIN/WHILE/TILL/END find (TILL exits)
+\ Scan from 10 down, TILL when reaching 7, return ptr+1
+: _w2 10 dup BEGIN dup 0- 0> drop WHILE 1- dup 7- drop 0= TILL 1+ END nip ;
+t{ _w2 -> 8 }t
+
+testing BEGIN/WHILE/TILL/END miss (WHILE exits)
+: _w3 3 dup BEGIN dup 0- 0> drop WHILE 1- dup 99- drop 0= TILL 1+ END nip ;
+t{ _w3 -> 0 }t
+
+testing BEGIN/WHILE/UNTIL (forward ref resolved)
+: _w4 0 5 BEGIN dup 0- 0> drop WHILE swap 1+ swap 1- dup 2- drop 0= UNTIL drop ;
+t{ _w4 -> 3 }t
+
+testing TILL early-exit inside BEGIN/WHILE/END
+: _w5 0 5 BEGIN dup 0- 0> drop WHILE swap 1+ swap 1- dup 2- drop 0= TILL END drop ;
+t{ _w5 -> 3 }t
 
 \ ============================================================
 

@@ -8,7 +8,7 @@ variable _ok  variable _fail
 : test-time  0 time 0- 0> drop IF ok ELSE ng THEN ;
 : test-alarm  0 alarm 0- 0= drop IF ok ELSE ng THEN ;
 : test-umask  $1FF umask umask $1FF - 0- 0= drop IF ok ELSE ng THEN ;
-: test-lstat  here $200 + 0 fstat 0- 0= drop IF ok ELSE ng THEN ;
+: test-fstat  here $200 + 0 _fstat 0- 0= drop IF ok ELSE ng THEN ;
 
 ( link: copy filenames to data area, NUL-terminate after string bytes )
 : _lp here $300 + ;
@@ -49,7 +49,7 @@ variable _ok  variable _fail
   >r $1C0 r fchmod 0- 0= drop IF ok ELSE ng THEN
   r> close drop ;
 
-test-getppid test-time test-alarm test-umask test-lstat
+test-getppid test-time test-alarm test-umask test-fstat
 test-link test-truncate test-tell test-flock test-nanosleep
 test-fchmod
 _ok @ . ."passed,_" _fail @ . ."failed" cr

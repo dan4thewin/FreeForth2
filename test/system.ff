@@ -227,7 +227,7 @@ t{ 14 _rd drop _sbuf c@ _clr -> $35 }t
 
 testing help dup shows output
 "help dup bye" 15 _wf ;
-!! timeout 3 ./ff 'ui n^' -f $PPID.15.in > $PPID.15.out 2>$PPID.15.err
+!! timeout 3 ./ff 'ui n^' -f $PPID.15.in </dev/null > $PPID.15.out 2>$PPID.15.err
 t{ 15 _out _nm c@+ fsize 10 - 0- 0> IF THEN drop -> }t
 15 _ok
 

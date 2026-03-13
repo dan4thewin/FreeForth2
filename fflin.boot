@@ -81,6 +81,7 @@ variable mainxt pvt
 : quit _top ^^ _top ;
 
 :. _ffhide "FFHIDE" getenv 0- 0<> IF swap c@ '0'- 0= IF hide off THEN THEN 2drop ;
+:^ _postboot _ffhide doargv hidepvt` ;
 
 :. _feat` ;` $20 features appendc wsparse features append ;
 _feat boot
@@ -88,5 +89,5 @@ _feat help
 _feat dynlink
 _feat segv
 
-:. linsetup dlsetup SEGVthrow _ffhide ;
-linsetup ' ossetup !^ _boot ' >r ;
+:. linsetup dlsetup SEGVthrow ;
+linsetup ' ossetup !^

@@ -90,7 +90,7 @@ test: ff
 	$(MAKE) -s FF=./fftk test1
 
 testnc:
-	$(MAKE) ARGS=nocolor test
+	$(MAKE) 'ARGS=needs console.ff nocolor' test
 
 testall:
 	@timeout 60 $(MAKE) testnc testexp 2>/dev/null | \

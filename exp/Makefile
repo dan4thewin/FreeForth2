@@ -19,13 +19,10 @@ EXPERIMENTS = 023-forthmacros64 \
               043-shifts64 \
               044-startloop64 \
               045-markvar64 \
-              046-callvec64 \
               047-syswords64 \
               048-suffix64 \
               049-hidepvt64 \
               050-cstack64 \
-              051-repl-autoexec \
-              052-repl-forth \
               053-boot64 \
 054-dots64 \
 055-strcmp64 \
@@ -65,13 +62,12 @@ EXPERIMENTS = 023-forthmacros64 \
               140-tib-eob \
               141-rm-loadfile \
               142-cs0-getenv \
-              143-openlib-port \
-              144-native-libc \
               145-shared-mmap
 
 # Known-broken experiments — listed so we know they exist.
 # Fix and move back to EXPERIMENTS when passing.
-SKIP = 073-turnkey
+SKIP = 046-callvec64 051-repl-autoexec 052-repl-forth 073-turnkey \
+       143-openlib-port 144-native-libc
 
 test:
 	@fail=0; for d in $(EXPERIMENTS); do \

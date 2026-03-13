@@ -3075,6 +3075,12 @@ experiments, all passing.
 
 ## Part 32: Forth-based REPL (_top) (Experiment 052)
 
+> **Note:** This part describes the *early* self-contained `_top`
+> approach, which worked but diverged from Lavarenne's i386 design.
+> Experiment 150 (Part 40) replaced it with the i386-aligned cross-word
+> `START...UNTIL` coroutine pattern. Read this part for historical
+> context on *why* the self-contained version was tried first.
+
 The culmination of the REPL work: a self-contained Forth REPL that can
 be launched from the assembly REPL.
 
@@ -5802,4 +5808,331 @@ yourself. The compiler, the data, and the executing code all share
 the same address space — there is no separation. This is not a bug;
 it is the consequence of a system with no interpreter, no separate
 data segment, and no memory protection. Everything is HERE.
+
+---
+
+## Part 40: The REPL Coroutine — An Annotated Walkthrough (Experiment 150)
+
+This part traces the complete lifecycle of a FreeForth session — from
+the moment the binary starts to the moment you type `bye`. It is both
+the culmination of the x86-64 port and a window into Lavarenne's most
+elegant design: a Read-Eval-Print Loop built from three Forth words
+that share a single machine-code loop across definition boundaries.
+
+### Background: from self-contained to coroutine
+
+The early x86-64 port (Part 32) used a self-contained `_top` with a
+`BEGIN`/`AGAIN` loop — all REPL logic in one word. This worked but
+diverged from Lavarenne's i386 design, where `_exec` and `_top` form
+a *cross-word* loop: `_exec` ends with `START _eval ENTER`, `_top`
+ends with `0- 0= UNTIL`. The `START`...`UNTIL` pair compiles a single
+machine-code loop whose backward jump crosses the boundary between
+`_exec` and `_top`.
+
+Experiment 150 aligned the x86-64 boot with this i386 pattern exactly.
+The result is six words totaling 21 lines of Forth source that
+implement the entire REPL, error recovery, dictionary cleanup, and
+graceful exit.
+
+### The source (ff2.boot lines 804–818)
+
+```forth
+( REPL coroutine — _exec/_top form cross-word START...UNTIL loop )
+( bye must follow _top: UNTIL falls through to bye on EOF )
+:. _back >in@ 1- dup BEGIN tib <> drop WHILE 1- dupc@ 10- drop 0= TILL 1+ END
+   swap over- type ;
+:. _eval eval. '
+:. _exec catch 0;  _back ."_<-error:_" c@+ type cr  2drop
+  anon@ 0- 0= IF drop H@ dup@ swap h.sz+ c@+ + 1+ H! THEN
+  here - allot  0 SC c! anon:` 0<>`  START _eval ENTER
+:^ _top pvt ui 0 noauto! tib 4096 under accept 0- 0= UNTIL
+: bye` ;` cr 0 exit ;
+:^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap _eval ;
+[64] [IF] fflin64.boot [ELSE] fflin.boot [THEN]
+:. _boot ossetup _postboot _top ;
+_boot ' _bootxt! _boot ' >r ;
+```
+
+Every word explained:
+
+**`eval.`** (defined earlier, line 800) — the evaluator.
+Saves `>in` and `tp` on the return stack, sets up the text pointers
+to cover the input buffer, calls `compiler` (the heart of FreeForth —
+parse, look up, compile, repeat), calls `_auto` (auto-execute the
+anonymous block if `noauto` is clear), restores `>in`/`tp`. This is
+identical to the i386's `eval`.
+
+**`_back`** — error context printer.
+Walks backward from the current parse position (`>in`) to find the
+start of the current line (scanning for LF=10), then prints from
+there to `>in`. This shows the user *where* in the input the error
+occurred.
+
+**`_eval`** — a one-liner: `eval. '`. The `'` (tick) is a postfix
+macro that uncompiles the preceding `call eval.` and replaces it
+with `push <eval.'s XT>`. So `_eval` pushes eval.'s execution
+token onto the data stack. It then falls through to `_exec`.
+
+**`_exec`** — the error-handling wrapper. Calls `catch(eval.)`.
+On success (0 returned), returns immediately (`0;`). On error:
+prints context (`_back`), prints the error message, cleans up
+the dictionary if a named definition was interrupted, resets `here`
+and `SC`, then falls through to the `START _eval ENTER` loop
+re-entry.
+
+**`_top`** — the input loop. Defined with `:^` (vector), making
+it callable through a trampoline. Calls `ui` (prompt), clears
+`noauto`, calls `accept` to read a line from stdin. Tests the
+return value: nonzero means input received, UNTIL loops back;
+zero means EOF, UNTIL falls through to `bye\``.
+
+**`bye\``** — graceful exit. Calls `;\`` (flush pending code),
+prints a final newline, calls `exit(0)`. Must be defined
+*immediately after* `_top` because UNTIL's fall-through lands here.
+
+**`_boot`** — entry point. Calls `ossetup` (Linux initialization),
+`_postboot` (SEGV handler, file loading, `doargv`), then tail-calls
+`_top` to enter the REPL. The `_boot ' >r ;` trampoline on the
+last line stashes `_boot`'s XT on the return stack so the anonymous
+block's `;` "returns" to `_boot`.
+
+### The cross-word loop in machine code
+
+Here is the compiled x86-64 code for the REPL, annotated with
+the Forth source that generated each instruction. Addresses are
+from a live ff64 session (your build will differ).
+
+**_eval** (0x41bd71) — push eval.'s XT, fall through to _exec:
+```asm
+_eval:
+  lea    r15,[r15-8]          ; \
+  mov    [r15],rdx            ;  | dup  (push NOS to memory stack)
+  mov    edx, 0x41bc6a        ;  eval. '  (NOS = eval.'s XT as literal)
+                              ;  fall through to _exec
+```
+
+**_exec** (0x41bd7d) — catch, early return on success:
+```asm
+_exec:
+  xchg   rbx,rdx              ; swap eval. XT into TOS for catch
+  call   catch                 ; catch( eval. ) → 0 on success, err on throw
+  test   rbx,rbx              ; \  0;  — test result
+  jnz    _exec_error           ;  |     if nonzero → error handler
+  mov    rbx,[r15]             ;  |     success: drop the 0
+  lea    r15,[r15+8]           ;  |
+  xchg   rbx,rdx              ;  /
+  ret                          ; return to caller (→ _top trampoline)
+```
+
+**_exec error handler** (0x41bd99) — recover and re-enter loop:
+```asm
+_exec_error:
+  call   _back                 ; print input context up to error point
+  call   _litstr               ; ."_<-error:_" (inline string follows)
+  ... 10 bytes of string data: " <-error: " ...
+  movzx  rdx,byte[rbx]        ; \  c@+ type cr — print counted error string
+  inc    rbx                   ;  |
+  xchg   rbx,rdx              ;  |
+  call   type                  ;  |
+  call   cr                    ;  /
+  ; 2drop — discard catch's two return values
+  mov    rbx,[r15]             ; \
+  lea    r15,[r15+8]           ;  | 2drop
+  mov    rdx,[r15]             ;  |
+  lea    r15,[r15+8]           ;  /
+  ; anon@ 0- 0= IF ... THEN — unlink partial definition from dictionary
+  mov    rbx,[anon]            ; anon@
+  test   rbx,rbx              ; 0-
+  jne    _skip_unlink          ; 0= IF (skip if anon is nonzero)
+  ; ... dictionary cleanup: H@ dup@ swap h.sz+ c@+ + 1+ H!
+  ; (walks the header chain to unlink the partial entry)
+_skip_unlink:
+  ; here - allot — reset HERE to pre-error position
+  mov    rdx,rbp               ; here
+  sub    rbx,rdx               ; -  (anon - here = negative offset)
+  add    rbp,rbx               ; allot (rbp += offset, restoring old HERE)
+  ; 0 SC c! — clear SWAPbit state
+  mov    ebx, 0                ; 0
+  mov    [SC],dl               ; SC c!
+  ; anon:` — reset anonymous block to HERE
+  call   anon:`                ; mov [anon],rbp; clear flags
+  ; 0<>` — preload nonzero condition for UNTIL
+  call   0<>`                  ; store JNZ opcode in cond_jmp
+  ; START — emit forward jump (skip past call _eval on first recovery)
+  jmp    _top                  ; forward jump resolved by ENTER → _top entry
+  ; _eval — the UNTIL backward-jump target
+loop_start:
+  call   _eval                 ; START marks here; UNTIL jumps back here
+  ; ENTER — resolved _top's forward reference
+```
+
+**_top** (0x41beb0) — prompt, read, loop:
+```asm
+_top:                            ; :^ creates vector trampoline
+  push   _top_body              ;   push body address
+  ret                           ;   jump to body (ret pops and goes there)
+_top_body:
+  call   ui                     ; ui — call prompt vector (prints "> ")
+  mov    ebx, 0                 ; \  0 noauto!
+  mov    [noauto],rbx           ; /
+  mov    ebx, tib               ; \
+  mov    edx, 0x1000            ;  | tib 4096 under accept
+  ; ... under swaps TOS/NOS ...
+  call   accept                 ; /  accept( buf count -- nbytes )
+  test   rbx,rbx               ; 0-  (or rbx,rbx — sets ZF if zero)
+                                ; 0=  (compile-time only: stores JZ in cond_jmp)
+                                ; UNTIL inverts: JZ → JNZ
+  jne    loop_start             ; UNTIL: loop back if nbytes ≠ 0
+  ; fall through on EOF (nbytes = 0) → bye`
+```
+
+**bye\`** (0x41bf0e) — flush and exit:
+```asm
+bye`:
+  call   ;`                     ; ;`  — flush any pending anonymous code
+  call   cr                     ; cr  — final newline
+  mov    ebx, 0                 ; 0   — exit code
+  jmp    exit                   ; exit — sys_exit(0), game over
+```
+
+**_boot** (0x41d17e) — the entry point:
+```asm
+_boot:
+  call   ossetup                ; Linux-specific init (sigaction, etc.)
+  call   _postboot              ; SEGV handler, doargv, hide privates
+  jmp    _top                   ; tail-call into REPL (never returns normally)
+```
+
+### The lifecycle, step by step
+
+**Startup.** The assembly `_start` sets up registers (rbp=HERE,
+r15=dstack, rsp=return stack), compiles the embedded boot source,
+then calls `_semi_exec` to execute the final anonymous block.
+That block (`_boot ' >r ;`) stashes `_boot`'s XT on the return
+stack and returns to it — a one-shot trampoline.
+
+**First REPL iteration.** `_boot` calls `ossetup`, `_postboot`,
+then jumps to `_top`. The `:^` trampoline (`push body; ret`) enters
+the body. `ui` prints the prompt. `accept` blocks on stdin. The user
+types `5 3 + . cr` and presses Enter. `accept` returns 13 (the byte
+count). `0- 0=` tests: ZF=0 (nonzero). UNTIL's `jne` fires → jumps
+backward to `call _eval`.
+
+**Evaluation.** `_eval` pushes `eval.`'s XT, falls into `_exec`.
+`_exec` calls `catch(eval.)`. Inside `eval.`: save parse state,
+set `>in` and `tp` to cover the input, call `compiler`. The compiler
+parses `5` → compiles literal 5. Parses `3` → literal 3. Parses `+`
+→ compiles `add`. Parses `.` → compiles call to `.` (print TOS).
+Parses `cr` → compiles call to `cr`. Hits end of input → returns.
+`_auto` sees `noauto=0`, calls `;\`` which executes the compiled
+anonymous block: pushes 5, pushes 3, adds (=8), prints `8`, prints
+newline. `eval.` restores parse state and returns. `catch` returns 0.
+
+**Return to prompt.** `_exec`'s `0;` fires: TOS is 0, so return.
+`ret` pops the return address — which is 0x41beb0, the address
+after `call _eval`. That's `_top`'s trampoline (`push body; ret`),
+which jumps to the body. `ui` prints the prompt. `accept` blocks
+again. The loop continues.
+
+**Error.** The user types `foo` (undefined word). `compiler` calls
+`_error` → `_throw`. `catch` returns the error pointer (nonzero).
+`0;` does NOT fire. `_back` prints ` foo`, `." <-error: "` prints
+the marker, `c@+ type` prints `"???"`, `cr` ends the line.
+Output: `foo <-error: ???`. The cleanup code resets HERE and the
+dictionary. `START`'s forward jump skips `call _eval` and goes
+directly to `_top`'s body for a fresh prompt.
+
+**EOF.** The user types Ctrl-D (or stdin is a pipe that ends).
+`accept` returns 0. `0-` sets ZF=1. UNTIL's `jne` does NOT fire.
+Execution falls through to `bye\``: flush, newline, `exit(0)`.
+
+### Why the cross-word loop?
+
+A natural question: why not put everything in one word? Lavarenne's
+design separates *concerns* across *definitions*:
+
+- **`_eval`** — knows only how to prepare `eval.`'s XT for `catch`.
+  Two instructions.
+- **`_exec`** — knows error handling and recovery. Does not know
+  about I/O or prompts.
+- **`_top`** — knows I/O: prompt, accept. Does not know about
+  error handling.
+
+The `START...UNTIL` loop binds them: `_exec` ends with `START _eval
+ENTER`, `_top` ends with `UNTIL`. In machine code this compiles to a
+single `jne` instruction that jumps from `_top` into the middle of
+`_exec`'s code — no call overhead, no extra return-stack frames, no
+loop counter. The REPL "loop" is literally one conditional jump.
+
+The `:^` trampoline on `_top` serves double duty: it's the ENTER
+landing pad (where `_exec`'s `START` forward-jumps after error
+recovery) AND the normal return point (where `_exec`'s `ret` goes
+after successful evaluation). One machine-code sequence serves both
+the error path and the happy path.
+
+### The `_back` algorithm
+
+`_back` finds and prints the source context around an error — the
+line being compiled when things went wrong. It uses the
+`BEGIN/WHILE/TILL/END` pattern (the pattern that prompted experiment
+150's loop fixes):
+
+```forth
+:. _back >in@ 1- dup
+  BEGIN tib <> drop WHILE
+    1- dupc@ 10- drop 0= TILL
+    1+ END
+  swap over- type ;
+```
+
+In English: start at `>in - 1` (one before the current parse position).
+Walk backward byte by byte. WHILE guards against going past `tib`
+(start of buffer). TILL exits when a newline (LF=10) is found.
+After the loop, `1+` skips past the newline, `swap over- type` prints
+from the line start to the original `>in` position.
+
+The machine code (annotated):
+
+```asm
+_back:
+  ; >in@ 1- dup — get parse position, back up one, duplicate
+  push NOS                       ; save NOS
+  mov  rdx, rbx                  ; dup: NOS = TOS
+  mov  rbx, [>in]                ; >in@ — current parse position
+  dec  rbx                       ; 1-
+  push NOS                       ; \  dup
+  mov  rdx, rbx                  ;  |
+
+.loop_test:                      ; BEGIN
+  ; tib <> drop — compare against tib start
+  push NOS                       ; push for comparison
+  mov  ebx, tib                  ; tib literal
+  cmp  rdx, rbx                  ; <> (non-consuming comparison, sets FLAGS)
+  drop                           ; drop tib (flags preserved!)
+  xchg rbx, rdx                  ; restore register state
+  jz   .done                     ; WHILE: exit if at tib start (ZF=1 → equal)
+
+  ; 1- dupc@ 10- drop — back up, read byte, test for LF
+  dec  rbx                       ; 1-
+  push NOS                       ; \  dupc@
+  movzx rdx, byte[rbx]          ;  |  (read byte at current position)
+  xchg rbx, rdx                 ;  /
+  sub  rbx, 10                   ; 10- (subtract LF value, sets ZF if was LF)
+  drop                           ; 0= — drop byte (flags preserved)
+  xchg rbx, rdx                 ; restore register state
+  jnz  .loop_test                ; TILL: jump back if NOT LF (ZF=0)
+
+  inc  rbx                       ; 1+ (skip past the LF we found)
+
+.done:                           ; END resolves WHILE's forward ref
+  sub  rdx, rbx                  ; swap over- (length = end - start)
+  xchg rbx, rdx                 ; ( addr length )
+  jmp  type                      ; type — print the line and return
+```
+
+This demonstrates every distinctive feature of FreeForth's flow
+control: WHILE guards the loop (forward jump on failure), TILL
+provides the backward jump (loop back when NOT done), END resolves
+WHILE's forward reference (no backward jump from END itself), and
+`drop` between the flag-setter (`10-`) and TILL is flags-preserving.
 

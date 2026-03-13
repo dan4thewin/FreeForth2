@@ -187,3 +187,6 @@ _feat boot
 _feat help
 _feat dynlink
 _feat segv
+
+:. linsetup dlsetup SEGVthrow ;
+linsetup ' ossetup !^

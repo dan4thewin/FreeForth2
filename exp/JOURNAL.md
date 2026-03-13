@@ -13020,3 +13020,95 @@ matching fflin64.boot. The i386 binary now reports
 - `make test` (4 configs): all PASSED
 - `make test64`: all PASSED (2 expected skips)
 - `make testexp`: all PASSED (1 expected skip)
+
+---
+
+## Experiment 150: Boot Alignment — Cross-Word REPL Coroutine
+
+### Goal
+
+Align the x86-64 boot sequence with Lavarenne's proven i386
+`_back/_eval/_exec/_top` coroutine REPL pattern, replacing the
+self-contained `_top` used since experiment 052.
+
+### Actions
+
+**1. Unified REPL coroutine section (ff2.boot lines 804–818)**
+
+Replaced the divergent i386/x86-64 boot sections with a single shared
+implementation using the cross-word `START...UNTIL` pattern:
+
+```forth
+:. _back >in@ 1- dup BEGIN tib <> drop WHILE 1- dupc@ 10- drop 0= TILL 1+ END
+   swap over- type ;
+:. _eval eval. '
+:. _exec catch 0;  _back ."_<-error:_" c@+ type cr  2drop
+  anon@ 0- 0= IF drop H@ dup@ swap h.sz+ c@+ + 1+ H! THEN
+  here - allot  0 SC c! anon:` 0<>`  START _eval ENTER
+:^ _top pvt ui 0 noauto! tib 4096 under accept 0- 0= UNTIL
+: bye` ;` cr 0 exit ;
+```
+
+`_exec` and `_top` share a single machine-code loop: `_exec`'s
+`START _eval ENTER` marks the backward-jump target and emits a
+forward reference, `_top`'s `UNTIL` emits the backward jump.
+The result is one `jne` instruction crossing the word boundary.
+
+**2. Discovered and fixed compile-time stack leak in END and UNTIL**
+
+During testing, `_back` (which uses `BEGIN/WHILE/TILL/END`) caused
+a compile-time stack leak. Root cause: ff64's `END` and `UNTIL` were
+missing `_resolve_fwds` — the call that consumes forward-reference
+addresses pushed by WHILE/CASE/BREAK. REPEAT already had it; END
+and UNTIL did not. ff.help line 1243 confirmed that END and UNTIL
+must resolve forward references.
+
+Fixed by adding `_resolve_fwds` before `_end_cs drop` in both
+END (line 435) and UNTIL (line 434) of ff2.boot.
+
+**3. Added Group W loop tests (loops.ff tests 92–96)**
+
+Five new tests exercising BEGIN/WHILE patterns:
+
+- _w1: `BEGIN/WHILE/REPEAT` countdown → 5
+- _w2: `BEGIN/WHILE/TILL/END` find-in-list → 8
+- _w3: `BEGIN/WHILE/TILL/END` miss → 0
+- _w4: `BEGIN/WHILE/UNTIL` → 3
+- _w5: `BEGIN/WHILE/TILL/END` early exit → 3
+
+Key discovery: `BEGIN/WHILE/END` without TILL, AGAIN, or UNTIL has
+NO backward jump — the body executes at most once. Tests validated
+on both i386 and x86-64 to confirm identical behavior.
+
+**4. Fixed supporting issues**
+
+- i386 `_hidepvt` doesn't exist (assembly on x86-64 only) — i386
+  needs `hidepvt\`` instead.
+- Added `linsetup` to fflin64.boot for Linux-specific initialization
+  that runs before `_postboot`.
+- Fixed `needs` breakage after boot alignment.
+
+### Reasoning
+
+The self-contained `_top` worked but violated Lavarenne's separation
+of concerns: `_exec` handles errors, `_top` handles I/O, `_eval`
+is the bridge. The cross-word loop eliminates redundancy and makes
+both architectures share identical boot code through ff2.boot's
+conditional compilation.
+
+The END/UNTIL stack leak was a latent bug — only exposed when _back's
+`BEGIN/WHILE/TILL/END` pattern appeared in the boot section. It
+demonstrates why every flow-control pattern needs a test: the leak
+was invisible because no prior code used END or UNTIL with preceding
+WHILE.
+
+### Guide
+
+Part 40 added to GUIDE.md: a full annotated walkthrough from `_boot`
+through the REPL loop through `bye`, with machine code disassembly.
+Part 32 updated with note that it's superseded by Part 40.
+
+### Test results
+
+- loops.ff: 96/96 PASSED (5 new tests)
+- `make testall`: 115 PASSED, 6 SKIPPED, 0 FAILED

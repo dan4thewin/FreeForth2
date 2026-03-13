@@ -431,8 +431,8 @@ variable mrk 0 mrk 8+ !
 : TILL` >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
 : AGAIN` _jmpback_mrk 0- 0<> IF THEN` ELSE _end_cs drop THEN ;
 : UNTIL.` cond.
-: UNTIL` _cjmpback_mrk _end_cs drop ;
-: END` >S0 _end_cs drop ;
+: UNTIL` _cjmpback_mrk _resolve_fwds _end_cs drop ;
+: END` >S0 _resolve_fwds _end_cs drop ;
 : REPEAT` _jmpback_mrk _resolve_fwds _end_cs 0- 0<> drop IF rdrop` THEN ;
 [ELSE]
 : align` $90909090, here negate 3& allot ;
@@ -800,39 +800,18 @@ xhidepvt` ' alias hidepvt`
 ( Like eval but calls _auto to execute the compiled code )
 :. eval. >in@ tp@ 2>r over+ tp! >in! compiler _auto 2r> tp! >in! ;
 
-( System words )
-: bye` ;` cr 0 exit ;
 
-[64] [IF]
-( Error recovery: show location, print message, restore dict/code state )
-( saved_here holds the compilation pointer before each eval., for error recovery )
-variable saved_here pvt
-:. _recover tib >in@ over - type ."_<-error:_" c@+ type cr 2drop
-  anon@ 0- 0= drop IF H@ dup @ swap h.sz+ c@ h.nm+ 1+ + H! THEN
-  saved_here@ here swap - allot 0 SC c! anon:` ;
-( Forth REPL: prompt, read, eval with catch, error recovery, loop )
-( accept buffer is 80 bytes — adequate for line-at-a-time terminal input )
-:^ _top pvt BEGIN
-  ui 0 noauto!
-  tib 4096 accept dup 0- 0= drop IF drop 0 exit THEN
-  here saved_here! tib swap eval. ' catch dup 0- 0<> drop IF _recover ELSE drop THEN
-AGAIN
-( doargv — evaluate command line arguments as FreeForth words )
-:. doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap eval. ;
-fflin64.boot
-:. _boot ossetup _postboot _top ;
-_boot ;
-[ELSE]
+( REPL coroutine — _exec/_top form cross-word START...UNTIL loop )
+( bye must follow _top: UNTIL falls through to bye on EOF )
 :. _back >in@ 1- dup BEGIN tib <> drop WHILE 1- dupc@ 10- drop 0= TILL 1+ END
    swap over- type ;
 :. _eval eval. '
 :. _exec catch 0;  _back ."_<-error:_" c@+ type cr  2drop
   anon@ 0- 0= IF drop H@ dup@ swap h.sz+ c@+ + 1+ H! THEN
   here - allot  0 SC c! anon:` 0<>`  START _eval ENTER
-:^ _top pvt ui 0 noauto! tib 1024 under accept 0- 0= UNTIL 0 exit
+:^ _top pvt ui 0 noauto! tib 4096 under accept 0- 0= UNTIL
+: bye` ;` cr 0 exit ;
 :^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap _eval ;
-:^ _postboot doargv hidepvt` ;
+[64] [IF] fflin64.boot [ELSE] fflin.boot [THEN]
 :. _boot ossetup _postboot _top ;
-_boot ' _bootxt! ;
-fflin.boot
-[THEN]
+_boot ' _bootxt! _boot ' >r ;
