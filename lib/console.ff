@@ -1,13 +1,13 @@
-( console.ff — terminal and console display control )
+\ console.ff — terminal and console display control
 needs fileops.ff
 
-( --- cursor and display control --- )
+\ cursor and display control
 : cls` ."^[[2J" ( -- )
 : home 0 dup ( -- )
 : atxy ."^[[" 1+ .dec\ .";" 1+ .dec\ ."H" ; ( col row -- )
 : atx  ."^[[" 1+ .dec\ ."G" ; ( col -- )
 
-( --- color and attributes --- )
+\ color and attributes
 :^ color ."^[[" .dec\ ."m" ; ( n -- )
 :. _nocolor drop ;
 : nocolor _nocolor ' color !^ ;
@@ -17,7 +17,7 @@ needs fileops.ff
 0 constant black  1 constant red      2 constant green  3 constant yellow
 4 constant blue   5 constant magenta  6 constant cyan   7 constant white
 
-( --- terminal input --- )
+\ terminal input
 variable _fdset pvt 0 , 0 ,
 : key? stdin ( -- ; zFALSE if stdin would block )
 : fdin? 1 swap << _fdset! _fdset cell + 0 0 _fdset $20 select dup ?ior 0- drop ; ( fd -- )

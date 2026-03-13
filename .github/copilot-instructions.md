@@ -96,6 +96,10 @@ Before writing or debugging Forth code:
   covers all words including libs, OS, FPU, networking, etc.
 - Only fall back to `ff.help` / `ff64.help` when you need the detailed
   prose explanation.
+- **`STYLE.md`** — coding style guide.  Two styles: Lavarenne's
+  (dense, no blank lines, fall-through chains) for boot files and
+  his libs; DG's (tab-aligned, header blocks, descriptive names) for
+  new libraries and ports.  Check the file mapping before editing.
 
 ## Debugging generated code
 

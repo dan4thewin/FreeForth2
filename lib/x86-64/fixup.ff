@@ -1,32 +1,21 @@
-( fixup.ff — self-patching first-call resolution for libc symbols )
-( fixup — self-patching libc resolution for x86-64. )
-( DG's mechanism; Lavarenne's i386 used libc. with direct dlsym. )
-(
-  i386 fixup replaces a 5-byte "call _xxx" with "mov ebx,funh" [BB imm32].
-  On x86-64, function handles are 64-bit, so we can't fit in 5 bytes.
-  Instead, fixup writes an 11-byte trampoline to a pre-allocated buffer:
-    movabs rbx, funh   [48 BB <8 bytes>]  = 10 bytes
-    ret                 [C3]              = 1 byte
-  Then patches the 5-byte call's relative offset to point to the trampoline.
-  On subsequent calls, the patched call goes directly to the trampoline,
-  which loads the function handle and returns — no resolution overhead.
-
-  IMPORTANT: Trampolines are NOT written at here [rbp] because during
-  anonymous block execution, here points to the executing code itself
-  [_semi_exec resets rbp]. Writing there would overwrite running code.
-  Instead, _fixbuf provides dedicated executable memory for trampolines.
-
-  x86-64 difference from i386: fixup relies on tail-call optimization
-  [E8->E9] so it is JMP'd to, not called — no extra return address on R.
-  i386 has rdrop because fixup there is called [E8], not jumped to.
-
-  IMPORTANT: The hidden definition MUST end with explicit semicolon:
-    :. _xxx "symbol" fixup ;
-  Without the ;, _colon does not terminate the previous named def, so
-  tail-call optimization never triggers and fixup patches the wrong call.
-  In the REPL, _auto implicitly adds ; at end of line, masking this.
-  In loadfile [-f], no _auto runs — the ; must be explicit.
-)
+\ fixup.ff — self-patching first-call resolution for libc symbols
+\ DG's mechanism; Lavarenne's i386 used libc. with direct dlsym.
+\
+\ i386 fixup replaces a 5-byte "call _xxx" with BB(mov ebx,imm32).
+\ x86-64 handles are 64-bit, so we write an 11-byte trampoline:
+\   48BB<8>(movabs rbx,funh) C3(ret)
+\ Then patch the call's relative offset to point to the trampoline.
+\
+\ Trampolines go in _fixbuf, not at here (rbp) — during anonymous
+\ block execution, here points to the executing code itself.
+\
+\ x86-64 fixup relies on tail-call optimization (E8->E9) so it is
+\ JMP'd to, not called. i386 has rdrop because fixup is called (E8).
+\
+\ IMPORTANT: the hidden definition MUST end with explicit semicolon:
+\   :. _xxx "symbol" fixup ;
+\ Without ;, _colon doesn't terminate the previous def, so tail-call
+\ optimization never triggers and fixup patches the wrong call.
 variable _fixbuf pvt 1024 allot
 variable _fixptr pvt
 _fixbuf _fixptr! ;

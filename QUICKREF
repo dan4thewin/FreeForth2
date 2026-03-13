@@ -51,8 +51,8 @@ r`		( -- x | x == x )		copy return stack top (no pop)
 2r`		( -- x y | x y == x y )		copy top two return cells (no pop)
 rdrop`		( -- | x == )			discard return stack top
 2rdrop`		( -- | x y == )			discard top two return cells
->>r`		( xn..x1 n -- | == xn..x1)	move n cells to return stack
->>rr`		( xn..x1 n -- | == x1..xn)	move n cells, reversed order
+>>r`		( xn..x1 n -- | == x1..xn)	move n cells to return stack
+>>rr`		( xn..x1 n -- | == xn..x1)	move n cells, reversed order
 -r`		( n -- | == ?n..?1 )		reserve n cells on return stack
 +r`		( n -- | xn..x1 == )		drop n return stack cells
 xxr`		( n -- | xn..x1 == )		alias for +r`

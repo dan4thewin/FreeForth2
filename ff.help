@@ -299,8 +299,8 @@ rdrop` ( -- | x == ) pops the CALLstack top cell, which is lost
 
 locals are a set of words allowing direct access to the top 6 cells of the
   CALLstack and two ways to shift values from the DATAstack to the Callstack.
->>r`  ( xn..x1 n -- | == xn..x1 ) repeatedly pop DATAstack, push to CALLstack
->>rr` ( xn..x1 n -- | == x1..xn ) repeatedly pop DATAstack, push to CALLstack
+>>r`  ( xn..x1 n -- | == x1..xn ) repeatedly pop DATAstack, push to CALLstack
+>>rr` ( xn..x1 n -- | == xn..x1 ) repeatedly pop DATAstack, push to CALLstack
 -r` ( n -- | == ?n..?1 ) reserves n uninitialized cells on CALLstack
 +r` ( n -- | xn..x1 == ) pops the CALLstack top n cells, which are lost
 xxr` ( n -- | xn..x1 == ) alias for +r`

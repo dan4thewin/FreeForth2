@@ -1,86 +1,85 @@
-( ff64.boot — FreeForth2 x86-64 boot source )
-( Provides standard Forth words using ff64 built-in primitives )
+\ ff2.boot  FreeForth2 unified boot (i386 + x86-64)
+\ backtick macros: "dup" in source compiles via dup` defined here
 
-( Inline code generators — Forth-defined macros using litcomma )
-( The compiler's backtick name mangling finds these when the user )
-( writes "dup", "drop", etc. during compilation. )
-(                                                               )
-( x86-64 opcodes [REX.W = $48]:                                )
-(   lea r15,[r15-8]  = 4D 8D 7F F8  push-NOS: allocate slot    )
-(   lea r15,[r15+8]  = 4D 8D 7F 08  pop-NOS: release slot      )
-(   mov [r15],rdx    = 49 89 17     store NOS to data stack     )
-(   mov rdx,[r15]    = 49 8B 17     load NOS from data stack    )
-(   mov rdx,rbx      = 48 89 DA     copy TOS to NOS            )
+\ --------------------------------------------------------------------
+\ inline code generators
+\ x86-64 opcodes [REX.W = $48]:
+\   4D8D7FF8(lea r15,[r15-8])  push-NOS: allocate slot
+\   4D8D7F08(lea r15,[r15+8])  pop-NOS: release slot
+\   498917(mov [r15],rdx)      store NOS to data stack
+\   498B17(mov rdx,[r15])      load NOS from data stack
+\   4889DA(mov rdx,rbx)        copy TOS to NOS
 \ NB. comments in the file are stripped by ffpp
 
-\ Core stack macros (swap` is an assembly primitive)
+\ core stack macros (swap` is an assembly primitive)
 [64] [IF]
-: under` $F87F8D4D, ,4 $49, ,1 $1789, s08 ;
+: under` $F87F8D4D, ,4 $49, ,1 $1789, s08 ; \ 4D8D7FF8(lea r15,[r15-8])498917(mov [r15],rdx)
 : over` under` swap` ;
-: nip` $49, ,1 $178B, s08 $087F8D4D, ,4 ;
+: nip` $49, ,1 $178B, s08 $087F8D4D, ,4 ; \ 498B17(mov rdx,[r15])4D8D7F08(lea r15,[r15+8])
 : drop` swap` nip` ;
 
-: allot` $48, ,1 $DD01, s08 drop` ;
-\ Compilation emit: store value at [rbp] and advance rbp
-\ c,` ( n -- ): store byte at [rbp], advance rbp by 1
-: c,` $5D88, s08 $00, ,1 $C5FF48, ,3 drop` ;
-\ w,` ( n -- ): store 16-bit word, advance 2
-: w,` $66, ,1 $5D89, s08 $00, ,1 $02C58348, ,4 drop` ;
-\ d,` ( n -- ): store 32-bit dword, advance 4
-: d,` $5D89, s08 $00, ,1 $04C58348, ,4 drop` ;
-\ ,`  ( n -- ): store 64-bit cell, advance 8
-: ,`  $48, ,1 $5D89, s08 $00, ,1 $086D8D48, ,4 drop` ;
+: allot` $48, ,1 $DD01, s08 drop` ; \ 4801DD(add rbp,rbx)
+: c,` $5D88, s08 $00, ,1 $C5FF48, ,3 drop` ; \ 885D00(mov [rbp],bl)48FFC5(inc rbp)
+: w,` $66, ,1 $5D89, s08 $00, ,1 $02C58348, ,4 drop` ; \ 66895D00(mov [rbp],bx)4883C502(add rbp,2)
+: d,` $5D89, s08 $00, ,1 $04C58348, ,4 drop` ; \ 895D00(mov [rbp],ebx)4883C504(add rbp,4)
+: ,`  $48, ,1 $5D89, s08 $00, ,1 $086D8D48, ,4 drop` ; \ 48895D00(mov [rbp],rbx)488D6D08(lea rbp,[rbp+8])
 
-\ r@ inline: mov rbx,[rsp] = 48 8B 1C 24
-\ 2r@ inline: read [rsp+8] then fall through to r`
+\ r@: 488B1C24(mov rbx,[rsp])
+\ 2r@: 488B5C2408(mov rbx,[rsp+8]) then fall through to r`
 : 2r` over` $48, ,1 $5C8B, s08 $24, ,1 $08, ,1
 : r`  over` $48, ,1 $1C8B, s08 $24, ,1 ;
-\ Return stack inline macros
-: rdrop` $48, ,1 $C483, ,2 $08, ,1 ;
-: 2rdrop` $48, ,1 $C483, ,2 $10, ,1 ;
+\ return stack inline macros
+: rdrop` $48, ,1 $C483, ,2 $08, ,1 ; \ 4883C408(add rsp,8)
+: 2rdrop` $48, ,1 $C483, ,2 $10, ,1 ; \ 4883C410(add rsp,16)
 
-\ Rotation via xchg [r15],reg
+\ rotation via xchg [r15],reg
 : -rot` swap`
-: >rswapr>` $49, ,1 $1787, s08 ;
+: >rswapr>` $49, ,1 $1787, s08 ; \ 498717(xchg [r15],rdx)
 
-( I/O — stdout, write, type needed before dictionary listing )
+\ --------------------------------------------------------------------
+\ I/O -- stdout, write, type needed before dictionary listing
 : write ( addr # fd -- n ) >rswapr> 3 1 syscall ;
 : type 1 write drop ;
 
-\ Division — >S0 forces rbx=TOS, rdx=NOS before hardcoded register ops
-\ /%` ( a b -- a%b a/b ): mov rax,rdx; cqo; idiv rbx; mov rbx,rax
+\ division -- >S0 forces rbx=TOS, rdx=NOS before hardcoded register ops
+\ /%` ( a b -- a%b a/b )
+\ 4889D0(mov rax,rdx)4899(cqo)48F7FB(idiv rbx)4889C3(mov rbx,rax)
 : /%` >S0 $48D08948, ,4 $FBF74899, ,4 $C38948, ,3 ;
 
-\ Unary ops
-: 1-` $48, ,1 $CBFF, s01 ;
-: 1+` $48, ,1 $C3FF, s01 ;
-: 4+` $48, ,1 $C383, s01 $04, ,1 ;
-: 8+` : cell+` $48, ,1 $C383, s01 $08, ,1 ;
-: 2*` $48, ,1 $E3D1, s01 ;
-: 2/` $48, ,1 $FBD1, s01 ;
-: 4*` $48, ,1 $E3C1, s01 $02, ,1 ;
-: 8*` : cell*` $48, ,1 $E3C1, s01 $03, ,1 ;
-: 4/` $48, ,1 $FBC1, s01 $02, ,1 ;
-: 8/` $48, ,1 $FBC1, s01 $03, ,1 ;
-: <<` $48, ,1 $D989, s08 $48, ,1 $E2D3, s01 drop` ;
-: >>` $48, ,1 $D989, s08 $48, ,1 $EAD3, s01 drop` ;
+\ unary ops
+: 1-` $48, ,1 $CBFF, s01 ; \ 48FFCB(dec rbx)
+: 1+` $48, ,1 $C3FF, s01 ; \ 48FFC3(inc rbx)
+: 4+` $48, ,1 $C383, s01 $04, ,1 ; \ 4883C304(add rbx,4)
+: 8+` : cell+` $48, ,1 $C383, s01 $08, ,1 ; \ 4883C308(add rbx,8)
+: 2*` $48, ,1 $E3D1, s01 ; \ 48D1E3(shl rbx,1)
+: 2/` $48, ,1 $FBD1, s01 ; \ 48D1FB(sar rbx,1)
+: 4*` $48, ,1 $E3C1, s01 $02, ,1 ; \ 48C1E302(shl rbx,2)
+: 8*` : cell*` $48, ,1 $E3C1, s01 $03, ,1 ; \ 48C1E303(shl rbx,3)
+: 4/` $48, ,1 $FBC1, s01 $02, ,1 ; \ 48C1FB02(sar rbx,2)
+: 8/` $48, ,1 $FBC1, s01 $03, ,1 ; \ 48C1FB03(sar rbx,3)
+: <<` $48, ,1 $D989, s08 $48, ,1 $E2D3, s01 drop` ; \ 4889D9(mov rcx,rbx)48D3E2(shl rdx,cl)
+: >>` $48, ,1 $D989, s08 $48, ,1 $EAD3, s01 drop` ; \ 4889D9(mov rcx,rbx)48D3EA(shr rdx,cl)
 
-: d@` $48, ,1 $1B63, s09 ;
+: d@` $48, ,1 $1B63, s09 ; \ 48631B(movsxd rbx,[rbx])
 
-\ String/memory copy (rep movsb)
-\ place` ( src count dest -- dest ): >S0 forces rbx=dest, rdx=count
+\ string/memory copy (rep movsb)
+\ place` ( src count dest -- dest )
+\ 4889DF(mov rdi,rbx)4889D1(mov rcx,rdx)498B37(mov rsi,[r15])
+\ 498B5708(mov rdx,[r15+8])4983C710(add r15,16)F3A4(rep movsb)
 : place` >S0
     $DF8948, ,3 $D18948, ,3 $378B49, ,3
     $08578B49, ,4 $10C78349, ,4 $A4F3, ,2 ;
 
-\ 32-bit (dword) store — for patching jump offsets
-: 2dupd!` $1389, s09 ;
+\ 32-bit (dword) store -- for patching jump offsets
+: 2dupd!` $1389, s09 ; \ 8913(mov [ebx],edx) 32-bit store
 : overd!` swap` : tuckd!` 2dupd!` nip` ; : d!` tuckd!` drop` ;
 
+\ 3dup` ( a b c -- a b c a b c ) over` over` then copy 3rd item:
+\ 4D8D7FF8(lea r15,[r15-8])498B4718(mov rax,[r15+24])498907(mov [r15],rax)
 : 3dup` over` over` $F87F8D4D, ,4 $18478B49, ,4 $078949, ,3 ;
 
 : >C0 ; : >C1 ; \ no CALLbit in x86-64
-: ext $48, ,1 ;
+: ext $48, ,1 ; \ REX.W prefix
 [ELSE]
 : allot` $DD01, s08 drop` ;
 : ,3` $036D8D, ,"^M~m^C" ;
@@ -116,58 +115,56 @@
 : 3dup` over` over` $082474FF, ,4 ;
 : ext ;
 [THEN]
-( dup` falls through to nipdup` — Lavarenne's key insight: )
-( dup = allocate NOS slot + store TOS there + copy TOS to NOS )
-( The "copy TOS to NOS" part IS nipdup, so dup shares its code. )
+\ dup` falls through to nipdup` -- dup = under + nipdup
 : dup` under`
-: nipdup` ext $DA89, s09 ;
+: nipdup` ext $DA89, s09 ; \ 4889DA(mov rdx,rbx)
 : tuck` swap` over` ;
 : r>` over`
-: dropr>` >C0 $5B, s1 ;
-: dup>r`  >C0 $53, s1 ;
+: dropr>` >C0 $5B, s1 ; \ 5B(pop rbx)
+: dup>r`  >C0 $53, s1 ; \ 53(push rbx)
 : >r` dup>r` drop` ;
 : rot` >rswapr>` swap` ;
 : 2xchg` swap` >rswapr>` swap` ;
 
-\ Compilation helpers
-: here` over` ext $EB89, s01 ;
+\ compilation helpers
+: here` over` ext $EB89, s01 ; \ 4889EB(mov rbx,rbp)
 
-: ~`      ext $D3F7, s01 ;
-: negate` ext $DBF7, s01 ;
-: bswap`  ext $CB0F, s01 ;
-: flip`       $FB86, s09 ;
-\ Binary arithmetic — "over" variants preserve NOS
-: over&` ext $D321, s09 ;
-: over|` ext $D309, s09 ;
-: over^` ext $D331, s09 ;
-: over+` ext $D301, s09 ;
-: over-` ext $D329, s09 ;
+: ~`      ext $D3F7, s01 ; \ 48F7D3(not rbx)
+: negate` ext $DBF7, s01 ; \ 48F7DB(neg rbx)
+: bswap`  ext $CB0F, s01 ; \ 480FCB(bswap rbx)
+: flip`       $FB86, s09 ; \ 86FB(xchg bh,bl)
+\ binary arithmetic -- "over" variants preserve NOS
+: over&` ext $D321, s09 ; \ 4821D3(and rbx,rdx)
+: over|` ext $D309, s09 ; \ 4809D3(or rbx,rdx)
+: over^` ext $D331, s09 ; \ 4831D3(xor rbx,rdx)
+: over+` ext $D301, s09 ; \ 4801D3(add rbx,rdx)
+: over-` ext $D329, s09 ; \ 4829D3(sub rbx,rdx)
 \ : over*` ext $0F, ,1 $DAAF, s09 ;
-: over*` ext $DAAF0F, ,1 s09 ;
+: over*` ext $DAAF0F, ,1 s09 ; \ 480FAFDA(imul rbx,rdx)
 
-\ Memory load
-: @` ext [32] [IF] : d@` [THEN] $1B8B, s09 ;
-: c@` ext $1BB60F, ,1 s09 ;
-: cs@` ext $1BBE0F, ,1 s09 ;
-: w@` $1BB70F, ,1 s09 ;
-: ws@` ext $1BBF0F, ,1 s09 ;
-\ Fetch preserving address: dup@` = over` + fetch through NOS
-: dup@`  over` ext $1A8B, s09 ;
-: dupc@` over` ext $1AB60F, ,1 s09 ;
-: dupw@` over` $1AB70F, ,1 s09 ;
+\ memory load
+: @` ext [32] [IF] : d@` [THEN] $1B8B, s09 ; \ 488B1B(mov rbx,[rbx])
+: c@` ext $1BB60F, ,1 s09 ; \ 480FB61B(movzx rbx,byte[rbx])
+: cs@` ext $1BBE0F, ,1 s09 ; \ 480FBE1B(movsx rbx,byte[rbx])
+: w@` $1BB70F, ,1 s09 ; \ 0FB71B(movzx rbx,word[rbx])
+: ws@` ext $1BBF0F, ,1 s09 ; \ 480FBF1B(movsx rbx,word[rbx])
+\ fetch preserving address: dup@` = over` + fetch through NOS
+: dup@`  over` ext $1A8B, s09 ; \ 488B1A(mov rbx,[rdx])
+: dupc@` over` ext $1AB60F, ,1 s09 ; \ 480FB61A(movzx rbx,byte[rdx])
+: dupw@` over` $1AB70F, ,1 s09 ; \ 0FB71A(movzx rbx,word[rdx])
 
-\ Memory store (2dup variants preserve both operands)
-( 2dupw!` can't fall through to 2dup!` — REX.W overrides the $66 prefix )
-: 2dupw!` $66, ,1 $1389, s09 ;
-: 2dup!` ext $1389, s09 ;
-: 2dupc!` $1388, s09 ;
-: 2dup+!` ext $1301, s09 ;
-: 2dup-!` ext $1329, s09 ;
+\ memory store (2dup variants preserve both operands)
+\ 2dupw!` can't fall through -- REX.W overrides the $66 prefix
+: 2dupw!` $66, ,1 $1389, s09 ; \ 668913(mov [ebx],dx) 16-bit store
+: 2dup!` ext $1389, s09 ; \ 488913(mov [rbx],rdx)
+: 2dupc!` $1388, s09 ; \ 8813(mov [rbx],dl)
+: 2dup+!` ext $1301, s09 ; \ 480113(add [rbx],rdx)
+: 2dup-!` ext $1329, s09 ; \ 482913(sub [rbx],rdx)
 
 : 2+` 1+` 1+` ;
 : cmove` swap` place` drop` ;
 
-\ Consuming binary ops
+\ consuming binary ops
 : &` over&` nip` ;
 : |` over|` nip` ;
 : ^` over^` nip` ;
@@ -178,52 +175,47 @@
 : %` /%` drop` ;
 : 2dup+` over` over+` ;
 
-\ Consuming store ops — Lavarenne's fall-through triads:
-\ over!` falls through to tuck!` (just adds swap` prefix)
-\ tuck!` falls through to !` (emits 2dup! + nip + drop in layers)
+\ consuming store ops -- fall-through triads (over! -> tuck! -> !)
 : over!`  swap` : tuck!`  2dup!`  nip` ; : !`  tuck!`  drop` ;
 : overw!` swap` : tuckw!` 2dupw!` nip` ; : w!` tuckw!` drop` ;
 : overc!` swap` : tuckc!` 2dupc!` nip` ; : c!` tuckc!` drop` ;
 : over+!` swap` : tuck+!` 2dup+!` nip` ; : +!` tuck+!` drop` ;
 : over-!` swap` : tuck-!` 2dup-!` nip` ; : -!` tuck-!` drop` ;
 
-\ Fetch and advance (address on stack, returns value and advanced addr)
+\ fetch and advance
 : @+`  dup@`  swap` cell+` swap` ;
 : w@+` dupw@` swap` 2+` swap` ;
 : c@+` dupc@` swap` 1+` swap` ;
 
-\ Double-cell fetch/store
+\ double-cell fetch/store
 : 2@` @+` swap` @` swap` ;
 : 2!` tuck!` cell+` !` ;
 
-\ Compile literal: lit` takes value from TOS, emits push code
-\ off`/on` use lit` to compile 0/-1 then store
+\ compile literal: lit` takes value from TOS, emits push code
 : off` 0 lit` swap` !` ;
 : on` -1 lit` swap` !` ;
 
-\ Composed operations
+\ composed operations
 : 2dup` over` over` ;
 : 2r>` 2dup` dropr>` swap` dropr>` swap` ;
 : 2dup>r` swap` dup>r` swap` dup>r` ;
-( 2>r` falls through to 2drop` — push both then discard both. )
+\ 2>r` falls through to 2drop` -- push both then discard both
 : 2>r` 2dup>r`
 : 2drop` drop` drop` ;
 : 2swap` rot` >r` rot` r>` ;
 
-( Dictionary defining words )
+\ --------------------------------------------------------------------
+\ dictionary defining words
 : ct|! h.ct+ dupc@ rot | swap c! ;
 : create` :` 1 H@ ct|! anon:` ;
 : variable` create` 0 , anon:` ;
-( alias` falls through to _alias — :` creates the header, )
-( then _alias stores the value, sets the constant flag, and closes. )
+\ alias` falls through to _alias
 : alias` :`
 : _alias H@ ! $20 H@ ct|! anon:` ;
-( constant` reuses _alias: create` makes a ct=1 header, then _alias )
-( overwrites the xt with the value and adds the $20 alias flag. )
 \ equ shorter, and more usual for assembly programmers
 : constant` : equ` create` _alias ;
 
-( Private word infrastructure )
+\ private word infrastructure
 8   constant CT_PVT
 $10 constant CT_MGN
 $20 constant CT_ALIAS
@@ -231,10 +223,11 @@ $20 constant CT_ALIAS
 : pvt` CT_PVT H@ ct|! ;
 : pvtmargin CT_MGN H@ ct|! ;
 
-\ Extended arithmetic
+\ extended arithmetic
 [64] [IF]
-\ helpers — parameterized via w, for the mul/div opcode
+\ _m/mod: 498B07(mov rax,[r15])4983C708(add r15,8) 48 w, 4889C3(mov rbx,rax)
 :. _m/mod >S0 $078B49, ,3 $08C78349, ,4 $48, ,1 w, $C38948, ,3 ;
+\ _m*: 4889D0(mov rax,rdx) 48 w, 4889D3(mov rbx,rdx)4889C2(mov rdx,rax)
 :. _m* >S0 $D08948, ,3 $48, ,1 w, $D38948, ,3 $C28948, ,3 ;
 [ELSE]
 :. _m/mod >S0 >C1 $240487, ,3 w, $58C389, ,3 ;
@@ -248,73 +241,54 @@ $20 constant CT_ALIAS
 : */mod` >r` m*` r>` m/mod` ;
 : */` */mod` nip` ;
 
-( Bracket state switching )
-( [/] — run an anonymous block while compiling a word )
-( [ saves anon and SC state, starts a new anonymous block )
-( ] saves the block via ;, then restores original anon/SC via _] )
-( ]` falls through to _] — 2>r saves SC byte + anon, ;` closes the )
-( bracket block, 2r> recovers the saved state, _] restores it. )
+\ --------------------------------------------------------------------
+\ bracket state switching
+\ [ saves anon/SC state; ] restores via _]
 : [` anon@ SC c@ anon:` ;
 : ]` 2>r ;` 2r> :. _] SC c! anon! ;
 : execute >r ;
-\ reverse` pops return address and calls it
-: reverse` $D1FF59, ,3 ;
+: reverse` $D1FF59, ,3 ; \ 59(pop rcx)FFD1(call rcx)
 
-( noauto — variable controlling auto-semicolon in REPL )
-( When 0, typed lines auto-execute via _auto calling ; )
+\ noauto -- controls auto-semicolon in REPL
 variable noauto pvt
 : \` 2 >in -! lnparse 2drop 1 noauto! ;
 : (` ')' parse 2drop ;
 : EOF` tp@ >in! ;` ;
 
-( FLAGS-based conditionals — from ff.boot )
-( 0-` emits test TOS,TOS. i386: 09 DB [or ebx,ebx]. x64: 48 85 DB )
-( [test rbx,rbx] with REX.W prefix. SWAPbit via s09 handles register )
-( alternation — the actual register tested depends on current SB state. )
+\ --------------------------------------------------------------------
+\ FLAGS-based conditionals
+\ 0-` emits test TOS,TOS; SWAPbit via s09
 [64] [IF]
-: 0-` ext $DB85, s09 ;
+: 0-` ext $DB85, s09 ; \ 4885DB(test rbx,rbx)
 [ELSE]
 variable ?#
-: 0-` $DB09, s09 ;
+: 0-` $DB09, s09 ; \ 09DB(or ebx,ebx)
 [THEN]
-( FLAGS helpers — set FLAGS from known values )
+\ helpers -- set FLAGS from known values
 : zFALSE 0 0- drop ;
 : nzTRUE 1 0- drop ;
-( helpers: _?1 unary _?2 binary _?1. unary dotted ?2. binary dotted )
-( _?1 stores a Jcc opcode byte in the ?# variable. When IF`/WHILE`/etc )
-( later read ?#, they emit a conditional jump using this opcode. )
-( _?2 calls _?1 )
+\ _?1 unary, _?2 binary, _?1. unary dotted, _?2. binary dotted
 :. _?1 ?# c! ;
-( Dotted condition helpers — _?1./_?2. produce a Forth boolean [-1/0] )
-( directly in a register, instead of setting ?#. Used by 0=.` <.` etc. )
-( _?1a.: xor ecx,ecx — zero rcx [32-bit xor zero-extends on x86-64] )
-:. _?1a. $C931, ,2 ;
-( _?1b.: emit SETcc cl / dec rcx / mov rbx,rcx [with SWAPbit] )
-( 1^ inverts Jcc; $20+ converts Jcc [$7x] to SETcc [$9x]; 8<< positions )
-( in dword. i386 uses $49 [single-byte dec ecx]; x64 needs $48 FF C9 )
-( [REX.W dec rcx]. )
+\ _?1./_?2. produce a Forth boolean [-1/0] in a register
+:. _?1a. $C931, ,2 ; \ 31C9(xor ecx,ecx)
+\ SETcc cl / dec rcx / mov rbx,rcx [with SWAPbit]
+\ 1^ inverts Jcc; $20+ converts Jcc to SETcc; 8<< positions in dword
 :. _?1b. 1^ $20+ 8 <<
    [64] [IF] $48C1000F| d, $C9FF48, ,3 [ELSE] $49C1000F| , [THEN]
    $CB89, ,1 s1 ;
-( _?1.: unary dotted — xor ecx, test TOS, SETcc+dec+mov )
 :. _?1. _?1a. 0-` _?1b. ;
-( _?2: binary condition — store Jcc + emit cmp rdx,rbx )
-( i386: $DA39, — 39 DA [cmp edx,ebx]. x64: 48 39 DA with REX.W. )
-:. _?2 _?1 ext $DA39, s09 ;
-( _?2.: binary dotted — xor ecx, cmp, SETcc+dec+mov, nip )
+\ _?2: store Jcc + emit cmp rdx,rbx
+:. _?2 _?1 ext $DA39, s09 ; \ 4839DA(cmp rdx,rbx)
 :. _?2. _?1a. ext $DA39, s09 _?1b. nip` ;
-( Condition code factory: each line defines up to 4 words from one Jcc )
-( opcode. dup shares the opcode between consecutive definitions. )
-( The ; after each definition executes the anonymous body, consuming )
-( one copy of the opcode — so each dup feeds exactly two definitions. )
+\ condition code factory -- dup shares Jcc opcode between definitions
+\ ; after each def executes the anon body, consuming one copy
 $74 dup : 0=`  lit _?1 ; dup : 0=.`  lit _?1. ; dup : =`  lit _?2 ; : =.`  lit _?2. ;
 $75 dup : 0<>` lit _?1 ; dup : 0<>.` lit _?1. ; dup : <>` lit _?2 ; : <>.` lit _?2. ;
 $7C dup : 0<`  lit _?1 ; dup : 0<.`  lit _?1. ; dup : <`  lit _?2 ; : <.`  lit _?2. ;
 $7D dup : 0>=` lit _?1 ; dup : 0>=.` lit _?1. ; dup : >=` lit _?2 ; : >=.` lit _?2. ;
 $7E dup : 0<=` lit _?1 ; dup : 0<=.` lit _?1. ; dup : <=` lit _?2 ; : <=.` lit _?2. ;
 $7F dup : 0>`  lit _?1 ; dup : 0>.`  lit _?1. ; dup : >`  lit _?2 ; : >.`  lit _?2. ;
-( Carry flag + unsigned: C1?/C0? are on separate lines from u</u>= )
-( because they use _?1 [unary] while u</u>= use _?2 [binary]. )
+\ carry flag + unsigned: C1?/C0? use _?1 (unary); u< etc use _?2 (binary)
 $72 dup : C1?` lit _?1 ; : C1?.` lit _?1. ;
 $73 dup : C0?` lit _?1 ; : C0?.` lit _?1. ;
 $72 dup : u<`  lit _?2 ; : u<.`  lit _?2. ;
@@ -322,43 +296,35 @@ $73 dup : u>=` lit _?2 ; : u>=.` lit _?2. ;
 $76 dup : u<=` lit _?2 ; : u<=.` lit _?2. ;
 $77 dup : u>`  lit _?2 ; : u>.`  lit _?2. ;
 
-( Vector — :^ creates push/ret preamble, 6 bytes )
-( Vector xt layout: $68 <target32> $C3 <body...> )
-( target32 at xt+1 is sign-extended to 64-bit by push )
-: :^` :` $68, ,1 here 5+ d, $C3, ,1 ;
+\ --------------------------------------------------------------------
+\ vectors -- :^ creates push/ret preamble, 6 bytes
+\ xt layout: $68 <target32> $C3; target32 sign-extended by push
+: :^` :` $68, ,1 here 5+ d, $C3, ,1 ; \ 68xxxxxxxx(push imm32)C3(ret)
 
-( Flow control — Forth-defined )
-( ?@: fetch ?# and zero it. ?#! is a cell store — cond_jmp is dq in asm )
-( to make this safe. Matches i386 ff.boot exactly. )
-( ?nn: validate a condition was set — errors if ?# was empty. The )
-( ,"t^AC~" is a string escape that compiles to throw-string bytes. )
+\ --------------------------------------------------------------------
+\ flow control
+\ ?@: fetch ?# and zero it; ?#! is a cell store (cond_jmp is dq in asm)
 :. ?@ ?# c@ 0 ?#! ;
 :. ?nn 0- ,"t^AC~" !"is_not_preceded_by_a_condition"
-( cond: read the condition opcode from ?#, validate, invert bit 0. )
-( The 1^ inversion is because IF/WHILE/UNTIL all jump on the OPPOSITE )
-( condition — IF skips the body when the condition is FALSE. )
+\ cond: read ?#, validate, invert bit 0 (jump on OPPOSITE condition)
 : cond ?@ ?nn 1^ ;
-( cond.: convert a stack boolean to FLAGS for dotted flow control. )
-( Emits 0- [test TOS], drop [consume it], 0<> [set Jcc for nonzero]. )
-( Falls through to IF.` which falls through to IF`, matching i386. )
+\ cond.: convert stack boolean to FLAGS for IF./WHILE./UNTIL.
 :. cond. 0-` drop` 0<>` ;
 :. -c` here dup 4- d@ + -5 allot 0 callmark! ;
 [64] [IF]
-( Flow control macros — composable backtick versions )
 : IF.` cond.
-: IF` >S0 cond $0F c, $10+ c, here 4 allot ;
-: SKIP` >S0 $E9, ,1 here 4 allot ;
+: IF` >S0 cond $0F c, $10+ c, here 4 allot ; \ 0F8x(Jcc rel32)
+: SKIP` >S0 $E9, ,1 here 4 allot ; \ E9(jmp rel32)
 : THEN` >S0 0 callmark!
 :. _then here over- 4 - swap d! ;
 : ELSE` SKIP` swap THEN` ;
 
-( ;;` with tail-call optimization: if last emitted instruction was a CALL, )
-( convert it to JMP [change E8 opcode to E9]. Otherwise emit RET. )
-: ;;` >S0 callmark@ here - 0= drop IF $E9 callmark@ 5- c! ELSE $C3, ,1 THEN ;
+\ ;;` with tail-call optimization: CALL -> JMP if last emitted was CALL
+: ;;` >S0 callmark@ here - 0= drop IF $E9 callmark@ 5- c! ELSE $C3, ,1 THEN ; \ E9(jmp)/C3(ret)
 : ;THEN` ;;` THEN` ;
 
 : -call callmark@ here = 2drop IF -c` ELSE drop THEN ;
-( ?` converts preceding call to conditional jump )
+\ ?` converts preceding call to conditional jump
 :. _?` ?@ dup 0- 0= drop IF drop $75 THEN
   $0F c, $10+ c, dup here 4+ - d, drop ;
 [ELSE]
@@ -392,22 +358,13 @@ $77 dup : u>`  lit _?2 ; : u>.`  lit _?2. ;
 : BOOL` 0 lit` IF` ~` THEN` ;
 : CASE` =` drop` IF` drop` ;
 
-( Loop infrastructure: mrk, cstack, START/ENTER/BREAK/END )
-\ mrk is a 2-cell compiler variable:
-\   cell 0: loop body address (backward jump target for AGAIN/UNTIL etc.)
-\   cell 1: reserved
-\ All loop openers (BEGIN, START, TIMES/RTIMES) save old mrk to cstack,
-\ push a 0 break-sentinel, and set mrk[0] = loop body address.
-\ All loop closers resolve breaks from cstack and restore mrk.
-\
-\ Data stack layout from loop openers:
-\   BEGIN:  ( -- 0 )     flag=0 means no rdrop needed
-\   RTIMES: ( -- -1 js ) flag=-1 triggers rdrop in REPEAT; js=fixup
-\
-\ END does NOT emit a backward jump — it only resolves forward refs
-\ (WHILE/BREAK). Use AGAIN/UNTIL/REPEAT for backward jumps.
-\ Pattern: BEGIN ... CASE ... BREAK ... END (multi-way dispatch)
-\
+\ --------------------------------------------------------------------
+\ loop infrastructure: mrk, cstack, START/ENTER/BREAK/END
+\ mrk cell 0: loop body address (backward jump target)
+\ loop openers save old mrk to cstack, push 0 break-sentinel, set mrk[0]
+\ loop closers resolve breaks from cstack and restore mrk
+\ BEGIN: ( -- 0 ), RTIMES: ( -- -1 js )
+\ END only resolves forward refs; use AGAIN/UNTIL/REPEAT for backward
 \ >cs ( x -- ) pushes to compile-time stack
 \ cs> ( -- x ) pops from compile-time stack
 [64] [IF]
@@ -422,7 +379,7 @@ variable mrk 0 mrk 8+ !
 : START` _begin 0 $E9 c, 0 d, here mrk! ;
 : BEGIN` >S0 _begin 0 ;
 : TIMES` >r`
-: RTIMES` >S0 _begin -1 $240CFF48, ,4 $880F, ,2 here 4 allot ;
+: RTIMES` >S0 _begin -1 $240CFF48, ,4 $880F, ,2 here 4 allot ; \ 48FF0C24(dec qword[rsp])0F88(js rel32)
 : ENTER` >S0 mrk@ 4- _then ;
 : WHILE.` cond.
 : WHILE` IF` ;
@@ -476,23 +433,23 @@ create mrk 0 , 0 ,
 [THEN]
 : x^` -call 6+ lit` >r` ;
 
-( Arithmetic )
+\ --------------------------------------------------------------------
+\ arithmetic
 : max` >` IF` swap` THEN` nip` ;  \ n2 n1 -- max(n2,n1)
 : min` <` IF` swap` THEN` nip` ;  \ n2 n1 -- min(n2,n1)
 : abs` 0-` 0<` IF` negate` THEN` ;
 : dnegate` ~` swap` negate` swap` ;
 : dabs` 0-` 0<` IF` dnegate` THEN` ;
-: adc` ext $D311, s09 nip` ;
+: adc` ext $D311, s09 nip` ; \ 4811D3(adc rbx,rdx)
 : d+` >r` rot` +` swap` r>` adc` ;
 
-\ Address arithmetic
+\ address arithmetic
 : bounds` over+` swap` ;
-( Range check — uses FLAGS tail-call pattern )
 : within over- -rot - u> 2drop nzTRUE ? zFALSE ;  \ n [ ) -- ; nz?
 
 [64] [IF]
-: s>d` dup` $C148, ,2 $FB, s1 $3F, ,1 ;
-( Peephole: >mov replaces variable fetch with inc/dec for ++`/--` )
+: s>d` dup` $C148, ,2 $FB, s1 $3F, ,1 ; \ 48C1FB3F(sar rbx,63)
+\ peephole: >mov replaces variable fetch with inc/dec for ++`/--`
 : >mov here 7- c@ $48- here 6- c@ $8B- | drop
   here 4- d@ 10+ swap -17 allot $48 c, $FF c, c, d, ;
 : ++` $05 >mov ;
@@ -506,39 +463,35 @@ create mrk 0 , 0 ,
 : --` $DFF >mov swap` ;
 [THEN]
 
-( Conditional compilation — ported from ff.boot )
-( _[] scans input for matching [ELSE] or [THEN], handling nesting )
+\ --------------------------------------------------------------------
+\ conditional compilation
+\ _[] scans input for matching [ELSE] or [THEN], handling nesting
 :. _[] '[' parse 2drop wsparse 0- 0= drop IF drop >in! !"unbalanced" ;THEN
   1 >in -! dup "ELSE]" $- 0<> drop IF dup "THEN]" $- 0<> drop IF "IF]" $- drop _[] ?
   BEGIN _[] 0<> UNTIL _[] ;THEN 1+ THEN drop ;
 : [IF]` 0- 0= drop IF
 : [ELSE]` >in@ _[] drop
 : [THEN]` THEN ;
-( [~]` — test whether a word exists. Returns 0 if found, nonzero if not. )
-( Usage: [~] foo [IF] ...not-found code... [ELSE] ...found code... [THEN] )
-: [~]` wsparse find nip ;
+: [~]` wsparse find nip ; \ 0 if found, nonzero if not
 1 constant [1]`
 0 constant [0]`
 1 cell* constant cell
 cell 4 - 0= drop BOOL constant [32]`
 [32]` ~ constant [64]`
-( I/O constants )
+\ I/O constants
 0 constant stdin
 1 constant stdout
 2 constant stderr
 
-( key — read a single character from stdin )
-: key tib 1 under accept drop c@ ;
+: key tib 1 under accept drop c@ ; \ -- c
 : space 32
 :^ putc : emit tib 2dupc! swap 1_ type ; [THEN]
 :^ cr ."^J" ; \ print newline
 
-( Number output )
+\ --------------------------------------------------------------------
+\ number output
 variable base 10 base! ;
-( .digit — convert digit value 0-35 to character and emit )
-( Lavarenne's char-literal version: '0'+ checks if past '9', )
-( adjusts for a-z, checks 'z' overflow, falls back to '?' )
-( original always used base@ : `.d 0 base@ m/mod 0; `.d )
+\ .digit: 0-35 -> char; adjusts for a-z, falls back to '?'
 :. _d tuck 0 swap m/mod 0- 0= IF drop nip ;THEN rot _d
 : .digit '0'+ '9' u> drop IF 39+ 'z' u> drop IF '?'_ THEN THEN putc ;
 : .ub\ _d .digit ;
@@ -552,12 +505,10 @@ variable base 10 base! ;
 : .u .u\ space ;
 : .ux\ $10 .ub\ ;
 : .ux .ux\ space ;
-( .x\ — hex display: shows $ prefix for values > 9 )
-: .x\ .sign 9 > drop IF '$' putc THEN $10 .ub\ ;
+: .x\ .sign 9 > drop IF '$' putc THEN $10 .ub\ ; \ hex with $ prefix
 : .x .x\ space ;
 
-( Hex digit output — .#s prints N hex digits of a value )
-( .b falls through to .#s — just provides the count 2. )
+\ .#s prints N hex digits; .b falls through with count 2
 : .b 2
 : .#s TIMES dup r 4* >> $F& .digit REPEAT drop ;
 : .w 4 .#s ;
@@ -568,12 +519,10 @@ variable base 10 base! ;
 : ss depth ."( " dup .dec\ ."; " 1+ 3 max _ss .")" cr ;
 : dd depth TIMES drop REPEAT ;
 [64] [IF]
-( Hex memory dump — 16 bytes per line with address header )
+\ hex memory dump -- 16 bytes per line with address header
 :. _dumpln dup .l .":" 16 TIMES space dupc@ .b 1+ REPEAT ;
 : dump bounds BEGIN 2dup u> WHILE _dumpln cr REPEAT 2drop ;
-( Debug output — .s` shows compile-time stack, ds shows runtime stack )
-( _s recurses depth-many times: 0; exits on zero count, depth 2 < )
-( exits when stack is too shallow. On unwind, prints each saved value. )
+\ _s recurses depth-many times, prints on unwind
 :. _s 0; depth 2 < drop IF drop ;THEN drop 1- swap >r _s r . r> ;
 : .s` prompt depth _s cr ;
 : ds prompt depth _s cr ;
@@ -590,10 +539,8 @@ variable base 10 base! ;
 : dump bounds 2dump cr ;
 [THEN]
 
-( features — buffer for tracking loaded features )
-( append — append counted string to a counted-string buffer )
-( appendc — append single char to a counted-string buffer )
-( -v` — display list of loaded features )
+\ --------------------------------------------------------------------
+\ features -- buffer for tracking loaded features
 variable features 100 allot
 : append ( @ # c@ -- ) 2dup c@ + over 2>r c@+ + place drop 2r>
   2dup c! + 1+ 0 swap c! ;
@@ -602,16 +549,16 @@ variable features 100 allot
 
 "locals" features append ;
 [64] [IF]
-( move — smart overlapping copy: src dst n -- )
+\ move -- smart overlapping copy: src dst n --
 : move >r 2dup u< 2drop IF r> cmove> ;THEN r> cmove ;
 : fill rot rot BEGIN 0- 0> WHILE 1- -rot 2dup c! 1+ rot REPEAT drop 2drop ;
 : erase 0 fill ;
 : zlen ( addr -- addr len ) dup BEGIN dup c@ 0- 0<> WHILE drop 1+ REPEAT drop over - ;
 
-\ Locals — direct access to call stack cells and bulk data↔call transfers
-\ r0/r0! alias r/r! — call stack top; r1..r5 access deeper cells
-\ mov [rsp+N],rbx = 48 89 5C 24 NN (s08: XOR 5C→54 swaps rbx↔rdx)
-\ mov rbx,[rsp+N] = 48 8B 5C 24 NN (s08: XOR 5C→54 swaps rbx↔rdx)
+\ locals -- direct access to call stack cells and bulk data<->call transfers
+\ r0/r0! alias r/r!; r1..r5 access deeper cells
+\ 48895C24NN(mov [rsp+N],rbx) s08 XORs 5C->54 for rdx
+\ 488B5C24NN(mov rbx,[rsp+N]) s08 XORs 5C->54 for rdx
 : r0!`       $48, ,1 $1C89, s08 $24, ,1         drop` ;
 : r1!`       $48, ,1 $5C89, s08 $24, ,1 $08, ,1 drop` ;
 : r2!`       $48, ,1 $5C89, s08 $24, ,1 $10, ,1 drop` ;
@@ -623,13 +570,13 @@ variable features 100 allot
 : r3`  over` $48, ,1 $5C8B, s08 $24, ,1 $18, ,1 ;
 : r4`  over` $48, ,1 $5C8B, s08 $24, ,1 $20, ,1 ;
 : r5`  over` $48, ,1 $5C8B, s08 $24, ,1 $28, ,1 ;
-\ >>r ( xn..x1 n -- | == xn..x1 ) move n items from data stack to call stack
-\ loop: push [r15](41 FF 37); lea r15,[r15+8](4D 8D 7F 08);
-\       dec rbx(48 FF CB); jnz -12(75 F4)
+\ >>r ( xn..x1 n -- | == x1..xn ) move n items from data stack to call stack
+\ 41FF37(push [r15])4D8D7F08(lea r15,[r15+8])
+\ 48FFCB(dec rbx)75F4(jnz -12)
 : >>r` under` 0-` 0>` IF`
   $37FF41, ,3 $087F8D4D, ,4 $CBFF48, ,3 $F475, ,2
   THEN` 2drop` ;
-\ >>rr ( xn..x1 n -- | == x1..xn ) move n items, reversed order on call stack
+\ >>rr ( xn..x1 n -- | == xn..x1 ) move n items, reversed order on call stack
 \ shl rdx,3(48 C1 E2 03); sub rsp,rdx(48 29 D4)
 \ loop: mov rdi,[r15](49 8B 3F); mov [rsp],rdi(48 89 3C 24);
 \       lea r15,[r15+8](4D 8D 7F 08); add rsp,8(48 83 C4 08);
@@ -675,33 +622,29 @@ r` ' alias r0`
 r0!` ' alias r!`
 +r` ' alias xxr`
 
-( Dictionary listing )
-( words` is a backtick macro: START iterates headers, printing name, )
-( ENTER advances to next header, UNTIL terminates on zero-length name. )
+\ --------------------------------------------------------------------
+\ dictionary listing
 : words` H@ START 2dup+ 1+ -rot type space ENTER h.sz+ c@+ 0- 0= UNTIL 2drop cr ;
 
-( Dictionary inspector — .hdr+ advances to next header )
-( Stack effect: \( addr -- next-addr \) — prints header info, returns next )
-: .hdr+ dup .x\ .": " dup @ .x dup h.ct+ c@ .x h.sz+ c@+ 2dup type + 1+ ;
+\ dictionary inspector -- .hdr+ advances to next header
+: .hdr+ dup .x\ .": " dup @ .x dup h.ct+ c@ .x h.sz+ c@+ 2dup type + 1+ ; \ addr -- next
 : .hdrs H@ START .hdr+ cr ENTER dup h.sz+ c@ 0- 0= drop UNTIL drop ;
 : .hdr .hdr+ cr drop ;
 
-( Hide private words )
-( Compact header chain: remove private entries, reclaim space )
-( hidepvt` is a compile-time macro; _hidepvt is the runtime callable version )
-( Algorithm: walk chain. For each pvt header, shift H@..here up by its )
-( size, overwriting it. H@ advances by that amount. Pvtmargin stops walk. )
+\ --------------------------------------------------------------------
+\ hide private words
+\ walk chain, remove pvt headers, reclaim space; pvtmargin stops walk
 " hidepvt" features append ;
 variable hide hide on
 [64] [IF]
 : h.next dup h.sz+ c@ h.nm+ 1+ + ;
 :. _hdr_size h.sz+ c@ h.nm+ 1+ ;
-:. _remove_hdr ( addr -- addr+sz )
-  dup _hdr_size             ( addr sz )
-  >r dup H@ - H@            ( addr n src -- R: sz )
-  swap H@ r + swap           ( addr src dst n )
-  cmove>                     ( addr ) 
-  r> dup H +! + ;            ( addr+sz )
+:. _remove_hdr \ addr -- addr+sz
+  dup _hdr_size
+  >r dup H@ - H@
+  swap H@ r + swap
+  cmove>
+  r> dup H +! + ;
 :. _hidepvt hide@ 0; drop
   H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
     dup h.ct+ c@ dup $10& 0<> drop IF 2drop ;THEN
@@ -710,7 +653,7 @@ variable hide hide on
 : hidepvt` _hidepvt ;
 [THEN]
 
-:^ hidestop 0<> IF dup CT_MGN- drop THEN ; \ ( ct -- ct ) at pvtmargin?
+:^ hidestop 0<> IF dup CT_MGN- drop THEN ; \ ct -- ct ; at pvtmargin?
 : xhidepvt` hide@ 0; drop   \ respect hide on/off
   \ hdrs grow down, H@ is most recent word at lowest address
   \ back over empty hdr, h.nm+1 bytes; set name size to 0 ( sentry H@ )
@@ -726,35 +669,27 @@ variable hide hide on
 xhidepvt` ' alias hidepvt`
 [THEN]
 
-( Dictionary state save/restore — mark/marker )
-\ _mark: called from a marker word's body. Restores here and H to
-\ the state when the marker was created. r> gets the return address
-\ (inside the marker word); -5 gives the call instruction address;
-\ subtracting from here and calling allot restores the code pointer.
-\ Then walks headers from H@ via h.next, comparing each xt with here,
-\ until finding the marker's header. The header after it becomes the
-\ new H (discarding the marker and all later definitions).
+\ --------------------------------------------------------------------
+\ dictionary state save/restore
+\ _mark: restores here and H to the state when marker was created
+\ r> gets return addr; -5 -> call insn; walks headers to find marker
 :. _mark ;` r> 5- here - allot anon:`
   H@ BEGIN dup@ swap h.sz+ c@+ + 1+ swap here = 2drop UNTIL H! ;
-( marker — Lavarenne's original uses '`' char literal for backtick append )
-( mark` falls through to marker — ;` + wsparse provides the name string )
+\ mark` falls through to marker
 : mark` ;` wsparse
 : marker 2dup+ dupc@ >r dup>r '`' swap c! 1+
   here 0 header 2r> c!  _mark ' call, anon:` ;
 
-( pad — scratch buffer, 256 bytes above here )
-: pad here 256+ ;
+: pad here 256+ ; \ scratch buffer, 256 bytes above here
 
 [64] [IF]
-( Indexed stack access — pick` peephole detects preceding literal )
-( _lit_compile emits 10-byte DUP1 + BB/BA imm32. SWAPbit unchanged. )
-( lit` emits 7-byte DUP + 6Axx5B/5A. SWAPbit toggled by DUP. )
-( pick` removes the literal, keeps the DUP, emits the pick instruction. )
-:. _pick_bb ( -- ) ( BB path: full DUP1, SB unchanged )
+\ --------------------------------------------------------------------
+\ indexed stack access -- pick` peephole detects preceding literal
+:. _pick_bb \ BB path: full DUP1, SB unchanged
   here 4- d@ -5 allot
   dup 0- 0= drop IF drop ;THEN
   1- 3 << $49 c, $8B c, $5F c, c, ;
-:. _pick_6a ( -- ) ( 6A path: 7-byte DUP, SB toggled )
+:. _pick_6a \ 6A path: 7-byte DUP, SB toggled
   -3 allot here 1+ c@ 1- 0= IF drop ;THEN
   0< IF drop nipdup` ;THEN
   3 << $49 c, $5F8B, s08 c, ;
@@ -779,30 +714,27 @@ xhidepvt` ' alias hidepvt`
 [THEN]
 : 2over` 3 lit` pick` 3 lit` pick` ;
 
-( eval — evaluate a counted string as Forth source )
-( Saves >in and tp, sets new parsing bounds, calls compiler, restores. )
+\ eval -- evaluate counted string as Forth source; saves/restores >in and tp
 : eval >in@ tp@ 2>r over+ tp! >in! compiler 2r> tp! >in! ;
 
-( Command-line arguments — derived from CS0, set by assembly at startup )
-( Linux x86-64 stack at _start: [rsp]=argc, [rsp+8]=argv[0], ... )
+\ command-line arguments -- derived from CS0
 : argc CS0@ @ ;
 :. _argv 1+ cell* CS0@ + @ ;
 : argv _argv zlen ;
 
-( Boot sequence — ossetup is a vector for platform-specific init )
+\ boot sequence -- ossetup is a vector for platform-specific init
 :^ ossetup ;
 
-( _auto — auto-execute anonymous code if noauto is 0 )
-( Called after compiler returns in eval. Decrements >in and calls ; )
+\ _auto -- auto-execute anonymous code if noauto is 0
 :. _auto noauto@ 0- drop 0= IF >in@ -- ;` THEN ;
 
-( eval. — evaluate with auto-execution )
-( Like eval but calls _auto to execute the compiled code )
+\ eval. -- evaluate with auto-execution
 :. eval. >in@ tp@ 2>r over+ tp! >in! compiler _auto 2r> tp! >in! ;
 
 
-( REPL coroutine — _exec/_top form cross-word START...UNTIL loop )
-( bye must follow _top: UNTIL falls through to bye on EOF )
+\ --------------------------------------------------------------------
+\ REPL coroutine -- _exec/_top form cross-word START...UNTIL loop
+\ bye must follow _top: UNTIL falls through to bye on EOF
 :. _back >in@ 1- dup BEGIN tib <> drop WHILE 1- dupc@ 10- drop 0= TILL 1+ END
    swap over- type ;
 :. _eval eval. '

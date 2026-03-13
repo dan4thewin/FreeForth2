@@ -1,0 +1,156 @@
+# FreeForth2 Style Guide
+
+Two coding styles coexist in this repository.  Use Lavarenne's style
+when editing or extending his original code (ff2.boot, ff.boot,
+ff.asm, fflinio.asm, and the Lavarenne-authored lib/ files).  Use
+DG's style when writing new libraries, ports, or tools.
+
+---
+
+## Lavarenne's style
+
+Dense, minimal, every character earns its place.
+
+### Layout
+- **No blank lines** between related definitions.
+- **One-liners** are the default; multi-line definitions are rare.
+- **Fall-through chains** pack related words on consecutive lines
+  with no visual separation:
+  ```
+  : over!`  swap` : tuck!`  2dup!`  nip` ; : !`  tuck!`  drop` ;
+  ```
+- **Section dividers** are a `\ ----` line followed by a topic line:
+  ```
+  \ --------------------------------------------------------------------
+  \ ?ior malloc/free lseek ioctl/select
+  ```
+- **No indentation** of definition bodies.  Continuation lines, when
+  they exist, are indented 2 spaces.
+
+### Comments
+- **`\` only** — no `( )` paren comments for standalone lines.
+- **Inline stack effects** after the semicolon or the word name:
+  ```
+  : within over- -rot - u> 2drop nzTRUE ? zFALSE ;  \ n [ ) -- ; nz?
+  : lseek  3  19 syscall ; \ wh off fd -- off ; wh=0:SET 1:CUR 2:END
+  ```
+- **Assembly annotations** use `HEXBYTES(mnemonic)` format:
+  ```
+  $5C8B, s08 10 << $24+ w, ;  \ 8B5C24xx(mov ebx,[esp+4n])
+  ```
+- **Terse inline notes** explain what, not why:
+  ```
+  "help`" find 2drop '`' which@ 6+ c! \ to be deleted by hid'm
+  constant` ' alias equ` \ shorter, and more usual for assembly programmers
+  ```
+- **Prose** when documenting a complex system (e.g., ff43.ff has 338
+  comment lines in 1955 total — multi-paragraph `\` blocks explaining
+  architecture, protocols, and hardware):
+  ```
+  \ + host image of target memory:
+  \   host buffer mirroring target memory, into which the host
+  \   cross-compiles target code and data, while marking modified
+  \   target addresses into an "update" host buffer ...
+  ```
+  This prose style uses indented continuation with `\` on each line.
+
+### Naming
+- **Short word names** — single characters or abbreviations.
+- **Private words**: Lavarenne used a leading backtick (`` :`fdin? ``)
+  and `hid'm` to hide them.  DG replaced this with `:.` and `pvt`
+  (`:. _foo` defines a private word; `variable bar pvt` marks a
+  private variable — `:.`` falls through to `pvt`` in ff2.boot).
+  Private helper names use a leading underscore (`_then`, `_fixbuf`)
+  instead of Lavarenne's leading backtick, to reduce visual clutter
+  and avoid confusion with the backtick macro convention.
+
+---
+
+## DG's style
+
+Readable, structured, tab-aligned — a library author's style.
+
+### Layout
+- **Blank lines** separate logical groups of definitions.
+- **Header block** at the top of each file: description, public word
+  signatures with stack effects, `needs` dependencies:
+  ```
+  \ see.ff — native disassembler for ff64 (x86-64)
+  \ see` ( <name> -- )       native disassembly of compiled word
+  \ findxt ( @ # -- xt len ) looks for string in headers
+  ```
+- **Tab-aligned bodies** — word name left, definition body aligned
+  at a consistent tab stop.  Related one-liner helpers line up:
+  ```
+  :. sz-		2dup h.sz+ c@ - drop ;
+  :. nm-		3dup h.nm+ swap $- drop ;
+  :. hdr-		sz- nm- 0= ? ;
+  ```
+- **Multi-line definitions** indent with tabs, continuation lines
+  aligned under the body:
+  ```
+  : findxt	here xt! H@
+  		BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
+  		  hdr- 0= IF nip nip @ xt@ over- ;THEN dup@ xt! h.next
+  		REPEAT !"not_found" ;
+  ```
+- **Section dividers** are lighter — a `\` comment line, no `----`:
+  ```
+  \ use base for number input as well as number output
+  ```
+
+### Comments
+- **`\` only** — same as Lavarenne.
+- **Stack effects inline** in the header block or after `;`:
+  ```
+  : fmode ( addr len -- mode|-1 )
+  ```
+- **Descriptive comments** where helpful — not prose blocks, but
+  more than Lavarenne would write:
+  ```
+  \ source copied here during compilation
+  tib $2'0000+ constant sob pvt 0 sob!	\ start-of-blocks
+  ```
+- **No `( section divider )` blocks** — plain `\` lines.
+
+### Naming
+- **Descriptive names** — `findxt`, `findnm`, `strerror`, `_cmpres`.
+- **`:.` and `pvt`** for private words — same mechanism as above.
+- **Features registration** at top or bottom of file:
+  ```
+  " see" features append
+  ```
+
+---
+
+## Shared conventions (both styles)
+
+- **`\` comments only** — never `( )` for standalone comment lines.
+  Inline `( stack-effect )` after `:` or `;` is acceptable in both.
+- **`hidepvt ;`** at end of file when private words were defined.
+- **Assembly annotations** where code emits machine instructions:
+  both styles use `HEXBYTES(mnemonic)` format.
+- **No trailing whitespace.**
+- **Plain ASCII** — no Unicode, no em-dashes, no arrows.
+
+---
+
+## Which files use which style
+
+### Lavarenne's style
+- `ff2.boot`, `fflin2.boot`
+- `ff.asm`, `ff64.asm`, `fflinio.asm`, `fflin64.asm`
+- `lib/console.ff`, `lib/time.ff`
+- `lib/x86/callback.ff`, `lib/x86/fpu.ff`, `lib/x86/longconds.ff`
+- `lib/x86/perf.ff`, `lib/x86/help.ff`
+
+### DG's style
+- `lib/compat.ff`, `lib/test.ff`, `lib/shell.ff`, `lib/pno.ff`
+- `lib/ior.ff`, `lib/fileops.ff`, `lib/mmap.ff`, `lib/malloc.ff`
+- `lib/x86/see.ff`, `lib/x86/debug.ff`, `lib/x86/mkimage.ff`
+- `lib/x86-64/see.ff`, `lib/x86-64/help.ff`, `lib/x86-64/mkimage.ff`
+- `lib/x86-64/fixup.ff`, `lib/x86-64/net.ff`, `lib/x86-64/stat.ff`
+- `lib/x86-64/syscalls.ff`, `lib/x86/syscalls.ff`
+
+### New code
+New libraries, ports, and tools use **DG's style**.

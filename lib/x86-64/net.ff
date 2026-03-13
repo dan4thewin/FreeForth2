@@ -1,38 +1,36 @@
-( net.ff — BSD socket syscall wrappers for FreeForth2 x86-64 )
-( Load with: needs net.ff )
-( All words are thin wrappers over the generic syscall dispatcher. )
-( Convention: arg1 on TOS, argN deepest. )
+\ net.ff — BSD socket syscall wrappers for x86-64
+\ needs net.ff ; arg1 on TOS, argN deepest
 
-( Address families )
+\ address families
 1  constant AF_UNIX
 2  constant AF_INET
 10 constant AF_INET6
 
-( Socket types )
+\ socket types
 1 constant SOCK_STREAM
 2 constant SOCK_DGRAM
 3 constant SOCK_RAW
 
-( Socket options )
+\ socket options
 1 constant SOL_SOCKET
 2 constant SO_REUSEADDR
 9 constant SO_KEEPALIVE
 
-( Protocol )
+\ protocol
 0 constant IPPROTO_IP
 6 constant IPPROTO_TCP
 17 constant IPPROTO_UDP
 
-( Misc )
+\ misc
 0 constant INADDR_ANY
 $100007F constant INADDR_LOOPBACK
 
-( Shutdown modes )
+\ shutdown modes
 0 constant SHUT_RD
 1 constant SHUT_WR
 2 constant SHUT_RDWR
 
-( Socket syscalls )
+\ socket syscalls
 : socket    ( proto type domain -- fd )  3 41 syscall ;
 : connect   ( addrlen addr fd -- ior )  3 42 syscall ;
 : sendto    ( tolen to flags len buf fd -- n )  6 44 syscall ;
@@ -48,9 +46,9 @@ $100007F constant INADDR_LOOPBACK
 : pselect6    ( sigmask timeout exceptfds writefds readfds nfds -- n ) 6 270 syscall ;
 : accept4     ( flags addrlen addr fd -- newfd )  4 288 syscall ;
 
-( Convenience: send/recv without address args )
+\ convenience: send/recv without address args
 : send ( flags len buf fd -- n ) >r >r >r >r 0 0 r> r> r> r> 6 44 syscall ;
 : recv ( flags len buf fd -- n ) >r >r >r >r 0 0 r> r> r> r> 6 45 syscall ;
 
-( htons — byte-swap 16-bit value for network byte order )
+\ htons — byte-swap 16-bit value for network byte order
 : htons ( n -- n ) dup 8 >> $FF & swap $FF & 8 << | ;
