@@ -1,0 +1,276 @@
+DEBUGGING FREEFORTH2
+====================
+
+A practical guide to finding and fixing bugs in FreeForth2, drawn
+from hard-won experience during the x86-64 port.  These techniques
+apply to both i386 (ff) and x86-64 (ff64).
+
+
+PHILOSOPHY
+----------
+
+1. Smallest repro first.  Before examining assembly or theorizing,
+   strip the failure to the fewest words that reproduce it.  The
+   header swap bug was found because "1 2 "test" here 0 header ss"
+   proved the swap — no need for help/needed/marker complexity.
+
+2. Cross-platform comparison.  i386 ff is the reference.  Run the
+   same code on both and compare.  When "1 2 "test" marker ss"
+   showed ( 1 2 ) on i386 but ( 2 1 ) on ff64, it immediately
+   identified marker/header as the divergence point.
+
+3. Empirical before theoretical.  Don't puzzle through source code
+   or theorize about flag state — not until you have a small repro
+   and concrete evidence to inform the reasoning.  The ct=1 bug and
+   the _parse DUP1/DROP1 bug both resisted manual analysis but
+   yielded quickly to GDB and binary search.
+
+
+TECHNIQUES
+----------
+
+ss and .s — show the data stack
+................................
+
+  ss prints the data stack in ( depth; val1 val2 ... ) format.
+  It always shows at least 2 items, even when depth is 0 or 1.
+  This is deliberate: seeing non-zero values below the stack floor
+  means something underflowed.  On i386 the sub-floor items should
+  be zeroes; non-zero is a red flag.
+
+    1 2 3 ss cr ;       \ prints: ( 3; 1 2 3 )
+    ss cr ;              \ prints: ( 0; 0 0 ) — floor items visible
+
+  .s is Lavarenne's original — it always shows 9 items regardless
+  of depth, deliberately exposing the region below the stack floor.
+  Same principle: non-zero below the floor means underflow.  ss is
+  the compact version for quick checks; .s is for deep inspection.
+
+
+Z` macro — compile-time stack tracing
+......................................
+
+  Define  : Z` ss ;  (backtick name makes it a macro).  Then use Z
+  (dropping the backtick) inside a word definition.  Because the
+  definition name has a backtick but the usage omits it, the body
+  executes at compile time during the word's compilation, showing
+  the compile-time stack at that point:
+
+    : Z` ss ;
+    : _back >in@ 1- dup Z BEGIN tib <> drop Z WHILE ...
+
+  This is useful for tracing compile-time state through backtick
+  macros and boot definitions.  For runtime tracing, just put ss
+  directly in the word — no macro needed.
+
+
+EOF binary search — find which word crashes
+...........................................
+
+  Insert EOF at progressively later points in a loaded file.  EOF
+  is a compile-time macro that skips to end of file — everything
+  after it is ignored during compilation.  When it stops crashing,
+  the culprit is the word just after the EOF.
+
+    \ file loaded by needed:
+      H@ @ execute
+      swap dup>r       \ <-- works up to here
+      EOF              \ <-- insert here; move later until it crashes
+      rest of code...
+    ;
+
+  This found that dup>r (unbalanced, corrupting return stack) was
+  where the help preamble first went wrong, which led to
+  investigating the stack state entering the preamble, which led to
+  the marker bug.
+
+
+GDB — inspect generated code
+.............................
+
+  FreeForth compiles at runtime, so there are no symbol names for
+  generated code.  But GDB can disassemble at any address:
+
+    echo 'test-input' | gdb -batch -ex 'run' -ex 'x/30i $rip-40' ./ff64
+
+  Useful commands:
+    x/Ni addr               disassemble N instructions at addr
+    x/4gx $rsp              show return stack (4 qwords)
+    x/4gx $r15              show data stack memory (below TOS/NOS)
+    info reg rbx rdx r15 rbp    TOS, NOS, stack ptr, HERE
+
+  When RIP is a small number (like 0x9), execution jumped to a data
+  value — check what constant or literal has that value.  The return
+  stack shows where the bad call/jump came from.
+
+
+see, dis, dump — three views of compiled code
+..............................................
+
+  FreeForth has three tools for inspecting compiled code.  They
+  overlap but each has strengths where the others fail.
+
+  see — native Forth disassembler.  Lazy-loaded on both platforms.
+  Decodes FreeForth idioms and labels jump targets with word names:
+
+    : _t 1 2 + ; see _t ;
+    see dup` ;               \ backtick macros too
+
+  Strengths: labels calls/jumps with dictionary names (call under`),
+  no external tools needed.  Weaknesses: limited opcode coverage —
+  shows ??? for unrecognized instructions (REX-prefixed ops, some
+  SIB forms).  Backtick macros are short, so see works well; long :
+  definitions can hit unknown opcodes.
+
+  dis` — GDB-based disassembler.  Available after see loads (they
+  live in the same file).  Attaches GDB to the running process and
+  uses disass/r:
+
+    : _t 1 2 + ; see _t ;   \ loads see.ff (which includes dis)
+    dis _t ;                 \ now dis is available
+
+  Strengths: decodes ALL x86 instructions (GDB knows every opcode),
+  shows raw bytes alongside.  Weaknesses: no FreeForth word-name
+  labels, requires GDB installed, output is noisier (GDB
+  attach/detach messages).
+
+  dump — raw hex dump.  Always available (boot word):
+
+    dup` ' 32 dump ;
+
+  Strengths: shows exact bytes with no interpretation — essential
+  when see shows ??? and you need to manually decode, or when
+  checking data layout (header bytes, string encoding, litcomma
+  values).  Weaknesses: no disassembly — you must decode bytes by
+  hand or cross-reference with an opcode table.
+
+  When to use which:
+
+    Quick look at a word's structure      see
+    see shows ??? for some instructions   dis (GDB decodes everything)
+    Crash site / generated code at addr   GDB x/Ni addr
+    Check raw bytes or data layout        dump
+    Compare i386 vs ff64 code gen         see on both (same format)
+    Verify litcomma values / headers      dump
+
+  Use see on i386 to understand how Lavarenne's compiler generates
+  code for a pattern, then compare with ff64 output for the same
+  pattern.
+
+
+Compile-time ss binary search
+..............................
+
+  Place "ss ;" as anonymous blocks at various points in boot code.
+  Rebuild.  The stack depth shown reveals where a compile-time stack
+  leak starts.  Move the ss calls around to narrow to one line.
+
+    \ in ff2.boot, during compilation:
+    ss ;    \ check compile-time stack here
+    : someDef ... ;
+    ss ;    \ and here — did depth change?
+
+  This found the _back compile-time stack leak in experiment 150.
+
+
+Comment-out to confirm
+......................
+
+  When a specific word is suspected, comment it out (or replace
+  with a no-op) and rebuild.  If the bug disappears, you've
+  confirmed the source.  But be careful — removing a word can mask
+  the bug while introducing a different one.
+
+
+CASE STUDIES
+------------
+
+The header swap bug (exp 155)
+.............................
+
+  Symptom: "help dup" on ff64 crashed with SEGV inside the
+  Lavarenne help preamble.
+
+  Debugging journey:
+  1. EOF binary search in ff.help preamble -> crash starts at dup>r
+  2. But dup>r works fine in isolation -> problem is the stack state
+     entering the preamble
+  3. ss probes around [ 2>r needed 2r> _] -> stack is ( 1 2 )
+     before needed, but ( 2 1 ) inside the preamble
+  4. Cross-platform comparison confirms: i386 sees ( 1 2 ), ff64
+     sees ( 2 1 )
+  5. Z` instrumentation inside needed -> swap happens between >r
+     and marker
+  6. Minimal repro: "1 2 "test" marker ss" — ff64 shows ( 2 1 )
+  7. Further reduction: "1 2 "x" here 0 header ss" — header itself
+     swaps
+  8. Examined _header_forth in ff64.asm — mov rbx,[r15+16] and
+     mov rdx,[r15+24] were loading the wrong registers
+  9. Fix: swap the two loads.  One line, found by reducing a complex
+     help system crash to a 1-line repro.
+
+  Time from first symptom to fix: ~45 minutes of structured
+  reduction.  Most of that was narrowing, not theorizing.
+
+
+The ct=1 bug (exp 038)
+.......................
+
+  Symptom: words crashed with jmp 0x9.
+
+  What didn't work: Extensive manual analysis of SWAPbit state,
+  flag preservation, and stack operations — all red herrings.
+
+  What worked: One GDB session showing jmp 0x9 immediately revealed
+  that the compile-time stack was corrupted by a constant value
+  (ct=1 pushed as data, then executed as an address).
+
+  Lesson: Always check the generated code first.
+
+
+The _parse DUP1/DROP1 bug (exp 103)
+....................................
+
+  Symptom: IF/ELSE/THEN in : definitions could corrupt definitions
+  250+ lines later.
+
+  What didn't work: Trying to trace ELSE's stack management
+  manually through multiple definitions.
+
+  What worked: Comparing _parse entry code between i386 and ff64 —
+  i386 did DUP1, ff64 did DROP1.  Every parse/lnparse call consumed
+  one extra stack item, causing cumulative compile-time stack
+  corruption.
+
+
+WHAT DOESN'T WORK
+-----------------
+
+  Manual SWAPbit tracing.  Too many toggles and adjusters to track
+  reliably in your head.  Use GDB or see to see the actual emitted
+  bytes.
+
+  Theorizing without evidence.  Don't spend time hypothesizing
+  about flag preservation, register clobbering, or stack corruption
+  without first looking at the generated machine code.
+
+  Progressive test simplification alone.  Narrowing a crash by
+  removing words from a test can help, but is slow and can lead to
+  wrong conclusions (creating a "simplified" test that crashes for
+  a different reason).
+
+
+QUICK REFERENCE
+---------------
+
+  Technique                  When to use
+  -------------------------  -----------------------------------------
+  ss                         Quick runtime stack check
+  Z` macro (Z without `)     Compile-time probes inside a definition
+  EOF                        Binary search in a loaded file
+  Cross-platform ss          Detect i386/ff64 behavioral divergence
+  GDB x/Ni                   Inspect generated machine code at crash
+  see word                   Disassemble with FreeForth word labels
+  dis word                   GDB disassembly (decodes all opcodes)
+  addr N dump                Raw hex bytes, data layout, litcomma vals
+  Compile-time ss ;          Find compile-time stack leaks in boot

@@ -110,11 +110,12 @@ See `DEBUGGING` for techniques (GDB, `ss`, `Z\``, EOF binary search,
 
 Key policies:
 
-- **GDB first** — don't reason about bugs by tracing SWAPbit or flag
-  state manually.  Look at the generated machine code.
+- **Narrow first** — build the smallest repro, cross-check against
+  i386, use `ss`/EOF binary search.  Don't puzzle through source or
+  reach for GDB until you have something concrete to inform the
+  reasoning.
 - **Spiral limit** — after 2–3 failed hypotheses, stop theorizing.
-  Switch to empirical methods: simplest repro, i386 cross-check, or
-  GDB disassembly.
+  Switch to a different empirical method.
 
 ## OS/Architecture separation
 
