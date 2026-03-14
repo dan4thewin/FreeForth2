@@ -13567,3 +13567,110 @@ own platform.
 ### Test results
 
 - `make testall`: 127 PASSED, 3 SKIPPED (unchanged)
+
+
+## Experiment 157: fas2gdb — FASM symbols in GDB
+
+**Date:** 2026-03-14
+**Goal:** Give GDB symbolic names for ff64.asm assembly labels.
+
+### Background
+
+When debugging FreeForth crashes in GDB, every address shows as
+`?? ()` or `_start + N` — even for well-named assembly labels like
+`_compiler`, `_dup`, `_parse`. FASM can dump symbol information
+with `-s`, producing a `.fas` file, but GDB can't read FASM's
+proprietary format. No existing tool converts `.fas` to anything
+GDB understands (the web-search-suggested "fas2dwarf" repo turned
+out to be hallucinated by AI search).
+
+### The .fas format
+
+Tomasz Grysztar (FASM author) documents the format in
+`TOOLS/FAS.TXT` in the FASM repository. Key structures:
+
+- **Header** (64 bytes): offsets/lengths for strings table, symbols
+  table, preprocessed source, and assembly dump.
+- **Symbols table**: array of 32-byte records. Each has a 64-bit
+  value, flags (bit 0 = defined, bit 3 = used), type (0 = absolute
+  / `equ`, 4 = relocatable 64-bit address), data size, and a name
+  reference into either the strings table or preprocessed source.
+- **Strings table**: ASCIIZ strings (filenames, section names,
+  external symbols).
+- **Preprocessed source**: tokenized source with pascal-style symbol
+  names (byte length prefix) — most label names live here.
+
+### What we built
+
+`fas2gdb` — a ~120-line Perl script that:
+
+1. Parses the `.fas` header and symbol table
+2. Extracts defined, relocatable labels (skips `equ` constants
+   and anonymous symbols)
+3. Auto-detects the companion binary (strips `.o` from the `.fas`
+   output filename, or `.fas` from the input filename)
+4. Reads the binary's ELF class (32 or 64) and `.flat` section
+   virtual address as the load base
+5. Adds the base offset to each symbol value
+6. Emits a minimal ELF (32 or 64-bit, matching the binary) with
+   `.text` (NOBITS, covering the address range), `.symtab`,
+   `.strtab`, and `.shstrtab` sections
+
+The output ELF has no loadable segments — it's purely a symbol
+container for GDB's `add-symbol-file`.
+
+### Key decisions
+
+**Why not DWARF?** DWARF is complex (hundreds of pages of spec).
+We only need label-to-address mapping. A `.symtab` section is the
+simplest thing GDB can consume, and it's what `readelf -s` and
+`objdump -t` understand too.
+
+**Why auto-detect the base?** FASM's `.fas` records symbol values
+as offsets within the `.flat` section (starting at 0). The linker
+places `.flat` at a specific virtual address (0x403018 for ff64,
+0x804b00c for ff). Without adding the base, `_dup` would show at
+0x6e instead of 0x403086. Auto-detection means no manual `-b` flag
+needed.
+
+**Why `.text` NOBITS instead of SHN_ABS?** GDB's `info symbol`
+only resolves addresses that fall within a section. With `SHN_ABS`
+symbols, `break _compiler` works but `info symbol $rip` says "no
+symbol matches". A phantom `.text` section covering the address
+range lets GDB do full bidirectional lookup.
+
+**Why ELF32/64 auto-detection?** The same `.fas` format is used for
+both i386 and x86-64 assemblies. One tool handles both by reading
+byte 4 (EI_CLASS) of the companion binary.
+
+### Makefile integration
+
+`make all` now runs `fasm ... -s ff64.fas` — the `.fas` is always
+produced alongside `ff64.o`. `make ff64.sym` converts it. The
+`clean` target removes `*.fas` and `*.sym`.
+
+### Results
+
+- ff64: 251 symbols from 264 entries (13 skipped: `equ` constants,
+  anonymous, section names)
+- ff (i386): 256 symbols from 309 entries
+- `break _compiler` — sets breakpoint by name
+- `x/5i _dup` — disassembles a primitive by name
+- `info symbol $rip` — resolves crash location to `_semi_exec + 24`
+- Backtrace shows `_compiler.bt_exec + 2`, `_catch + 31` instead
+  of `?? ()`
+
+### Also in this session
+
+- Renamed boot `home` to `homedir` (avoids conflict with
+  `lib/console.ff` cursor-home word)
+- Removed em-dashes and Unicode arrows from all lib/*.ff files
+  (STYLE says plain ASCII)
+- Added `style-check` — Perl tool that checks both Lavarenne and
+  DG styles, file passes if either fits, tabs force DG
+- Marked `beautify-forth`, `home-naming-conflict`, and
+  `ffpp-brace-macro` as done/dropped in TODO.md
+
+### Test results
+
+- `make testall`: 131 PASSED, 3 SKIPPED

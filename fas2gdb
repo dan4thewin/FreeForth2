@@ -1,0 +1,151 @@
+#!/usr/bin/perl -w
+# fas2gdb -- convert FASM .fas symbol dump to GDB-loadable ELF
+#
+# Usage: fas2gdb input.fas [output.sym] [-b binary]
+#   Reads .fas (FASM's TOOLS/FAS.TXT format), auto-detects the
+#   load base and ELF class from the linked binary's .flat section,
+#   and writes a minimal ELF32 or ELF64 with symbols at runtime addrs.
+#
+#   In GDB:  add-symbol-file ff64.sym
+#   Or:      gdb -s ff64.sym ff64
+use strict;
+use Getopt::Long;
+
+my $binary;
+GetOptions('b=s' => \$binary) or die "usage: fas2gdb [-b binary] in.fas [out.sym]\n";
+die "usage: fas2gdb [-b binary] input.fas [output.sym]\n" unless @ARGV;
+my $in  = shift;
+my $out = shift || ($in =~ s/\.fas$/.sym/r);
+
+open my $fh, '<:raw', $in or die "$in: $!\n";
+my $d; { local $/; $d = <$fh> } close $fh;
+
+# --- parse .fas header (Table 1) ---
+my ($sig, $maj, $min, $hlen) = unpack 'VCCv', $d;
+die "not a .fas file\n" unless $sig == 0x1a736166;
+
+my ($str_off, $str_len) = unpack 'VV', substr($d, 16, 8);
+my ($sym_off, $sym_len) = unpack 'VV', substr($d, 24, 8);
+my ($pre_off, $pre_len) = unpack 'VV', substr($d, 32, 8);
+my $nsym = int($sym_len / 32);
+
+my $strtab = substr($d, $str_off, $str_len);
+my $pretab = substr($d, $pre_off, $pre_len);
+
+# --- find linked binary, detect class and load base ---
+my ($base, $is64) = (0, 1);
+my $elf_name_off = unpack 'V', substr($d, 12, 4);
+my $elf_end = index($strtab, "\0", $elf_name_off);
+my $elf_name = substr($strtab, $elf_name_off, $elf_end - $elf_name_off);
+unless ($binary) {
+    ($binary = $elf_name) =~ s/\.o$//;
+    unless (-f $binary) { ($binary = $in) =~ s/\.fas$// }
+    undef $binary unless -f $binary;
+}
+if ($binary && -f $binary) {
+    open my $bh, '<:raw', $binary or die "$binary: $!\n";
+    read $bh, my $ei, 5;
+    $is64 = (ord(substr($ei, 4, 1)) == 2);
+    close $bh;
+    my $line = `readelf -S '$binary' 2>/dev/null | grep '\\.flat'`;
+    if ($line =~ /([0-9a-f]{8,16})\s/) { $base = hex $1 }
+}
+printf STDERR "%s  base: 0x%x  class: ELF%d\n",
+    $binary || '(none)', $base, $is64 ? 64 : 32;
+
+# --- extract symbols ---
+my @syms;
+for my $i (0 .. $nsym-1) {
+    my $b = $sym_off + $i * 32;
+    my ($lo, $hi)   = unpack 'VV', substr($d, $b, 8);
+    my $val         = $lo | ($hi << 32);
+    my ($flags, $sz, $typ) = unpack 'vCc', substr($d, $b+8, 4);
+    my $name_field  = unpack 'V', substr($d, $b+24, 4);
+
+    next unless $flags & 1;     # defined
+    next if $typ == 0;          # skip equ constants
+    next if $name_field == 0;   # skip anonymous
+
+    my $name;
+    if ($name_field & 0x80000000) {
+        my $off = $name_field & 0x7FFFFFFF;
+        my $end = index($strtab, "\0", $off);
+        $name = substr($strtab, $off, $end - $off);
+    } else {
+        my $slen = ord(substr($pretab, $name_field, 1));
+        $name = substr($pretab, $name_field+1, $slen);
+    }
+    next if $name =~ /^\./;
+    push @syms, [$name, $val + $base, $sz || 0];
+}
+printf STDERR "%d symbols from %d entries\n", scalar @syms, $nsym;
+
+# --- build string tables ---
+my $elf_strtab = "\0";
+my %idx;
+for (@syms) {
+    next if exists $idx{$_->[0]};
+    $idx{$_->[0]} = length $elf_strtab;
+    $elf_strtab .= $_->[0] . "\0";
+}
+my $shstrtab = "\0.text\0.symtab\0.strtab\0.shstrtab\0";
+
+# --- emit ELF ---
+if ($is64) {
+    my $symtab = "\0" x 24;
+    $symtab .= pack 'VCCvQ<Q<', $idx{$_->[0]}, 0x12, 0, 1, $_->[1], $_->[2]
+        for @syms;
+
+    my $ehdr_sz = 64;  my $shsz = 64;  my $nsect = 5;
+    my $sym_o = $ehdr_sz;
+    my $str_o = $sym_o + length $symtab;
+    my $shs_o = $str_o + length $elf_strtab;
+    my $shdr  = ($shs_o + length($shstrtab) + 7) & ~7;
+    my $pad   = $shdr - ($shs_o + length $shstrtab);
+
+    my $ehdr = pack 'a4 C12 v2 V Q<3 V v6',
+        "\x7fELF", 2,1,1,0, 0,0,0,0, 0,0,0,0,
+        2, 62, 1, 0, 0, $shdr, 0, 64, 0,0, $shsz, $nsect, 4;
+
+    my @sh;
+    push @sh, "\0" x $shsz;
+    push @sh, pack 'V2 Q<4 V2 Q<2', 1, 8, 6, $base, 0, 0x100000, 0,0, 16, 0;
+    push @sh, pack 'V2 Q<4 V2 Q<2', 7, 2, 0, 0, $sym_o, length $symtab, 3,1, 8, 24;
+    push @sh, pack 'V2 Q<4 V2 Q<2', 15, 3, 0, 0, $str_o, length $elf_strtab, 0,0, 1, 0;
+    push @sh, pack 'V2 Q<4 V2 Q<2', 23, 3, 0, 0, $shs_o, length $shstrtab, 0,0, 1, 0;
+
+    open my $ofh, '>:raw', $out or die "$out: $!\n";
+    print $ofh $ehdr, $symtab, $elf_strtab, $shstrtab, "\0" x $pad, @sh;
+    close $ofh;
+} else {
+    my $symtab = "\0" x 16;
+    $symtab .= pack 'VVVCCv', $idx{$_->[0]}, $_->[1], $_->[2], 0x12, 0, 1
+        for @syms;
+
+    my $ehdr_sz = 52;  my $shsz = 40;  my $nsect = 5;
+    my $sym_o = $ehdr_sz;
+    my $str_o = $sym_o + length $symtab;
+    my $shs_o = $str_o + length $elf_strtab;
+    my $shdr  = ($shs_o + length($shstrtab) + 3) & ~3;
+    my $pad   = $shdr - ($shs_o + length $shstrtab);
+
+    # ELF32: e_ident(16) e_type(v) e_machine(v) e_version(V)
+    #   e_entry(V) e_phoff(V) e_shoff(V) e_flags(V)
+    #   e_ehsize(v) e_phentsize(v) e_phnum(v) e_shentsize(v) e_shnum(v) e_shstrndx(v)
+    my $ehdr = pack 'a4 C12 v2 V5 v6',
+        "\x7fELF", 1,1,1,0, 0,0,0,0, 0,0,0,0,
+        2, 3, 1, 0, 0, $shdr, 0,
+        52, 0,0, $shsz, $nsect, 4;
+
+    my @sh;
+    push @sh, "\0" x $shsz;
+    push @sh, pack 'V10', 1, 8, 6, $base, 0, 0x100000, 0,0, 16, 0;
+    push @sh, pack 'V10', 7, 2, 0, 0, $sym_o, length $symtab, 3,1, 4, 16;
+    push @sh, pack 'V10', 15, 3, 0, 0, $str_o, length $elf_strtab, 0,0, 1, 0;
+    push @sh, pack 'V10', 23, 3, 0, 0, $shs_o, length $shstrtab, 0,0, 1, 0;
+
+    open my $ofh, '>:raw', $out or die "$out: $!\n";
+    print $ofh $ehdr, $symtab, $elf_strtab, $shstrtab, "\0" x $pad, @sh;
+    close $ofh;
+}
+printf STDERR "wrote %s (%d bytes)\n", $out, -s $out;

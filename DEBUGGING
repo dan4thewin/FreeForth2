@@ -270,7 +270,56 @@ QUICK REFERENCE
   EOF                        Binary search in a loaded file
   Cross-platform ss          Detect i386/ff64 behavioral divergence
   GDB x/Ni                   Inspect generated machine code at crash
+  GDB + ff64.sym             Assembly labels in GDB (break _compiler)
   see word                   Disassemble with FreeForth word labels
   dis word                   GDB disassembly (decodes all opcodes)
   addr N dump                Raw hex bytes, data layout, litcomma vals
   Compile-time ss ;          Find compile-time stack leaks in boot
+
+
+FASM SYMBOLS IN GDB (fas2gdb)
+-----------------------------
+
+  The fas2gdb tool converts FASM's .fas symbol dump into a minimal
+  ELF that GDB can load, giving you symbolic names for every
+  assembly label in ff64.asm — _compiler, _dup, _drop, _start, tib,
+  dstack, SC, cond_jmp, and ~250 more.
+
+  Build:
+
+    make ff64.sym
+
+  This runs fasm with -s to produce ff64.fas, then fas2gdb reads
+  the .fas format (documented in FASM's TOOLS/FAS.TXT) and emits
+  ff64.sym — a minimal ELF64 with a .symtab section.  It auto-
+  detects the load base from the linked binary's .flat section.
+
+  Use in GDB:
+
+    echo 'test code ;' | gdb -batch \
+      -ex 'file ff64' \
+      -ex 'add-symbol-file ff64.sym' \
+      -ex 'break _compiler' \
+      -ex 'run' \
+      -ex 'x/5i $rip' \
+      -ex 'info symbol $rip' \
+      ./ff64
+
+  What this gives you:
+
+    break _compiler          set breakpoint by label name
+    x/5i _dup                disassemble a primitive by name
+    info symbol 0x403a2b     resolve an address to label+offset
+    info symbol $rip         name the current crash location
+
+  In a crash backtrace, instead of:
+    #2  0x0000000000403a11 in ?? ()
+  you get:
+    _semi_exec + 24
+    _compiler.bt_exec + 2
+    _catch + 31
+
+  Note: this only covers assembly-level labels from ff64.asm.
+  Words defined in Forth (ff64.boot, loaded .ff files) compile
+  at runtime into codebuf — those addresses are past boot64_end
+  and have no static symbols.  Use see/dis/int3 for those.

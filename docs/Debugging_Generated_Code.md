@@ -72,11 +72,79 @@ Key observations:
 - SHORT jumps (`$EB`, `$74`) — 1-byte relative offsets
 - `align` emits NOPs before `BEGIN`
 
+## x86-64: FASM Symbols in GDB (`fas2gdb`)
+
+The `fas2gdb` tool gives GDB symbolic names for every assembly label
+in ff64.asm (and ff.asm for i386). This is the fastest way to orient
+yourself in a crash or breakpoint — instead of raw addresses, you see
+`_compiler`, `_dup`, `_start`, `tib`, etc.
+
+### Building the symbol file
+
+```bash
+make ff64.sym       # builds ff64.fas (fasm -s) then runs fas2gdb
+```
+
+This produces `ff64.sym` — a minimal ELF with 251 symbols. The `.fas`
+file is always produced during `make all`; only `make ff64.sym` adds
+the conversion step.
+
+For i386:
+```bash
+fasm fflin.asm ff.o -s ff.fas
+perl fas2gdb ff.fas       # -> ff.sym (ELF32)
+```
+
+### Using symbols in GDB
+
+```bash
+# Batch mode (crash investigation)
+echo 'test code ;' | gdb -batch \
+  -ex 'file ff64' \
+  -ex 'add-symbol-file ff64.sym' \
+  -ex 'break _compiler' \
+  -ex 'run' \
+  -ex 'x/5i $rip' \
+  -ex 'info symbol $rip'
+
+# Interactive mode
+gdb -ex 'add-symbol-file ff64.sym' ff64
+(gdb) break _compiler
+(gdb) run -f ff64.boot
+(gdb) x/5i _dup          # disassemble by name
+(gdb) info symbol $rip    # what label is at crash site?
+```
+
+### What you get
+
+| Command | Without ff64.sym | With ff64.sym |
+|---------|-----------------|---------------|
+| `info symbol $rip` | `?? ()` | `_compiler.bt_exec + 2` |
+| `x/5i addr` | `0x403086: sub...` | `0x403086 <_dup>: sub...` |
+| `break label` | must use address | `break _compiler` |
+| crash backtrace | `#2 0x403a11 in ?? ()` | `_semi_exec + 24` |
+
+### What it doesn't cover
+
+These symbols are from ff64.asm assembly labels only. Words defined
+in Forth (ff64.boot, loaded .ff files) compile at runtime into
+`codebuf` — those addresses are past `boot64_end` and have no static
+symbols. For those, use `see`, `dis`, or `int3` breakpoints.
+
+### How fas2gdb works
+
+1. Reads FASM's `.fas` format (documented in `TOOLS/FAS.TXT` in the
+   [FASM repo](https://github.com/tgrysztar/fasm))
+2. Extracts defined, relocatable symbols (skips `equ` constants)
+3. Auto-detects the `.flat` section load address from the linked binary
+4. Emits a minimal ELF32 or ELF64 (auto-detected) with a `.text`
+   section and `.symtab` — just enough for GDB's `add-symbol-file`
+
 ## x86-64: Using GDB with `int3`
 
-The x86-64 `ff64` does not have `see`. Instead, define an `int3` macro
-that emits a software breakpoint (`$CC`) into generated code, then run
-under GDB:
+For words compiled at runtime (past `boot64_end`), there are no static
+symbols. Define an `int3` macro that emits a software breakpoint
+(`$CC`) into generated code, then run under GDB:
 
 ### Step 1: Define the `int3` macro
 

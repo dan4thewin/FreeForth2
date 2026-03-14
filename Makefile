@@ -20,11 +20,14 @@ ff.boot: ff2.boot fflin2.boot openlib.ff ffpp
 ff64.boot: ff2.boot fflin2.boot openlib.ff ffpp
 	./ffpp --64 $< > $@
 
-ff64.o: fflin64.asm ff64.asm ff64.boot fflin2.boot
-	fasm $< $@
+ff64.o ff64.fas: fflin64.asm ff64.asm ff64.boot fflin2.boot
+	fasm $< ff64.o -s ff64.fas
 
 ff64: ff64.o
 	$(LD64) -o $@ $<
+
+ff64.sym: ff64.fas ff64 fas2gdb
+	perl fas2gdb ff64.fas
 
 ff64s: fflin64s.asm ff64.asm ff64.boot fflin2.boot
 	fasm $< $@
@@ -53,7 +56,7 @@ fftk64s: fftk64s.asm
 	chmod +x $@
 
 clean:
-	rm -f ff ff64 ff64s fftk fftk64 fftk64s ffpp *.o ff64.boot.min cmpl64 cmpl64.cfg
+	rm -f ff ff64 ff64s fftk fftk64 fftk64s ffpp *.o *.fas *.sym ff64.boot.min cmpl64 cmpl64.cfg
 
 test1:
 	@set -o pipefail; \
