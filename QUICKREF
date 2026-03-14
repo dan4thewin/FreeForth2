@@ -463,7 +463,7 @@ words`		( -- )				list all defined words
 .hdr		( @ -- )			display one header (addr/xt/type)
 .hdr+		( @ -- @next )			display header, advance to next
 .hdrs		( -- )				list all headers with details
-dis		( <name> -- )			disassemble word via GDB
+dis		( <name> -- )			disassemble via GDB (auto-loads .sym)
 see`		( <name> -- )			native disassembler (loads see.ff)
 see.		( @ -- )			disassemble starting at @
 debug`		( -- )				swap in debug compiler

@@ -78,6 +78,7 @@ here 256 dup allot over "/proc/self/exe" drop readlink dup 256- allot swap
 \ lazy loaders
 : help` ;` "help.ff" needexec ;
 : see` ;` "see.ff" needexec ;
+: dis` ;` "dis.ff" needexec ;
 [32] [IF]
 : -d` "debug.ff" needexec ;
 : +longconds` "longconds.ff" needexec ;

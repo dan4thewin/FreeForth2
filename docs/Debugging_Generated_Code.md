@@ -170,6 +170,30 @@ until runtime. For those, `see`/`dis`/`int3` remain the tools.
 4. Detects ELF class from the `-b binary` argument
 5. Emits the same minimal ELF format as `.fas` mode
 
+### dis` — automatic sym loading
+
+The `dis` word (in `lib/dis.ff`, loaded by `needs see.ff` or `needs
+dis.ff`) is a Forth-level GDB disassembler. It attaches GDB to the
+running process and disassembles a named word.
+
+If `ff64.sym` (or `ff.sym` for i386) exists alongside the binary,
+`dis` automatically loads it into GDB via `add-symbol-file`. This
+means calls in the disassembly show symbolic names:
+
+```
+dis compiler ;
+   0x403a2b <_compiler+0>:  call   0x403594 <_wsparse>
+   0x403a44 <_compiler+25>: call   0x4035f2 <_find>
+   0x403a88 <_compiler.compilecall+0>: call 0x4038a3 <_call_compile>
+```
+
+Without the `.sym` file, `dis` still works — you just see raw
+addresses instead of names. No error, no warning.
+
+`dis` lives in `lib/dis.ff` (architecture-independent) and works on
+both i386 and x86-64. Both `lib/x86/see.ff` and `lib/x86-64/see.ff`
+lazy-load it via `needs dis.ff`.
+
 ## x86-64: Using GDB with `int3`
 
 For words compiled at runtime (past `boot64_end`), there are no static

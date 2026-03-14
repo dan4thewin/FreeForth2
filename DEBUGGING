@@ -122,17 +122,20 @@ see, dis, dump — three views of compiled code
   SIB forms).  Backtick macros are short, so see works well; long :
   definitions can hit unknown opcodes.
 
-  dis` — GDB-based disassembler.  Available after see loads (they
-  live in the same file).  Attaches GDB to the running process and
-  uses disass/r:
+  dis` — GDB-based disassembler.  Loaded by see.ff (via needs dis.ff)
+  or directly with needs dis.ff.  Attaches GDB to the running process
+  and uses disass/r:
 
-    : _t 1 2 + ; see _t ;   \ loads see.ff (which includes dis)
+    : _t 1 2 + ; see _t ;   \ loads see.ff (which loads dis.ff)
     dis _t ;                 \ now dis is available
 
   Strengths: decodes ALL x86 instructions (GDB knows every opcode),
-  shows raw bytes alongside.  Weaknesses: no FreeForth word-name
-  labels, requires GDB installed, output is noisier (GDB
-  attach/detach messages).
+  shows raw bytes alongside.  If ff64.sym (or ff.sym) exists in the
+  binary's directory, dis` auto-loads it into GDB — calls show
+  symbolic names (call <_find>) instead of raw addresses.  Build the
+  sym file with make ff64.sym (assembly labels) or make ff64-full.sym
+  (all Forth words).  Weaknesses: requires GDB installed, output is
+  noisier (GDB attach/detach messages).
 
   dump — raw hex dump.  Always available (boot word):
 
@@ -271,6 +274,7 @@ QUICK REFERENCE
   Cross-platform ss          Detect i386/ff64 behavioral divergence
   GDB x/Ni                   Inspect generated machine code at crash
   GDB + ff64.sym             Assembly labels in GDB (break _compiler)
+  dis word + ff64.sym        GDB disassembly with symbolic call targets
   see word                   Disassemble with FreeForth word labels
   dis word                   GDB disassembly (decodes all opcodes)
   addr N dump                Raw hex bytes, data layout, litcomma vals

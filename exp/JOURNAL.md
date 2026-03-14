@@ -13687,6 +13687,11 @@ can't reach a prompt), `.hdrs`-based for everything else.
   DG styles, file passes if either fits, tabs force DG
 - Marked `beautify-forth`, `home-naming-conflict`, and
   `ffpp-brace-macro` as done/dropped in TODO.md
+- Promoted `lib/x86/dis.ff` to `lib/dis.ff` — architecture-
+  independent (it's pure GDB scripting). Added `~symadd`: if
+  `.sym` exists alongside the binary, `dis` auto-loads it into
+  GDB so disassembly shows `call <_find>` instead of raw addresses.
+  Both `see.ff` files now lazy-load `dis.ff` via `needs`.
 
 ### Test results
 

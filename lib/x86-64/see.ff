@@ -385,4 +385,3 @@ $ff :. ff	2b split swap
 : see`		wsparse 0- 0= IF 2drop ;THEN 2dup findxt drop -rot type cr see. ;
 
 hidepvt " see" features append ;
-needs dis.ff
