@@ -1,4 +1,4 @@
-\ shell.ff — OS interface: system, shell, cd, !!
+\ shell.ff  --  OS interface: system, shell, cd, !!
 \ getenv is in boot code: fflin.boot [i386], fflin64.boot [x86-64]
 needs ior.ff
 
@@ -11,7 +11,7 @@ needs fixup.ff
 [THEN]
 
 [64] [IF]
-\ Native system via fork/execve/wait — no libc dependency
+\ Native system via fork/execve/wait  --  no libc dependency
 create _sh_argv pvt 32 allot
 variable _wstat pvt
 : system ( addr len -- status )

@@ -1,4 +1,4 @@
-\ stat.ff — file tests via stat/lstat
+\ stat.ff  --  file tests via stat/lstat
 " stat" features append
 
 \ shared stat buffer, 144 bytes
@@ -33,7 +33,7 @@ variable _stbuf pvt 136 allot
 : flmode ( addr len -- mode|-1 )
   drop ?lstat 0- 0< drop IF -1 ;THEN st@ ;
 
-\ type tests — subtraction sets ZF, drop preserves, RET preserves
+\ type tests  --  subtraction sets ZF, drop preserves, RET preserves
 \ 0= just stores cond_jmp (no runtime code)
 \ "path" fmode is-dir 0= IF ."dir" THEN drop
 : is-reg  ( mode -- mode ) dup $F000 & $8000 - drop ;
@@ -44,13 +44,13 @@ variable _stbuf pvt 136 allot
 : is-blk  ( mode -- mode ) dup $F000 & $6000 - drop ;
 : is-chr  ( mode -- mode ) dup $F000 & $2000 - drop ;
 
-\ permission tests — same mechanism
+\ permission tests  --  same mechanism
 \ "path" fmode can-r 0= IF ."readable" THEN drop
 : can-r ( mode -- mode ) dup $100 & $100 - drop ;
 : can-w ( mode -- mode ) dup  $80 &  $80 - drop ;
 : can-x ( mode -- mode ) dup  $40 &  $40 - drop ;
 
-\ one-shot convenience — takes addr+len, nothing left on stack
+\ one-shot convenience  --  takes addr+len, nothing left on stack
 \ "path" dir? 0= IF ."yes" THEN
 : file? ( addr len -- ) fmode $F000 & $8000 - drop drop ;
 : dir?  ( addr len -- ) fmode $F000 & $4000 - drop drop ;

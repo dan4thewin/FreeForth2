@@ -1,4 +1,4 @@
-\ syscalls.ff — i386 Linux syscall wrappers
+\ syscalls.ff  --  i386 Linux syscall wrappers
 \ All words match x86-64 stack effects; only syscall numbers differ.
 \ Loaded at boot via ^V from fflin2.boot. Also loadable via needs.
 
@@ -21,7 +21,7 @@
 : mprotect   ( prot len addr -- ior )  3 125 syscall ;
 : brk        ( addr -- newbrk )  1 45 syscall ;
 
-\ Struct constants — stat64
+\ Struct constants  --  stat64
  98 constant _stat.sz
  44 constant st.size
 

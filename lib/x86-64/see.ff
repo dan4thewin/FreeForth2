@@ -1,4 +1,4 @@
-\ see.ff — native disassembler for ff64 (x86-64)
+\ see.ff  --  native disassembler for ff64 (x86-64)
 \ see` ( <name> -- )       native disassembly of compiled word
 \ see. ( @ -- )            native disassembly starting at address
 \ findxt ( @ # -- xt len ) looks for string in headers
@@ -32,20 +32,20 @@ create buf pvt 160 allot
 $100 :. ba		xx buf append ;
 $103 :. ca		xx buf appendc ;
 
-\ Spacing helpers — append N spaces to buf
+\ Spacing helpers  --  append N spaces to buf
 :. sp2 $20 ca $20 ca ;
 :. sp3 sp2 $20 ca ;
 :. sp4 sp3 $20 ca ;
 :. sp5 sp4 $20 ca ;
 
-\ Hex append — iterative nibble output to buf (replaces pictured number output)
+\ Hex append  --  iterative nibble output to buf (replaces pictured number output)
 :. xdigit	$F& $30+ dup $39 > 2drop IF $27 + THEN ca ;
 :. _xlen	0 swap BEGIN swap 1+ swap 4 >> 0- 0= UNTIL drop ;
 $102 :. xa	xx 0- 0< IF '-' ca negate THEN
 		0- 0= IF '0' ca drop ;THEN
 		dup _xlen TIMES dup r 4* >> xdigit REPEAT drop ;
 
-\ Mnemonic tables — packed names, no spaces
+\ Mnemonic tables  --  packed names, no spaces
 create mne3 pvt 39 allot "movleajmppopretstdnopcqocdqcldshlshrsar" mne3 swap move
 :. m3	3* mne3+ 3 ba sp4 ;
 :. m3.	3* mne3+ 3 ba ;
@@ -54,7 +54,7 @@ create mne4 pvt 16 allot "testxchgcallpush" mne4 swap move
 create mne5 pvt 10 allot "movzxmovsx" mne5 swap move
 :. m5	5* mne5+ 5 ba sp2 ;
 
-\ Suffix helpers — char-by-char append
+\ Suffix helpers  --  char-by-char append
 :. ,a	',' ca ;
 :. ,byte	',' ca 'b' ca 'y' ca 't' ca 'e' ca ;
 :. ,word	',' ca 'w' ca 'o' ca 'r' ca 'd' ca ;
@@ -70,7 +70,7 @@ $200 :. rexR?	xx rex@ 4& drop ;
 $200 :. rexX?	xx rex@ 2& drop ;
 $200 :. rexB?	xx rex@ 1& drop ;
 
-\ Register name tables — 64-bit, 32-bit, 8-bit
+\ Register name tables  --  64-bit, 32-bit, 8-bit
 create regs64 pvt 32 allot "raxrcxrdxrbxrsprbprsirdi" regs64 swap move
 create regs32 pvt 24 allot "eaxecxedxebxespebpesiedi" regs32 swap move
 create regs8  pvt 16 allot "alcldlblahchdhbh"         regs8  swap move
@@ -125,7 +125,7 @@ $60A :. mod8		xx r8  ' regxt! mod. ;
 $700 :. 0f<>		xx $f- drop 0= IF ??? rdrop THEN ;
 $701 :. 0f=		xx $f- drop 0<> IF ??? rdrop THEN ;
 
-\ Opcode dispatch table — 256 entries
+\ Opcode dispatch table  --  256 entries
 create op pvt 256 8* allot ;
 .A? ' 256 TIMES dup op r 8* + ! REPEAT drop ;
 $1 :. callop	xx dup c@ 8* op+ @ execute ;
@@ -155,10 +155,10 @@ create 80exts pvt 24 allot "addor adcsbbandsubxorcmp" 80exts swap move
 :. 3b		.B drop .B swap .B swap 2xchg ;
 :. 5b		.B drop .N ;
 
-\ ;op` — register an opcode handler
+\ ;op`  --  register an opcode handler
 : ;op` ;` 8* op + H@ @ swap ! ;
 
-\ 2-byte opcodes starting with 0F — uses separate dispatch table
+\ 2-byte opcodes starting with 0F  --  uses separate dispatch table
 create op0f pvt 256 8* allot ;
 :. unk0f	.B drop ??? 0 ;
 unk0f ' 256 TIMES dup op0f r 8* + ! REPEAT drop ;
@@ -229,7 +229,7 @@ $83 :. 83	2b ext 80exta 7& r64 ,a dup cs@ dup .b xa 1+ 0 ;op
 
 \ --- 0F 8x: long conditional jumps (sub-handlers for op0f table) ---
 \ Sub-handler receives (addr+1) where 0F byte already printed by 0f handler.
-\ 5b reads: sub-opcode + 4-byte disp → (addr+6 disp32). j_i32 computes target.
+\ 5b reads: sub-opcode + 4-byte disp -> (addr+6 disp32). j_i32 computes target.
 :. j_i32	over+ dup jba drop 0 ;
 :. jbi32	5b 'j' ca 'b' ca sp5 j_i32 ;
 :. jaei32	5b 'j' ca 'a' ca 'e' ca sp4 j_i32 ;
@@ -271,7 +271,7 @@ $8d $1003 :. lea	xx 2b 1 m3 rm 0 ;op
 \ --- Nop --- (mne3: 7=nop)
 $90 :. nop	1b 7 m3. 0 ;op
 
-\ --- setcc (0F 9x) — sub-handlers for op0f table ---
+\ --- setcc (0F 9x)  --  sub-handlers for op0f table ---
 :. set__	split nip mod8 0 ;
 :. setb		2b 's' ca 'e' ca 't' ca 'b' ca sp3 set__ ;
 :. setae	2b 's' ca 'e' ca 't' ca 'a' ca 'e' ca sp2 set__ ;
@@ -300,7 +300,7 @@ setg   ' op0f $9f 8* + !
 :. _cdq	1b 9 m3. 0 ;
 $99 :. cdq	rexW? 0<> IF _cqo ;THEN _cdq ;op
 
-\ --- movzx/movsx (0F B6/B7/BE/BF) — sub-handlers for op0f ---
+\ --- movzx/movsx (0F B6/B7/BE/BF)  --  sub-handlers for op0f ---
 :. mov_x	split 0 CASE r64r ,byte r@ 0 ;THEN 3 CASE r64r ,a r8 0 ;THEN 2drop drop ??? 0 ;
 :. movzx	2b 0 m5 mov_x ;
 :. movsxi8	2b 1 m5 mov_x ;
@@ -381,7 +381,7 @@ $ff :. ff	2b split swap
 	6 CASE 4 ffn ;; ;THEN
 	2drop drop ??? 0 ;op
 
-\ --- dis` — GDB-based disassembly (like i386 see.ff) ---
+\ --- dis`  --  GDB-based disassembly (like i386 see.ff) ---
 needs shell.ff
 needs pno.ff
 needs ior.ff

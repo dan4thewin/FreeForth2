@@ -1,4 +1,4 @@
-\ mmap.ff — memory-mapped file I/O (cross-platform)
+\ mmap.ff  --  memory-mapped file I/O (cross-platform)
 \ mmap, munmap, ftruncate, _stat.sz, st.size are in boot
 " mmap" features append
 needs fileops.ff
@@ -26,12 +26,12 @@ $20 constant MAP_ANON   $100 constant MAP_GROWSDOWN  $4000 constant MAP_NORESERV
 : mmapr PROT_READ over mm.prot+ ! openr ' mmap_ ;
 : mmapw PROT_READ PROT_WRITE | over mm.prot+ ! openw ' mmap_ ;
 
-\ mmapwt ( @ # n mm -- @ | -n ) — map with truncate
+\ mmapwt ( @ # n mm -- @ | -n )  --  map with truncate
 : mmapwt PROT_READ PROT_WRITE | over mm.prot+ !
   >r -rot openw0 0- 0< IF rdrop ;THEN dup r mm.fd+ !
   2dup ftruncate 0- 0< IF nip nip rdrop ;THEN drop swap r mm.sz+ !
   0 swap r mm.flags+ @ r mm.prot+ @ r mm.sz+ @ 0 mmap dup r> ! ;
 
-\ _mm_unmap ( mm -- ior ior ) — unmap region and close fd
+\ _mm_unmap ( mm -- ior ior )  --  unmap region and close fd
 :. _mm_unmap dup dup mm.sz+ @ swap @ munmap swap mm.fd+ @ close ;
 _mm_unmap ' alias munmap

@@ -1,4 +1,4 @@
-\ time.ff — calendar date, time display, ms@ and ms
+\ time.ff  --  calendar date, time display, ms@ and ms
 \ Syscall wrappers (time, gettimeofday, nanosleep) are in boot
 
 :. _leap .dec\ ."-2-29" drop ;

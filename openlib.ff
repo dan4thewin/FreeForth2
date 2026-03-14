@@ -24,8 +24,8 @@ exe BEGIN 1- 2dup+ c@ '/'- 0= drop UNTIL swap : exedir lit lit ;
 :. p@c! ( byte -- )		p@ tuck c! 1+ p! ;
 
 \ expand sigils directly into _seg at p
-:. exp# ( -- )			exedir tuck p@ swap cmove p +! ;
-:. exp~ ( -- )			home   tuck p@ swap cmove p +! ;
+:. exp# ( -- )			exedir  tuck p@ swap cmove p +! ;
+:. exp~ ( -- )			homedir tuck p@ swap cmove p +! ;
 
 :. 1ch ( @ -- @ )
 	dup c@

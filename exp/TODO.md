@@ -40,11 +40,8 @@ Last verified: 131 PASSED, 3 SKIPPED (`make testall`).
   linking missing something the dynamic build provides. Currently
   SKIPPED in `exp/Makefile`.
 
-- **home-naming-conflict**: Boot `home ( -- @ # )` returns `$HOME`
-  directory path. `lib/console.ff` defines `home ( -- )` as VT100
-  cursor-home (`0 0 atxy`). Loading console.ff silently overwrites
-  boot's `home`. Needs DG decision — options: rename boot's to
-  `homedir`/`$HOME`, or rename console.ff's to `cursor-home`/`ch`.
+- ~~**home-naming-conflict**~~: DONE — renamed boot's `home` to
+  `homedir` in fflin2.boot and openlib.ff. console.ff keeps `home`.
 
 ## Test fixes (SKIPPED experiments)
 - ~~**fix-079**~~: DONE — changed `loadfile` → `needs`, fixed strerror expectations.
@@ -58,7 +55,10 @@ Last verified: 131 PASSED, 3 SKIPPED (`make testall`).
 - ~~**fix-repeat-break**~~: FIXED — `BEGIN ... IF BREAK ... REPEAT` works.
 
 ## Port work
-- ~~**mmap-shared**~~: DONE (exp 145 + 149) — lib/mmap.ff is cross-platform, test/mmap.ff passes on both i386 and ff64. Also fixed shell.ff system stack bug (wait4 missing rusage arg) and !! NUL-termination.
+- ~~**mmap-shared**~~: DONE (exp 145 + 149) — lib/mmap.ff is
+  cross-platform, test/mmap.ff passes on both i386 and ff64. Also
+  fixed shell.ff system stack bug (wait4 missing rusage arg) and !!
+  NUL-termination.
 - ~~**fill-bug**~~: FIXED — `fill` works for 100+ bytes.
 
 - **io-extraction**: Extract I/O from ff64.asm into fflin64io.asm,
@@ -95,17 +95,12 @@ Last verified: 131 PASSED, 3 SKIPPED (`make testall`).
 ## Preprocessor (ffpp)
 
 - ~~**ffpp-debug**~~: DONE — `--debug` flag and `[DEBUG]` conditional implemented in ffpp.asm.
-- ~~**ffpp-tilde-passthru**~~: DONE — `[~]` enters passthru mode (emits verbatim until matching `[THEN]`, tracking nesting).
+- ~~**ffpp-tilde-passthru**~~: DONE — `[~]` enters passthru mode
+  (emits verbatim until matching `[THEN]`, tracking nesting).
 - ~~**ffpp-ctrlv**~~: DONE — Ctrl-V (0x16) replaces U+2038 for includes.
 
-- **ffpp-brace-macro**: Add `{64}` macro support with `--64` flag.
-  When `--64` is passed, `{64}` in input expands to `64`; otherwise
-  it expands to nothing. Use case: `lib/x86-{64}/see.ff` →
-  `lib/x86-64/see.ff` (with `--64`) or `lib/x86-/see.ff` (without).
-  Manual tests were done during development but no formal test cases
-  exist. The `flag_64` variable already exists in ffpp.asm; needs a
-  `{` handler. **Possibly superseded** by `[64] [IF]` which achieves
-  similar conditional compilation differently.
+- ~~**ffpp-brace-macro**~~: DROPPED — `{64}` macro was implemented
+  but superseded by `[64] [IF]` conditional compilation.
 
 ## Documentation
 
@@ -124,18 +119,23 @@ Last verified: 131 PASSED, 3 SKIPPED (`make testall`).
 
 ## Hygiene
 
-- **beautify-forth**: Beautify library files — standardize comment and
-  header style per the STYLE file. Boot file beautification (ff2.boot
-  + fflin2.boot) was done in commit `2ab6f9c`. What remains:
-  `lib/*.ff`, `lib/x86/*.ff`, `lib/x86-64/*.ff`.
+- ~~**beautify-forth**~~: DONE -- boot files restyled (commit
+  `2ab6f9c`), lib em-dashes/arrows removed, `style-check` tool
+  added. Remaining: `x86-64/fixup.ff` and `x86-64/mkimage.ff`
+  tracked in `align-x86-64-with-x86` todo.
 - ~~**privatize-cond-dot**~~: DONE — `:. cond.` in both ff.boot and ff64.boot.
 - ~~**remove-loop**~~: DONE — removed LOOP from ff64.boot, updated all references.
 - ~~**add-stderr-x86**~~: DONE — added stdin/stdout/stderr to ff.boot.
 - **exp-tmp-cleanup**: Move experiment temp files from /tmp to local dirs (~20+ Makefiles).
 - ~~**segv-missing-word**~~: FIXED — ff64 now shows `<-error: ???` on unknown words, same as i386.
-- ~~**needs-segv-loop**~~: NOT A BUG — cascading errors from missing dependencies (e.g., hanoi without console.ff/time.ff). Error recovery works; SEGV is from executing partially-compiled broken code.
-- **standardize-tests**: DG asked to standardize on one test pattern (`[[ $$actual = $$expected ]]` exact match in Makefiles).
-- ~~**else-workarounds**~~: DONE — audit complete. ELSE used freely in ff64.boot. No workarounds remain.
+- ~~**needs-segv-loop**~~: NOT A BUG — cascading errors from missing
+  dependencies (e.g., hanoi without console.ff/time.ff). Error
+  recovery works; SEGV is from executing partially-compiled broken
+  code.
+- **standardize-tests**: DG asked to standardize on one test pattern
+  (`[[ $$actual = $$expected ]]` exact match in Makefiles).
+- ~~**else-workarounds**~~: DONE — audit complete. ELSE used freely
+  in ff64.boot. No workarounds remain.
 
 ## Disassembler / debugger
 
@@ -145,7 +145,8 @@ Last verified: 131 PASSED, 3 SKIPPED (`make testall`).
   verification that GDB-based disassembly output works for a real word.
 
 - **dis-move-to-lib**: Move dis.ff to lib/ as cross-platform tool (gdb-based, arch-independent).
-- **dis-see-shared-words**: Factor shared header-walking words between dis.ff and see.ff into common utility.
+- **dis-see-shared-words**: Factor shared header-walking words
+  between dis.ff and see.ff into common utility.
 
 ## Side quests
 - **register-aliases**: Consider exposing register names for x86-64
@@ -153,13 +154,23 @@ Last verified: 131 PASSED, 3 SKIPPED (`make testall`).
   `tos>si`/`di>tos`) is gone — compat.ff was rewritten as pure
   portable Forth. The broader idea of x86-64 register aliases remains
   valid but is aspirational.
-- **fpu-x86-64**: Explore FPU/floating point for x86-64 (x87 still works, but SSE2 is modern default).
-- **opendir-readdir**: Tier 3 filesystem: opendir/readdir via getdents64 struct parsing, eof. Needs struct helper words first (getdents64 has variable-length entries). `getdents64` syscall wrapper already exists in `lib/x86-64/syscalls.ff`.
+- **fpu-x86-64**: Explore FPU/floating point for x86-64 (x87 still
+  works, but SSE2 is modern default).
+- **opendir-readdir**: Tier 3 filesystem: opendir/readdir via
+  getdents64 struct parsing, eof. Needs struct helper words first
+  (getdents64 has variable-length entries). `getdents64` syscall
+  wrapper already exists in `lib/x86-64/syscalls.ff`.
 - **dns-services**: gethostbyname, getservbyname — file parsing or stub resolver.
 
 ## Resolved (not in TODO.md, captured for record)
-- ~~**$-broken**~~: NOT A BUG — `$-` works fine on ff64. The JOURNAL report of "corrupted opcodes at `movzx` after `repz cmpsb`" was actually `see` failing to decode valid `movzx` instructions (the `fix-see64-rex` bug). `$-` expects `( @1 @2 # -- n )` — the original SEGV was from passing `"abc"` (which pushes addr+len) without dropping the length.
+- ~~**$-broken**~~: NOT A BUG — `$-` works fine on ff64. The JOURNAL
+  report of "corrupted opcodes at `movzx` after `repz cmpsb`" was
+  actually `see` failing to decode valid `movzx` instructions (the
+  `fix-see64-rex` bug). `$-` expects `( @1 @2 # -- n )` — the
+  original SEGV was from passing `"abc"` (which pushes addr+len)
+  without dropping the length.
 - ~~**ffpp-debug**~~: DONE — `[DEBUG]`/`--debug` implemented.
 - ~~**ffpp-tilde-passthru**~~: DONE — `[~]` passthru mode implemented.
 - ~~**ffpp-ctrlv**~~: DONE — Ctrl-V replaces U+2038.
-- ~~**exp-063-removal**~~: DONE — exp/063-loadfile removed from exp/Makefile (tests deleted `loadfile` word).
+- ~~**exp-063-removal**~~: DONE — exp/063-loadfile removed from
+  exp/Makefile (tests deleted `loadfile` word).

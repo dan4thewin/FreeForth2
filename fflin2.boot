@@ -57,7 +57,7 @@ here 256 dup allot over "/proc/self/exe" drop readlink dup 256- allot swap
 : getenv envp @ BEGIN zlen 0- 0= IF BREAK 2dup+ 1+ >r _getenv
   r> REPEAT drop nip nip 0 ; \ @ # -- @ # ; value, or last-checked 0
 
-"HOME" getenv swap : home lit lit ;
+"HOME" getenv swap : homedir lit lit ;
 
 \ --------------------------------------------------------------------
 openlib.ff

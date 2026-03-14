@@ -1,0 +1,87 @@
+#!/usr/bin/perl -w
+# style-check -- verify .ff/.boot files against STYLE conventions
+# Checks both styles; file passes if it conforms to either one.
+# Usage: style-check [files...]   (default: lib/**/*.ff)
+use strict;
+
+my @files = @ARGV ? @ARGV : glob("lib/*.ff lib/x86/*.ff lib/x86-64/*.ff");
+my $total_warns = 0;
+
+sub shared_warnings {
+    my @lines = @_;
+    my @w;
+    for my $i (0..$#lines) {
+        my ($n, $l) = ($i+1, $lines[$i]);
+        push @w, "$n: trailing whitespace" if $l =~ /\s$/;
+        push @w, "$n: standalone ( ) comment"
+            if $l =~ /^\s*\([^)]*\)\s*$/ && $l !~ /\(\s*[-\w@#!+*\/<>&|^. ]+--/;
+        if ($l =~ /[^\x00-\x7e]/) {
+            (my $t = $l) =~ s/\xe2\x80\x94|\xe2\x86\x92//g;
+            push @w, $t =~ /[^\x00-\x7e]/ ? "$n: non-ASCII"
+                : "$n: em-dash/arrow (STYLE says plain ASCII)";
+        }
+    }
+    @w;
+}
+
+sub dg_warnings {
+    my @lines = @_;
+    my @w;
+    push @w, "1: missing \\ header" if @lines && $lines[0] !~ /^\\/;
+    for my $i (0..$#lines) {
+        my ($n, $l) = ($i+1, $lines[$i]);
+        push @w, "$n: ( ) prose block" if $l =~ /^\s*\(/ && $l !~ /\)/;
+    }
+    if (@lines > 20) {
+        my $blanks = grep { $_ eq '' } @lines;
+        push @w, "no blank line separators (dense)" if $blanks < 2;
+    }
+    @w;
+}
+
+sub lav_warnings {
+    my @lines = @_;
+    my @w;
+    for my $i (2..$#lines) {
+        push @w, ($i+1).": 3+ consecutive blank lines"
+            if $lines[$i] eq '' && $lines[$i-1] eq '' && $lines[$i-2] eq '';
+    }
+    @w;
+}
+
+for my $f (@files) {
+    open my $fh, '<', $f or warn("$f: $!\n"), next;
+    chomp(my @lines = <$fh>);
+    close $fh;
+
+    my @shared = shared_warnings(@lines);
+    my @dw = dg_warnings(@lines);
+    my @lw = lav_warnings(@lines);
+
+    # tabs => must be DG (Lavarenne never uses tabs)
+    my $has_tabs = grep { /\t/ } @lines;
+
+    # pass if either style-specific check is clean (unless tabs force DG)
+    my (@extra, $tag);
+    if ($has_tabs) {
+        @extra = @dw;
+        $tag = 'DG';
+    } elsif (@dw && @lw) {
+        @extra = (@dw <= @lw) ? @dw : @lw;
+        $tag = (@dw <= @lw) ? 'DG?' : 'Lavarenne?';
+    } else {
+        @extra = ();
+        $tag = !@dw ? 'DG' : 'Lavarenne';
+    }
+    my @w = (@shared, @extra);
+
+    if (@w) {
+        print "$f ($tag): ", scalar @w, " warning(s)\n";
+        print "  $_\n" for @w;
+        $total_warns += @w;
+    } else {
+        print "$f ($tag): ok\n";
+    }
+}
+
+print "\n$total_warns warning(s) total\n" if @files > 1;

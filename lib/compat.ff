@@ -1,4 +1,4 @@
-\ compat.ff — Forth 2012 compatibility shim (pure Forth, both arches)
+\ compat.ff  --  Forth 2012 compatibility shim (pure Forth, both arches)
 " compat" features append
 
 \ --- case-insensitive string compare and find ---
@@ -45,7 +45,7 @@ c@+`		' alias count` ;
 eval		' alias evaluate ;
 .u		' alias u. ;
 
-\ floored division (pure Forth — XOR sign test, variable for temp)
+\ floored division (pure Forth  --  XOR sign test, variable for temp)
 variable _fmdiv pvt
 : fm/mod	dup _fmdiv ! m/mod over 0- 0= IF drop ;THEN
 		_fmdiv @ ^ 0- 0< drop IF

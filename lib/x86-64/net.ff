@@ -1,4 +1,4 @@
-\ net.ff — BSD socket syscall wrappers for x86-64
+\ net.ff  --  BSD socket syscall wrappers for x86-64
 \ needs net.ff ; arg1 on TOS, argN deepest
 
 \ address families
@@ -50,5 +50,5 @@ $100007F constant INADDR_LOOPBACK
 : send ( flags len buf fd -- n ) >r >r >r >r 0 0 r> r> r> r> 6 44 syscall ;
 : recv ( flags len buf fd -- n ) >r >r >r >r 0 0 r> r> r> r> 6 45 syscall ;
 
-\ htons — byte-swap 16-bit value for network byte order
+\ htons  --  byte-swap 16-bit value for network byte order
 : htons ( n -- n ) dup 8 >> $FF & swap $FF & 8 << | ;

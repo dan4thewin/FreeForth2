@@ -1,4 +1,4 @@
-\ fixup.ff — self-patching first-call resolution for libc symbols
+\ fixup.ff  --  self-patching first-call resolution for libc symbols
 \ DG's mechanism; Lavarenne's i386 used libc. with direct dlsym.
 \
 \ i386 fixup replaces a 5-byte "call _xxx" with BB(mov ebx,imm32).
@@ -6,7 +6,7 @@
 \   48BB<8>(movabs rbx,funh) C3(ret)
 \ Then patch the call's relative offset to point to the trampoline.
 \
-\ Trampolines go in _fixbuf, not at here (rbp) — during anonymous
+\ Trampolines go in _fixbuf, not at here (rbp)  --  during anonymous
 \ block execution, here points to the executing code itself.
 \
 \ x86-64 fixup relies on tail-call optimization (E8->E9) so it is

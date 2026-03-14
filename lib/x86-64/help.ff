@@ -1,4 +1,4 @@
-\ help.ff — Lavarenne's self-executing help file mechanism
+\ help.ff  --  Lavarenne's self-executing help file mechanism
 \ The search engine lives in ff.help/ff64.help preambles.
 \ needed loads help file into tib; eval runs the preamble which
 \ searches the remaining tib content for the keyword.

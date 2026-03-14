@@ -1,7 +1,7 @@
-\ ior.ff — I/O result checking and strerror
+\ ior.ff  --  I/O result checking and strerror
 
 [64] [IF]
-\ Native strerror — packed errno name table, no libc dependency
+\ Native strerror  --  packed errno name table, no libc dependency
 \ 8-char entries for errno 1-28; index = errno-1 * 8
 create _enames pvt 224 allot
 "EPERM   ENOENT  ESRCH   EINTR   EIO     ENXIO   E2BIG   ENOEXEC EBADF   ECHILD  EAGAIN  ENOMEM  EACCES  EFAULT  ENOTBLK EBUSY   EEXIST  EXDEV   ENODEV  ENOTDIR EISDIR  EINVAL  ENFILE  EMFILE  ENOTTY  ETXTBSY EFBIG   ENOSPC  " _enames swap move

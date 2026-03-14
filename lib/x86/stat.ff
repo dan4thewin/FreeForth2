@@ -1,4 +1,4 @@
-\ stat.ff — file tests via stat/lstat
+\ stat.ff  --  file tests via stat/lstat
 " stat" features append
 
 \ shared stat buffer

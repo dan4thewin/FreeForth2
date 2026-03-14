@@ -1,4 +1,4 @@
-\ fileops.ff — file operations: lseek, ioctl, select, stat
+\ fileops.ff  --  file operations: lseek, ioctl, select, stat
 needs ior.ff
 
 : lseek  _lseek ; ( whence offset fd -- offset )
