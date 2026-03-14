@@ -100,72 +100,21 @@ Before writing or debugging Forth code:
   (dense, no blank lines, fall-through chains) for boot files and
   his libs; DG's (tab-aligned, header blocks, descriptive names) for
   new libraries and ports.  Check the file mapping before editing.
+- **`DEBUGGING`** — practical debugging guide with techniques (GDB,
+  `ss`, `Z\``, EOF, `see`/`dis`/`dump`) and case studies.
 
 ## Debugging generated code
 
-FreeForth's compiler generates machine code at runtime. When something
-crashes or behaves wrong, **use GDB first** — don't try to reason about
-the bug by manually tracing SWAPbit state or flag preservation through
-compilation passes. That approach is extremely error-prone and slow.
+See `DEBUGGING` for techniques (GDB, `ss`, `Z\``, EOF binary search,
+`see`/`dis`/`dump`) and case studies (ct=1, _parse, header swap).
 
-### What works
+Key policies:
 
-- **GDB disassembly of generated code.** Build without `-s` (strip),
-  run under GDB, examine the crash site with `x/Ni $rip` and
-  `x/Ni addr` to see the actual machine code the compiler emitted.
-  The generated code is the ground truth. Example workflow:
-  ```
-  echo 'test-input' | gdb -batch -ex 'run -f ff64.boot' -ex 'x/30i $rip-40' ./ff64
-  ```
-- **Tracing back from the crash.** If RIP is a small number (like 9),
-  it means execution jumped to a data value — check what constant or
-  literal has that value. The return stack (`x/4gx $rsp`) shows where
-  the bad call/jump came from.
-- **Disassembling a word with the i386 `ff`.** Use `see wordname` on
-  the original 32-bit binary to understand how Christophe's compiler
-  generates code for a given pattern. This is faster than reading the
-  compiler source.
-
-### What doesn't work
-
-- **Manual SWAPbit tracing.** Tracking SWAPbit through every macro
-  expansion is extremely complex and unreliable. There are too many
-  toggles (swap\`, lit\`, dup>r\`) and adjusters (s01, s08, s09) to
-  trace reliably in your head. Use GDB to see the actual emitted bytes.
-- **Theorizing without evidence.** Don't spend time hypothesizing about
-  flag preservation, register clobbering, or stack corruption without
-  first looking at the generated machine code. The hypothesis is often
-  wrong.
-- **Progressive test simplification alone.** Narrowing a crash by
-  removing words from a test definition can help, but is slow and can
-  lead to wrong conclusions (e.g., creating a "simplified" test that
-  crashes for a different reason than the original).
-
-### The ct=1 bug as a cautionary tale
-
-The `words` crash (exp 038) took extensive manual analysis of SWAPbit
-state, flag preservation, and stack operations — all of which turned out
-to be red herrings. One GDB session showing `jmp 0x9` immediately
-revealed that the compile-time stack was corrupted by a constant value.
-**Always check the generated code first.**
-
-### Compile-time stack leak debugging
-
-For compile-time stack leaks (a value silently accumulating on the
-stack during compilation), use DG's `ss` binary search technique:
-
-1. Place `ss ;` anonymous blocks at various points in the boot source.
-   Rebuild. The stack depth reveals where the leak starts.
-2. Move the `ss` calls to narrow down to one line.
-3. For intra-word diagnosis, define `: Z\` ss ;` and place `Z` inside
-   the suspect word — each `Z` runs at compile time, showing the
-   compile-time stack at that point.
-4. Comment out suspect words to confirm.
-
-**Spiral limit:** after 2–3 failed hypotheses, stop theorizing.
-Switch to empirical methods: simplest repro, i386 cross-check, or
-GDB disassembly. Spiralling without empirical progress is the single
-biggest time sink in this project.
+- **GDB first** — don't reason about bugs by tracing SWAPbit or flag
+  state manually.  Look at the generated machine code.
+- **Spiral limit** — after 2–3 failed hypotheses, stop theorizing.
+  Switch to empirical methods: simplest repro, i386 cross-check, or
+  GDB disassembly.
 
 ## OS/Architecture separation
 
