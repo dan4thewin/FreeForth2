@@ -245,7 +245,7 @@ $20 constant CT_ALIAS
 \ bracket state switching
 \ [ saves anon/SC state; ] restores via _]
 : [` anon@ SC c@ anon:` ;
-: ]` 2>r ;` 2r> :. _] SC c! anon! ;
+: ]` 2>r ;` 2r> : _] SC c! anon! ;
 : execute >r ;
 : reverse` $D1FF59, ,3 ; \ 59(pop rcx)FFD1(call rcx)
 

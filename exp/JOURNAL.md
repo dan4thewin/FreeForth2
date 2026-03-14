@@ -13488,3 +13488,82 @@ previous commit. Moved to SKIP.
 ### Test results
 
 - `make testall`: 127 PASSED, 3 SKIPPED (up from 106 PASSED)
+
+---
+
+## Experiment 154 — Fix i386 help system
+
+### Goal
+
+The i386 `help` command broke during the boot unification (exp 150).
+Diagnose and fix it. Assess how the i386 and x86-64 help systems
+differ and whether unification is worthwhile.
+
+### Root cause
+
+`lib/x86/help.ff` line 5 uses `_]` — a compiler-state-restoration
+word defined by `]\`` in ff2.boot line 248. The definition uses `:.`
+(private), so `hidepvt` hides it at boot. In Lavarenne's original
+system, `ff.ff` loaded BEFORE `hidepvt` ran, so `_]` was visible
+when help.ff compiled. In the unified boot, help.ff loads on demand
+via `needexec` — long after `hidepvt`.
+
+### Lavarenne's ff.help design (elegant and worth preserving)
+
+`ff.help` is a self-executing Forth file. Lines 1–6 are blank/comment.
+Lines 7–16 are executable Forth that runs when `needed` loads ff.help
+into the tib:
+
+- Line 8: `H@ @ execute` — forget the marker set by `needed`
+- Lines 9–11: search loop — `lnparse` reads lines from the remaining
+  tib content, `$-` compares each line's start against the keyword
+- Line 14: display loop — prints the matching entry (keyword line +
+  subsequent lines until an empty line)
+- Line 15: `0 EOF\`` — skip to end of file
+
+The search keyword reaches ff.help's preamble via the return stack:
+`help\`` does `[\`` 2>r "ff.help" needed 2r> _]`. The `[\``/`_]`
+pair brackets the `needed` call, preserving compiler state while the
+keyword waits safely on the return stack.
+
+No separate buffer needed — the help text IS the tib content that
+`needed` loaded. The search scans remaining lines after the preamble.
+
+### x86-64 help design (different approach)
+
+`lib/x86-64/help.ff` (56 lines) uses a standalone search engine:
+- `helpbuf` (128KB BSS buffer in ff64.asm)
+- Reads `ff.help` + `ff64.help` via `openr`/`read` into buffer
+- Byte-scans for keyword match, prints entry
+
+### The fix
+
+One character: change `:. _]` to `: _]` in ff2.boot line 248. This
+makes `_]` a normal (non-private) code word that survives `hidepvt`.
+The word is purely internal (compiler state restoration) and harmless
+if visible.
+
+```diff
+-: ]` 2>r ;` 2r> :. _] SC c! anon! ;
++: ]` 2>r ;` 2r> : _] SC c! anon! ;
+```
+
+### Behavioral difference between platforms
+
+After the fix, both platforms' help systems work but display
+differently:
+
+- **i386 (Lavarenne)**: Shows from keyword to next empty line —
+  the entire related group. `help dup` shows dup, 2dup, 3dup,
+  nipdup, tuck, over, under, and "see also".
+- **x86-64**: Shows from keyword to first non-indented line —
+  just the single entry. `help dup` shows only dup + its definition.
+
+Both behaviors are correct per their designs. Lavarenne's grouping
+is arguably more useful for discovery. Unification to one approach
+could be done later but isn't urgent — each works correctly on its
+own platform.
+
+### Test results
+
+- `make testall`: 127 PASSED, 3 SKIPPED (unchanged)
