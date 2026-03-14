@@ -26,17 +26,7 @@ variable xt pvt
 
 create buf pvt 80 allot
 :. ba		buf append ;
-:. ua		0 <# #s #> ba ;
 :. xa		s>d swap over dabs <# x#s '$' hold rot sign #> ba ;
-:. gdbscript	over+ swap
-		0 buf!
-		"attach " ba getpid ua "^J" ba
-		"set disassembly-flavor intel^J" ba
-		"disass/r " ba ua "," ba ua "^J" ba ;
-:. gdbrun	"gdb --batch -x .see | less -F -+c" shell ;
-:. tmpsave	openw0 ?ior ior@ write ?ior. ior@ close ?ior. ;
-:. gdbdump	gdbscript buf c@+ ".see" tmpsave gdbrun ;
-: dis`		wsparse findxt gdbdump ;
 
 
 :. .le		dup 4 TIMES c@+ .b REPEAT drop ;	\ @ -- @	; show little-endian
@@ -273,3 +263,4 @@ $ff :. ff	2b split swap
 
 : see`		wsparse 0- 0= IF 2drop ;THEN 2dup findxt drop -rot type cr see. ;
 hidepvt ;
+needs dis.ff

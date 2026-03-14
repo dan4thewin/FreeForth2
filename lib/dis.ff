@@ -1,7 +1,11 @@
 \ dis` ( <name> -- )		calls gdb to disassemble <name>
-\ findxt ( @ # -- xt len )	looks for string in headers, skips constants and aliases
+\ ~findxt ( @ # -- xt len )	looks for string in headers, skips constants and aliases
+\ If ff64.sym or ff.sym exists alongside the binary, dis` loads it
+\ into GDB so disassembly shows symbolic call targets.
 needs shell.ff
 needs pno.ff
+needs ior.ff
+needs stat.ff
 
 variable ~xt pvt
 :. ~sz-		2dup h.sz+ c@ - drop ;					\ ( # h - # h ) set ZF if # - hdr name size == 0
@@ -14,11 +18,18 @@ variable ~xt pvt
 		BEGIN ~stop? ~hdr- 0<> WHILE dup@ ~xt! ~nexth REPEAT
 		nip nip @ ~xt@ over- ;
 
-create ~buf pvt 80 allot
+create ~buf pvt 160 allot
 :. ~ba		~buf append ;
+:. ~ca		~buf appendc ;
 :. ~ua		0 <# #s #> ~ba ;
+:. ~symadd	>r >r
+		0 ~buf! exe ~ba ".sym" ~ba 0 ~ca
+		~buf c@ 1- ~buf c!
+		~buf 1+ 0 file? 0 ~buf!
+		0= IF "add-symbol-file " ~ba exe ~ba ".sym^J" ~ba THEN
+		r> r> ;
 :. gdbscript	over+ swap
-		0 ~buf!
+		~symadd
 		"attach " ~ba getpid ~ua "^J" ~ba
 		"set disassembly-flavor intel^J" ~ba
 		"disass/r " ~ba ~ua "," ~ba ~ua "^J" ~ba ;
