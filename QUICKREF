@@ -491,9 +491,10 @@ needed		( @ # -- )			compile file by name (guarded)
 needexec	( @ # -- )			load file + exec last def
 -f`		( <file> -- )			needs + call main if defined
 eval		( @ # -- )			compile source string
-ffpath		( -- @ )			var: library search path
-openbuf		( -- @ )			80-byte buffer for openlib
-openlib		( @ # -- fd )			open file, search ffpath
+openlib		( @ # -- fd )			open file via FFPATH template
+exe		( -- @ # )			readlink of /proc/self/exe
+exedir		( -- @ # )			directory containing executable
+home		( -- @ # )			$HOME directory
 
 \ ========== OPERATING SYSTEM INTERFACE =====================
 

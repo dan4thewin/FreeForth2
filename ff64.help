@@ -173,7 +173,7 @@ quit ( -- ) reset _top to default and restart the REPL
 needexec ( addr len -- ) load a file and execute its last definition
   Calls needed (with double-load guard), then executes the most
   recently defined word via H@ @ execute.
-  see also: needed needs` needexec loadfile openlib -f`
+  see also: needed needs` needexec openlib -f`
 
 \ === Signal handling ===
 

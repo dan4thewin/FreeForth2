@@ -13429,3 +13429,62 @@ compile-time double-lit constant. Then `openlib.ff` is loaded
 ### Test results
 
 - `make testall`: 112 PASSED, 0 FAILED (106 existing + 6 new)
+
+## Experiment 153 addendum: Cross-platform testing
+
+### Goal
+
+Enable `test/system.ff` on i386 and un-skip all experiments that
+now work with the new openlib infrastructure.
+
+### Actions
+
+**1. Created lib/x86/stat.ff (i386 port)**
+
+The x86-64 `stat.ff` uses struct offsets specific to the x86-64
+`struct stat`. The i386 kernel uses `struct stat64` (syscall 195/196)
+with different offsets. Key differences:
+
+| Field | x86-64 | i386 (stat64) |
+|-------|--------|---------------|
+| st.mode | 24 | 16 |
+| st.size | 48 | 44 |
+| st.nlink | 16 | 20 |
+| st.mtime | 88 | 72 |
+| _stat.sz | 144 | 98 |
+
+The buffer size uses `_stat.sz` from `syscalls.ff` via
+`variable _stbuf pvt _stat.sz 4- allot` — same code, different
+constant depending on platform.
+
+**2. Removed [64]-only gate from system.ff**
+
+system.ff was guarded by `[64] [IF]...[ELSE] 0 exit ; [THEN]`.
+The only 64-bit dependency was `stat.ff` (now ported) and the
+hardcoded `!! ln -sf ../../ff64` symlink. Fixed with:
+- Arch-conditional symlink: `[64] [IF] !! ln -sf ../../ff64 ...
+  [ELSE] !! ln -sf ../../ff ...`
+- Two tests (SEGV recovery, error recovery) use `skip` on i386 —
+  these are genuine behavioral differences: i386 `ff` doesn't
+  continue to the next input line after SEGV or error.
+
+**3. Un-skipped 5 experiments**
+
+| Exp | Name | Why it works now |
+|-----|------|------------------|
+| 046 | callvec64 | Was already fixed; oversight |
+| 051 | repl-autoexec | Fixed whitespace normalization in test |
+| 052 | repl-forth | Was already fixed; oversight |
+| 143 | openlib-port | Updated FFPATH overrides for `?:?.ff:` prefix |
+| 144 | native-libc | Was already fixed; oversight |
+
+**4. Discovered 2 pre-existing hangers**
+
+Experiments 110-perl-parity and 112-file-tests both hang when
+running tests against `ff64s` (the static build). This is
+unrelated to openlib changes — confirmed by testing against the
+previous commit. Moved to SKIP.
+
+### Test results
+
+- `make testall`: 127 PASSED, 3 SKIPPED (up from 106 PASSED)
