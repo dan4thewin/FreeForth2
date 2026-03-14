@@ -8,11 +8,14 @@ ffpp: ffpp.asm
 	fasm $< $@
 	chmod +x $@
 
-ff.o: fflin.asm ff.asm fflinio.asm ff.boot fflin2.boot
-	fasm $< $@
+ff.o ff.fas: fflin.asm ff.asm fflinio.asm ff.boot fflin2.boot
+	fasm $< ff.o -s ff.fas
 
 ff: ff.o
 	$(LD) -o $@ $<
+
+ff.sym: ff.fas ff fas2gdb
+	perl fas2gdb ff.fas
 
 ff.boot: ff2.boot fflin2.boot openlib.ff ffpp
 	./ffpp $< > $@
