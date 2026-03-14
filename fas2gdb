@@ -1,84 +1,106 @@
 #!/usr/bin/perl -w
-# fas2gdb -- convert FASM .fas symbol dump to GDB-loadable ELF
+# fas2gdb -- convert FASM .fas or FreeForth .hdrs to GDB-loadable ELF
 #
 # Usage: fas2gdb input.fas [output.sym] [-b binary]
-#   Reads .fas (FASM's TOOLS/FAS.TXT format), auto-detects the
-#   load base and ELF class from the linked binary's .flat section,
-#   and writes a minimal ELF32 or ELF64 with symbols at runtime addrs.
+#        fas2gdb --hdrs -b binary [output.sym]  < hdrs_output
+#
+#   .fas mode: reads FASM symbol dump (TOOLS/FAS.TXT format), auto-
+#     detects load base and ELF class from linked binary's .flat section.
+#   .hdrs mode: reads FreeForth .hdrs output from stdin, includes all
+#     Forth-defined words (not just assembly labels). Addresses are
+#     already absolute -- no base adjustment needed.
 #
 #   In GDB:  add-symbol-file ff64.sym
 #   Or:      gdb -s ff64.sym ff64
 use strict;
 use Getopt::Long;
 
-my $binary;
-GetOptions('b=s' => \$binary) or die "usage: fas2gdb [-b binary] in.fas [out.sym]\n";
-die "usage: fas2gdb [-b binary] input.fas [output.sym]\n" unless @ARGV;
-my $in  = shift;
-my $out = shift || ($in =~ s/\.fas$/.sym/r);
+my ($binary, $hdrs);
+GetOptions('b=s' => \$binary, 'hdrs' => \$hdrs)
+    or die "usage: fas2gdb [-b binary] in.fas [out.sym]\n";
 
-open my $fh, '<:raw', $in or die "$in: $!\n";
-my $d; { local $/; $d = <$fh> } close $fh;
+my (@syms, $is64, $base);
 
-# --- parse .fas header (Table 1) ---
-my ($sig, $maj, $min, $hlen) = unpack 'VCCv', $d;
-die "not a .fas file\n" unless $sig == 0x1a736166;
-
-my ($str_off, $str_len) = unpack 'VV', substr($d, 16, 8);
-my ($sym_off, $sym_len) = unpack 'VV', substr($d, 24, 8);
-my ($pre_off, $pre_len) = unpack 'VV', substr($d, 32, 8);
-my $nsym = int($sym_len / 32);
-
-my $strtab = substr($d, $str_off, $str_len);
-my $pretab = substr($d, $pre_off, $pre_len);
-
-# --- find linked binary, detect class and load base ---
-my ($base, $is64) = (0, 1);
-my $elf_name_off = unpack 'V', substr($d, 12, 4);
-my $elf_end = index($strtab, "\0", $elf_name_off);
-my $elf_name = substr($strtab, $elf_name_off, $elf_end - $elf_name_off);
-unless ($binary) {
-    ($binary = $elf_name) =~ s/\.o$//;
-    unless (-f $binary) { ($binary = $in) =~ s/\.fas$// }
-    undef $binary unless -f $binary;
-}
-if ($binary && -f $binary) {
-    open my $bh, '<:raw', $binary or die "$binary: $!\n";
-    read $bh, my $ei, 5;
-    $is64 = (ord(substr($ei, 4, 1)) == 2);
-    close $bh;
-    my $line = `readelf -S '$binary' 2>/dev/null | grep '\\.flat'`;
-    if ($line =~ /([0-9a-f]{8,16})\s/) { $base = hex $1 }
-}
-printf STDERR "%s  base: 0x%x  class: ELF%d\n",
-    $binary || '(none)', $base, $is64 ? 64 : 32;
-
-# --- extract symbols ---
-my @syms;
-for my $i (0 .. $nsym-1) {
-    my $b = $sym_off + $i * 32;
-    my ($lo, $hi)   = unpack 'VV', substr($d, $b, 8);
-    my $val         = $lo | ($hi << 32);
-    my ($flags, $sz, $typ) = unpack 'vCc', substr($d, $b+8, 4);
-    my $name_field  = unpack 'V', substr($d, $b+24, 4);
-
-    next unless $flags & 1;     # defined
-    next if $typ == 0;          # skip equ constants
-    next if $name_field == 0;   # skip anonymous
-
-    my $name;
-    if ($name_field & 0x80000000) {
-        my $off = $name_field & 0x7FFFFFFF;
-        my $end = index($strtab, "\0", $off);
-        $name = substr($strtab, $off, $end - $off);
-    } else {
-        my $slen = ord(substr($pretab, $name_field, 1));
-        $name = substr($pretab, $name_field+1, $slen);
+if ($hdrs) {
+    die "usage: fas2gdb --hdrs -b binary [output.sym]\n" unless $binary;
+    while (<STDIN>) {
+        /\$([0-9a-f]+)\s+(\d+)\s+(\S+)\s*$/ or next;
+        push @syms, [$3, hex $1, 0];
     }
-    next if $name =~ /^\./;
-    push @syms, [$name, $val + $base, $sz || 0];
+    open my $bh, '<:raw', $binary or die "$binary: $!\n";
+    read $bh, my $ei, 5; close $bh;
+    $is64 = (ord(substr($ei, 4, 1)) == 2);
+    $base = $syms[-1][1] if @syms;  # lowest addr from last entry
+    printf STDERR "%s  %d words  class: ELF%d\n",
+        $binary, scalar @syms, $is64 ? 64 : 32;
+} else {
+    die "usage: fas2gdb [-b binary] input.fas [output.sym]\n" unless @ARGV;
+    my $in = shift @ARGV;
+
+    open my $fh, '<:raw', $in or die "$in: $!\n";
+    my $d; { local $/; $d = <$fh> } close $fh;
+
+    # --- parse .fas header (Table 1) ---
+    my ($sig, $maj, $min, $hlen) = unpack 'VCCv', $d;
+    die "not a .fas file\n" unless $sig == 0x1a736166;
+
+    my ($str_off, $str_len) = unpack 'VV', substr($d, 16, 8);
+    my ($sym_off, $sym_len) = unpack 'VV', substr($d, 24, 8);
+    my ($pre_off, $pre_len) = unpack 'VV', substr($d, 32, 8);
+    my $nsym = int($sym_len / 32);
+
+    my $strtab = substr($d, $str_off, $str_len);
+    my $pretab = substr($d, $pre_off, $pre_len);
+
+    # --- find linked binary, detect class and load base ---
+    ($base, $is64) = (0, 1);
+    my $elf_name_off = unpack 'V', substr($d, 12, 4);
+    my $elf_end = index($strtab, "\0", $elf_name_off);
+    my $elf_name = substr($strtab, $elf_name_off, $elf_end - $elf_name_off);
+    unless ($binary) {
+        ($binary = $elf_name) =~ s/\.o$//;
+        unless (-f $binary) { ($binary = $in) =~ s/\.fas$// }
+        undef $binary unless -f $binary;
+    }
+    if ($binary && -f $binary) {
+        open my $bh, '<:raw', $binary or die "$binary: $!\n";
+        read $bh, my $ei, 5;
+        $is64 = (ord(substr($ei, 4, 1)) == 2);
+        close $bh;
+        my $line = `readelf -S '$binary' 2>/dev/null | grep '\\.flat'`;
+        if ($line =~ /([0-9a-f]{8,16})\s/) { $base = hex $1 }
+    }
+    printf STDERR "%s  base: 0x%x  class: ELF%d\n",
+        $binary || '(none)', $base, $is64 ? 64 : 32;
+
+    # --- extract symbols ---
+    for my $i (0 .. $nsym-1) {
+        my $b = $sym_off + $i * 32;
+        my ($lo, $hi)   = unpack 'VV', substr($d, $b, 8);
+        my $val         = $lo | ($hi << 32);
+        my ($flags, $sz, $typ) = unpack 'vCc', substr($d, $b+8, 4);
+        my $name_field  = unpack 'V', substr($d, $b+24, 4);
+
+        next unless $flags & 1;     # defined
+        next if $typ == 0;          # skip equ constants
+        next if $name_field == 0;   # skip anonymous
+
+        my $name;
+        if ($name_field & 0x80000000) {
+            my $off = $name_field & 0x7FFFFFFF;
+            my $end = index($strtab, "\0", $off);
+            $name = substr($strtab, $off, $end - $off);
+        } else {
+            my $slen = ord(substr($pretab, $name_field, 1));
+            $name = substr($pretab, $name_field+1, $slen);
+        }
+        next if $name =~ /^\./;
+        push @syms, [$name, $val + $base, $sz || 0];
+    }
+    printf STDERR "%d symbols from %d entries\n", scalar @syms, $nsym;
 }
-printf STDERR "%d symbols from %d entries\n", scalar @syms, $nsym;
+
+my $out = shift(@ARGV) || ($binary ? "$binary.sym" : "out.sym");
 
 # --- build string tables ---
 my $elf_strtab = "\0";

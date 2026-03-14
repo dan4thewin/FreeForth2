@@ -81,19 +81,36 @@ yourself in a crash or breakpoint — instead of raw addresses, you see
 
 ### Building the symbol file
 
+Two tiers of symbol coverage:
+
+| Target | Source | Symbols | Requires |
+|--------|--------|---------|----------|
+| `make ff64.sym` | `.fas` (FASM symbol dump) | ~251 assembly labels | just `ff64.o` |
+| `make ff64-full.sym` | `.hdrs` (Forth dictionary) | ~491 all words | working `ff64` binary |
+| `make ff.sym` | `.fas` (i386) | ~256 assembly labels | just `ff.o` |
+| `make ff-full.sym` | `.hdrs` (i386 dictionary) | ~494 all words | working `ff` binary |
+
+**Use `.fas`-based `.sym`** when debugging boot failures (binary
+can't reach a prompt). **Use `-full.sym`** for everything else — it
+includes every Forth-defined word plus assembly labels.
+
 ```bash
-make ff64.sym       # builds ff64.fas (fasm -s) then runs fas2gdb
+make ff64-full.sym   # boots ff64, dumps dictionary, emits ELF64
+make ff64.sym        # converts ff64.fas (assembly labels only)
 ```
 
-This produces `ff64.sym` — a minimal ELF with 251 symbols. The `.fas`
-file is always produced during `make all`; only `make ff64.sym` adds
-the conversion step.
-
-For i386:
+The `-full.sym` target runs:
 ```bash
-fasm fflin.asm ff.o -s ff.fas
-perl fas2gdb ff.fas       # -> ff.sym (ELF32)
+./ff64 .hdrs bye 2>/dev/null | perl fas2gdb --hdrs -b ff64
 ```
+which boots ff64, executes `.hdrs` (prints every dictionary entry as
+`$header: $XT ct name`), then `bye` exits cleanly. fas2gdb parses
+the output and emits the same minimal ELF format. Addresses from
+`.hdrs` are already absolute runtime addresses — no base adjustment
+needed.
+
+Both tiers produce the same output filename (`ff64.sym`), so GDB
+usage is identical regardless of which you built.
 
 ### Using symbols in GDB
 
@@ -126,19 +143,32 @@ gdb -ex 'add-symbol-file ff64.sym' ff64
 
 ### What it doesn't cover
 
-These symbols are from ff64.asm assembly labels only. Words defined
-in Forth (ff64.boot, loaded .ff files) compile at runtime into
-`codebuf` — those addresses are past `boot64_end` and have no static
-symbols. For those, use `see`, `dis`, or `int3` breakpoints.
+With `make ff64.sym` (.fas mode), only assembly labels from ff64.asm
+are included. Words defined in Forth compile at runtime into `codebuf`
+and have no static symbols — use `see`, `dis`, or `int3` for those.
+
+With `make ff64-full.sym` (.hdrs mode), all boot-time Forth words are
+included too. Words defined *after* boot (loaded .ff files, interactive
+definitions) are still not covered — their code addresses aren't known
+until runtime. For those, `see`/`dis`/`int3` remain the tools.
 
 ### How fas2gdb works
 
+**`.fas` mode** (default):
 1. Reads FASM's `.fas` format (documented in `TOOLS/FAS.TXT` in the
    [FASM repo](https://github.com/tgrysztar/fasm))
 2. Extracts defined, relocatable symbols (skips `equ` constants)
 3. Auto-detects the `.flat` section load address from the linked binary
 4. Emits a minimal ELF32 or ELF64 (auto-detected) with a `.text`
    section and `.symtab` — just enough for GDB's `add-symbol-file`
+
+**`--hdrs` mode**:
+1. Reads FreeForth `.hdrs` output from stdin (format: `$hdr: $XT ct name`)
+2. Every dictionary entry becomes a symbol — assembly primitives,
+   boot Forth words, loaded libraries
+3. Addresses are already absolute (no base adjustment)
+4. Detects ELF class from the `-b binary` argument
+5. Emits the same minimal ELF format as `.fas` mode
 
 ## x86-64: Using GDB with `int3`
 

@@ -17,6 +17,18 @@ ff: ff.o
 ff.sym: ff.fas ff fas2gdb
 	perl fas2gdb ff.fas
 
+ff-full.sym: ff fas2gdb
+	./$< .hdrs bye 2>/dev/null | perl fas2gdb --hdrs -b $<
+
+ff64: ff64.o
+	$(LD64) -o $@ $<
+
+ff64.sym: ff64.fas ff64 fas2gdb
+	perl fas2gdb ff64.fas
+
+ff64-full.sym: ff64 fas2gdb
+	./$< .hdrs bye 2>/dev/null | perl fas2gdb --hdrs -b $<
+
 ff.boot: ff2.boot fflin2.boot openlib.ff ffpp
 	./ffpp $< > $@
 
@@ -25,12 +37,6 @@ ff64.boot: ff2.boot fflin2.boot openlib.ff ffpp
 
 ff64.o ff64.fas: fflin64.asm ff64.asm ff64.boot fflin2.boot
 	fasm $< ff64.o -s ff64.fas
-
-ff64: ff64.o
-	$(LD64) -o $@ $<
-
-ff64.sym: ff64.fas ff64 fas2gdb
-	perl fas2gdb ff64.fas
 
 ff64s: fflin64s.asm ff64.asm ff64.boot fflin2.boot
 	fasm $< $@

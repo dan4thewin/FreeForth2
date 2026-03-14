@@ -13645,15 +13645,32 @@ byte 4 (EI_CLASS) of the companion binary.
 
 ### Makefile integration
 
-`make all` now runs `fasm ... -s ff64.fas` — the `.fas` is always
-produced alongside `ff64.o`. `make ff64.sym` converts it. The
-`clean` target removes `*.fas` and `*.sym`.
+`make all` now runs `fasm ... -s` for both architectures — `.fas`
+files are always produced alongside `.o` files.
+
+| Target | What it does | Symbols |
+|--------|-------------|---------|
+| `make ff64.sym` | converts ff64.fas | ~251 asm labels |
+| `make ff64-full.sym` | boots ff64, dumps `.hdrs` | ~491 all words |
+| `make ff.sym` | converts ff.fas | ~256 asm labels |
+| `make ff-full.sym` | boots ff, dumps `.hdrs` | ~494 all words |
+
+The `-full.sym` targets run `./ff64 .hdrs bye` — FreeForth executes
+`.hdrs` (prints every dictionary entry), then `bye` exits. The
+`.hdrs` output is piped to `fas2gdb --hdrs`, which parses the
+`$header: $XT ct name` format. Addresses from `.hdrs` are already
+absolute runtime addresses, so no base adjustment is needed.
+
+This is a two-tier approach: `.fas`-based for boot failures (binary
+can't reach a prompt), `.hdrs`-based for everything else.
 
 ### Results
 
-- ff64: 251 symbols from 264 entries (13 skipped: `equ` constants,
-  anonymous, section names)
-- ff (i386): 256 symbols from 309 entries
+- ff64 .fas mode: 251 symbols from 264 entries (13 skipped: `equ`
+  constants, anonymous, section names)
+- ff64 .hdrs mode: 491 symbols (all Forth + assembly words)
+- ff (i386) .fas: 256 symbols from 309 entries
+- ff (i386) .hdrs: 494 symbols
 - `break _compiler` — sets breakpoint by name
 - `x/5i _dup` — disassembles a primitive by name
 - `info symbol $rip` — resolves crash location to `_semi_exec + 24`

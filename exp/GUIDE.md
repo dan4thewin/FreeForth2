@@ -6221,3 +6221,50 @@ The separation makes future ports straightforward:
   reuse `ff64.asm`/`ff64.boot` unchanged
 - **macOS ARM64**: replace both layers, reuse `ff2.boot` core
 
+
+## Debugging: fas2gdb and the symbol gap
+
+### The problem
+
+FreeForth compiles to machine code at runtime. GDB sees the binary's
+`.flat` section as one large block — every address shows as `_start +
+offset` or `?? ()`. FASM knows about assembly labels (`_compiler`,
+`_dup`, `_parse`, etc.) but its `.fas` symbol dump is a proprietary
+format that no Linux debugger reads.
+
+### The solution: two-tier symbol generation
+
+The `fas2gdb` tool bridges this gap. It has two modes:
+
+**Assembly labels** (`make ff64.sym`): Reads FASM's `.fas` format
+(the assembler's symbol dump) and emits a minimal ELF with a
+`.symtab` section. This gives GDB ~250 assembly-level names. Works
+even when the binary can't boot — the `.fas` is produced by the
+assembler, not at runtime.
+
+**Full dictionary** (`make ff64-full.sym`): Boots FreeForth and runs
+`.hdrs bye` — the `.hdrs` word walks the dictionary and prints every
+entry. fas2gdb parses this output (format: `$header: $XT ct name`)
+and emits the same ELF format. This gives ~490 symbols — every
+Forth-defined word plus assembly primitives. Requires a working
+binary.
+
+The Makefile rule for full symbols is simply:
+```make
+ff64-full.sym: ff64 fas2gdb
+	./$< .hdrs bye 2>/dev/null | perl fas2gdb --hdrs -b $<
+```
+
+### Why this matters for the historian
+
+Christophe's original system had `see` — a Forth-level disassembler
+that could annotate generated code with word names. The x86-64 port
+has `see` too, but it works on one word at a time. GDB with fas2gdb
+provides the missing *global* view: every address in the system
+resolves to a name. When the port crashes during development, `info
+symbol $rip` immediately says where you are, and a backtrace shows
+the call chain through named primitives instead of anonymous hex.
+
+This is a novel tool — no existing converter from FASM symbols to
+GDB-loadable ELF existed before this project.
+

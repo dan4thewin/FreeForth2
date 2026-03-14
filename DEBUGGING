@@ -323,3 +323,17 @@ FASM SYMBOLS IN GDB (fas2gdb)
   Words defined in Forth (ff64.boot, loaded .ff files) compile
   at runtime into codebuf — those addresses are past boot64_end
   and have no static symbols.  Use see/dis/int3 for those.
+
+  For FULL symbol coverage (assembly + Forth words), use:
+
+    make ff64-full.sym
+
+  This boots ff64, dumps .hdrs (the dictionary), and pipes it
+  through fas2gdb --hdrs.  Result: ~490 symbols including every
+  Forth word — nearly double the ~250 assembly labels.
+
+    make ff-full.sym         i386 equivalent (~494 symbols)
+
+  The -full.sym file replaces .sym (same output name), so GDB
+  usage is identical.  It requires a working binary (boot must
+  succeed); use .fas-based .sym when debugging boot failures.
