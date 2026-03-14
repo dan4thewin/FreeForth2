@@ -42,6 +42,9 @@ SEGVthrow ;
 [ELSE] lib/x86/syscalls.ff
 [THEN]
 
+here 256 dup allot over "/proc/self/exe" drop readlink dup 256- allot swap
+: exe lit lit ;
+
 \ --------------------------------------------------------------------
 \ environment access
 
@@ -54,31 +57,10 @@ SEGVthrow ;
 : getenv envp @ BEGIN zlen 0- 0= IF BREAK 2dup+ 1+ >r _getenv
   r> REPEAT drop nip nip 0 ; \ @ # -- @ # ; value, or last-checked 0
 
-\ --------------------------------------------------------------------
-\ ffpath -- search path for needs/openlib
-
-"HOME" getenv dup>r
-"FFPATH" getenv dup>r
-2r> + 54+ create ffpath allot
-[64] [IF] ":.:lib/x86-64:lib:" [ELSE] ":.:lib/x86:lib:" [THEN]
-tuck ffpath place + >r
-0- 0= IF 2drop ELSE tuck r> place + ':' overc! 1+ >r THEN
-0- 0= IF 2drop ELSE tuck r> place + "/.local/share/ff:" dup>r rot place r> + >r THEN
-"/usr/local/share/ff:^@" r> place drop
-
-ffpath zlen over+ swap 1+ dup >r
-START dupc@ ':' = 2drop IF r> 2dup - swap 1- c! 1+ dup >r THEN 1+
-ENTER <= UNTIL 2drop r> 1- 0 swap c!
+"HOME" getenv swap : home lit lit ;
 
 \ --------------------------------------------------------------------
-\ openlib -- search ffpath for a file
-
-create openbuf pvt 80 allot
-:. openlib over dupc@ '.' = 2drop IF 1+ THEN \ @ # -- fd
-  dupc@ '.' = 2drop IF 1+ THEN c@ '/' = 2drop IF openr ;THEN 2>r ffpath
-  START tuck 2dup openbuf place + '/' overc! 1+ 2r rot place drop over+ swap
-  r + 1+ openbuf swap openr 0- 0>= IF 2rdrop nip ;THEN drop
-  ENTER c@+ 0- 0= UNTIL 2rdrop 2drop -1 ;
+openlib.ff
 
 \ --------------------------------------------------------------------
 \ needed/needs` -- file loading via eval

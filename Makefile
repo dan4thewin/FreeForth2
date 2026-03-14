@@ -14,10 +14,10 @@ ff.o: fflin.asm ff.asm fflinio.asm ff.boot fflin2.boot
 ff: ff.o
 	$(LD) -o $@ $<
 
-ff.boot: ff2.boot ffpp
+ff.boot: ff2.boot fflin2.boot openlib.ff ffpp
 	./ffpp $< > $@
 
-ff64.boot: ff2.boot ffpp
+ff64.boot: ff2.boot fflin2.boot openlib.ff ffpp
 	./ffpp --64 $< > $@
 
 ff64.o: fflin64.asm ff64.asm ff64.boot fflin2.boot

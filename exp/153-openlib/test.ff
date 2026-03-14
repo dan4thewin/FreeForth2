@@ -1,0 +1,18 @@
+\ test.ff — test openlib template lookup
+variable _pass variable _fail
+:. _ok 1 _pass +! ."." ;
+:. _bad 1 _fail +! ."F" ;
+:. _check 0- 0< IF _bad ;THEN close drop _ok ;
+:. _notfound 0- 0< IF _ok ;THEN close drop _bad ;
+
+\ #/lib/x86-64/?.ff — platform lib
+"see" openlib _check
+\ #/lib/?.ff — generic lib
+"pno" openlib _check
+"test" openlib _check
+"shell" openlib _check
+\ not found
+"nosuchfile" openlib _notfound
+
+_fail @ 0- 0= IF ."_ok" ELSE cr ."FAIL" cr THEN cr
+; bye

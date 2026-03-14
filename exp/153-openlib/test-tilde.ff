@@ -1,0 +1,15 @@
+\ test-tilde.ff — ~ sigil expansion
+variable _pass variable _fail
+:. _ok 1 _pass +! ."." ;
+:. _bad 1 _fail +! ."F" ;
+:. _check 0- 0< IF _bad ;THEN close drop _ok ;
+:. _notfound 0- 0< IF _ok ;THEN close drop _bad ;
+
+\ FFPATH=~/lib/?.ff:~/lib — partial (?) + full entries with ~
+"pno" openlib _check
+"shell" openlib _check
+"pno.ff" openlib _check
+"nosuch" openlib _notfound
+
+_fail @ 0- 0= IF ."_ok" ELSE cr ."FAIL" cr THEN cr
+; bye

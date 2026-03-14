@@ -1,0 +1,122 @@
+\ ffpath.ff — tib-based template search path for needs/needed
+\ build-time excess buffer and code is reclaimed leaving
+\ the right-sized segment structure.
+\ runtime lookups build file paths in tib.
+\
+\ openlib2 ( @ # -- fd | -1 )	search ffpath for name and open
+\
+\ sigils: # = exe dir, ~ = $HOME, ? = name placeholder, : = separator
+\ struct array: [flag][count][data...] ... [0][0]
+
+\ segment flags
+1 equ FULL pvt
+2 equ PART pvt
+3 equ FINL pvt
+0 equ END. pvt
+
+variable _seg pvt 512 allot mark recant
+variable p pvt _seg p!
+
+exe BEGIN 1- 2dup+ c@ '/'- 0= drop UNTIL swap : exedir lit lit ;
+
+\ write byte to where p points in _seg, advance p
+:. 0>p@ ( -- )			END.
+:. p@c! ( byte -- )		p@ tuck c! 1+ p! ;
+
+\ expand sigils directly into _seg at p
+:. exp# ( -- )			exedir tuck p@ swap cmove p +! ;
+:. exp~ ( -- )			home   tuck p@ swap cmove p +! ;
+
+:. 1ch ( @ -- @ )
+	dup c@
+	'#' CASE exp# 1+ ;THEN
+	'~' CASE exp~ 1+ ;THEN
+	p@c! 1+ ;
+
+\ reserve 2-byte hole (flag + count), return hole address
+:. mkhole ( -- hole )		p@ 0 p@c! 0 p@c! ;
+
+\ fill hole: write flag, write count as p@-@
+:. >hole ( @ flag -- )		overc! p@ over- 2- swap 1+ c! ;
+
+\ ensure trailing /
+:. slash ( -- )			p@ 1- c@ '/'- 0; drop '/' p@c! ;
+
+:. full ( @ # -- )
+	mkhole >r bounds
+	BEGIN > WHILE 1ch REPEAT 2drop
+	r> slash FULL >hole ;
+
+\ expand/append each c, stop at ?
+:. chunk ( @+n @ -- @+n @' )
+	BEGIN > WHILE dup c@ '?'- 0= drop IF ;THEN 1ch
+	REPEAT ;
+
+\ write chunks, partials have remaining bytes
+:. split ( @ # -- )
+	bounds
+	BEGIN	mkhole >r chunk > r>
+		IF PART >hole 1+	\ 1+ to skip '?'
+		ELSE FINL >hole 2drop ;THEN
+	REPEAT ;
+
+:. has?- ( @ # -- @ # ; z? )
+	BEGIN dup c@ '?'- drop 0= IF ;THEN 1+ <=
+	UNTIL 1 0- drop ;	\ 1 0- to set nz
+
+:. 1path ( @ # -- )
+	2dup bounds has?- 2drop 0= IF split ;THEN full ;
+
+:. colon ( @+n @ -- @+n @' )
+	BEGIN > WHILE dup c@ ':'- 0= drop IF ;THEN 1+
+	REPEAT ;
+
+\ parse colon-separated template string
+:. parse ( @ # -- )
+	bounds 			\ @+# @
+	BEGIN	tuck colon	\ @ @+# @'
+		rot 2dup -	\ @+# @' @ @'-@
+		0- 0<> IF 1path ELSE 2drop THEN
+		1+ <=
+	UNTIL 2drop 0>p@ ;
+
+[64] [IF] "?:?.ff:#/lib/x86-64:#/lib/x86-64/?.ff:#/lib:#/lib/?.ff"
+[ELSE]    "?:?.ff:#/lib/x86:#/lib/x86/?.ff:#/lib:#/lib/?.ff"
+[THEN]
+"FFPATH" getenv 0- 0= IF 2drop ELSE 2>r 2drop 2r> THEN
+parse p@ _seg - ;
+recant 512 cell+ - allot ;
+
+\ openlib
+:. 0>tp ( -- )			0 tp@ c@+ + c! ;
+:. _open ( -- fd )		0>tp tp@ c@+ openr 0 tp@ c! ;
+:. _skip ( seg -- seg' )	1+ c@+ + ;
+:. seg>tp ( seg -- seg' )	dup _skip swap 1+ c@+
+:. $>tp ( @ # -- )		tp@ append ;
+
+:. ;open
+	_open 0- 0< IF drop ;THEN nip 3 +r ;
+
+: openlib ( @ # -- fd )
+	0 tp@ c! 2>r _seg
+	BEGIN dup c@
+		END. CASE BREAK
+		FULL CASE seg>tp 2r $>tp ;open AGAIN
+		FINL CASE seg>tp ;open AGAIN
+		( PART ) drop seg>tp 2r $>tp
+	REPEAT drop 2rdrop -1 ;
+
+
+[DEBUG] [IF]
+\ diagnostics
+:. .1seg ( seg -- seg' )
+	BEGIN dup c@
+		FULL CASE ."full_" BREAK
+		PART CASE ."part_" BREAK
+		FINL CASE ."finl_" BREAK
+		END. CASE _seg - 1+ . ."bytes^J" rdrop ;THEN
+		!"bad flag"
+	END
+	1+ c@+ 2dup ."[" type ."]" cr + ;
+: .segs		_seg BEGIN .1seg REPEAT ;
+[THEN]

@@ -13247,3 +13247,185 @@ fflin2.boot unification.
 - `make test64`: 13 PASSED
 - `make -C exp test`: 106 PASSED, 0 FAILED
 - `make testall`: 106 PASSED, 0 FAILED
+
+## Experiment 153: openlib.ff — DG's rewrite, ffpp [~] passthru and [DEBUG]
+
+### Goal
+
+Three changes shipped together:
+
+1. **openlib.ff** — DG's ground-up rewrite of the FFPATH/openlib
+   subsystem, replacing both exp 146 (lua-style buffers) and exp 147
+   (tib-based scratch). Integrated into `fflin2.boot`.
+
+2. **ffpp [~] passthru** — `[~]` no longer errors; instead it passes
+   the entire `[~] ... [THEN]` block through verbatim for the Forth
+   compiler to handle at runtime.
+
+3. **ffpp [DEBUG]** — new `--debug` flag and `[DEBUG]` conditional,
+   mirroring how `--64` and `[64]` work.
+
+### openlib.ff: what changed from exp 147
+
+DG rewrote ffpath.ff from scratch as openlib.ff. The result is 122
+lines (vs 163 in exp 147, 164 in exp 146) — a 25% reduction — but
+the real gains are structural.
+
+**Eliminated variables.** Exp 147 needed 6 variables (`_wp`, `_pos`,
+`_ha`, `_hl`, `_dst`, `_sz`) plus a two-block `allot`/`cmove` dance
+to avoid the anonymous-code-at-HERE problem. openlib.ff needs 2
+(`_seg`, `p`). The trick: `mark`/`recant` over-allocates 512 bytes,
+builds in place, then reclaims the excess. No copy needed.
+
+**Eliminated the exedir init routine.** Exp 147's `_init_exedir`
+was 8 lines: erase, readlink, null-terminate, walk backward for
+dirname. openlib.ff's line 20 does it in one line of Forth:
+
+```
+exe BEGIN 1- 2dup+ c@ '/'- 0= drop UNTIL swap : exedir lit lit ;
+```
+
+`exe` (defined in fflin2.boot) pushes the raw readlink result.
+The `BEGIN` loop walks backward to find '/'. `exedir` captures
+the addr+len as a compile-time constant via `lit lit`.
+
+**Eliminated HOME init.** Exp 147 stashed `getenv` results into
+`_ha`/`_hl` variables. openlib.ff uses `home` directly — it's
+already a double-lit constant defined in fflin2.boot from the
+`getenv` result.
+
+**Named flags.** Raw numbers `0/1/2/$FF` replaced with `equ`
+constants `FULL/PART/FINL/END.`, making the dispatch in `openlib`
+self-documenting:
+
+```
+BEGIN dup c@
+    END. CASE BREAK
+    FULL CASE seg>tp 2r $>tp ;open AGAIN
+    FINL CASE seg>tp ;open AGAIN
+    ( PART ) drop seg>tp 2r $>tp
+REPEAT drop 2rdrop -1 ;
+```
+
+### Stack juggling: half as much
+
+The most striking change is how much stack manipulation disappeared.
+Counting `pick`, `nip nip`, `2drop`, and `>r`/`r>` pairs: exp 147
+has 14 instances, openlib.ff has 7. Three techniques drive this:
+
+**`2r` (return stack peek).** Exp 147's `_try1` used `2 pick 2 pick`
+twice to access the name buried under the segment pointer:
+
+```
+\ exp 147: dig past ptr to reach name
+0 CASE _sdata _oapp 2 pick 2 pick _oapp _oopen ;THEN
+```
+
+openlib.ff stashes the name with `2>r` at entry and peeks with
+`2r` (no pop) inside the loop:
+
+```
+\ openlib.ff: name lives on return stack
+FULL CASE seg>tp 2r $>tp ;open AGAIN
+```
+
+`2r` reads name addr+len from the return stack without consuming
+them. No `pick`, no shuffling. At exit, `2rdrop` cleans up.
+
+**`3 +r` (multi-cell return stack drop).** Exp 147's `openlib2`
+had `nip nip nip` to discard three items on success. openlib.ff's
+`;open` uses `3 +r` to drop 3 return stack cells (the loop's
+continuation, the segment pointer, and the BREAK return) and
+land directly at the caller:
+
+```
+:. ;open
+    _open 0- 0< IF drop ;THEN nip 3 +r ;
+```
+
+This is a non-local exit — when the file opens successfully,
+`;open` bypasses the entire `openlib` loop and returns the fd
+directly to `openlib`'s caller. Three words replace the
+`nip nip nip` + conditional loop exit.
+
+**`has?-` vs `_has?` (flags, not booleans).** Exp 147's `_has?`
+returned a Forth boolean flag (0 or -1) requiring the caller to
+test it:
+
+```
+\ exp 147: boolean flag, then test
+:. _has? ( addr len -- addr len flag ) 2dup bounds
+    BEGIN > WHILE
+        dup c@ '?'- 0= drop IF 2drop -1 ;THEN 1+
+    REPEAT 2drop 0 ;
+:. _entry _has? 0- 0= IF drop _full ;THEN drop _split ;
+```
+
+openlib.ff's `has?-` sets CPU FLAGS directly — the `-` suffix
+signals "this word sets flags via subtraction." The caller reads
+the flags with `0=` without an intermediate value:
+
+```
+\ openlib.ff: FLAGS, not boolean
+:. has?- ( @ # -- @ # ; z? )
+    BEGIN dup c@ '?'- drop 0= IF ;THEN 1+ <=
+    UNTIL 1 0- drop ;
+:. 1path 2dup bounds has?- 2drop 0= IF split ;THEN full ;
+```
+
+`has?-` early-returns with ZF=1 (found `?`) or falls through to
+`UNTIL` with ZF=0 (no `?`). No flag on the stack. The `2drop`
+in `1path` consumes the bounds without touching FLAGS (it's
+`mov`+`lea`, flags-preserving). This is idiomatic FreeForth:
+FLAGS flow across word boundaries.
+
+### Default path: `?:?.ff` instead of `./:./?.ff`
+
+The default template changed from `./:./?.ff:#/lib/...` to
+`?:?.ff:#/lib/...`. The `?` entry means "try the name exactly as
+given" — it handles absolute paths (`/opt/ff/lib/foo.ff`),
+relative paths (`./bar.ff`), and bare names in cwd. The old `./`
+prefix was redundant and couldn't handle absolute paths.
+
+### ffpp changes
+
+**[~] passthru.** Previously `[~]` (dictionary lookup conditional)
+caused ffpp to error and exit. Now it enters "passthru mode":
+emit everything verbatim (including `[IF]`/`[ELSE]`/`[THEN]`)
+until the matching `[THEN]` is seen, tracking nesting depth for
+inner `[IF]`/`[THEN]` pairs. If `[~]` appears inside an already-
+suppressed block, it's silently skipped.
+
+**[DEBUG] conditional.** New `--debug` command-line flag and
+`[DEBUG]` condition, exactly mirroring `--64`/`[64]`. The arg
+parser was generalized: `had_files` flag replaces the old
+`flag_64 && argc==2` stdin heuristic, correctly handling any
+combination of flags.
+
+### fflin2.boot changes
+
+The old fflin2.boot had a 22-line inline `ffpath`/`openlib`
+implementation using `create` buffers and `START`/`ENTER` loops.
+Replaced with three lines:
+
+```
+"HOME" getenv swap : home lit lit ;
+openlib.ff
+```
+
+`exe` (raw readlink result) was already moved to fflin2.boot in
+an earlier session. `home` captures `getenv "HOME"` as a
+compile-time double-lit constant. Then `openlib.ff` is loaded
+(via the preprocessor `#include`-like mechanism in ff2.boot).
+
+### Files
+
+- `openlib.ff` — 122 lines (new, replaces fflin2.boot inline code)
+- `fflin2.boot` — 22 lines removed, 3 added
+- `ffpp.asm` — `[~]` passthru, `[DEBUG]`/`--debug`, `had_files`
+- `Makefile` — added `openlib.ff` to boot dependencies
+- `exp/153-openlib/` — Makefile, test.ff, test-full.ff, test-tilde.ff
+
+### Test results
+
+- `make testall`: 112 PASSED, 0 FAILED (106 existing + 6 new)

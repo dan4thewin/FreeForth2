@@ -64,14 +64,16 @@ _start:
         mov     [depth], eax           ; include depth = 0
         mov     [obuf_pos], eax        ; output buffer position = 0
         mov     [flag_64], eax         ; --64 not set
+        mov     [flag_debug], eax      ; --debug not set
+        mov     [had_files], eax       ; no files processed yet
         mov     byte [prev_was_ws], 1  ; start as if prev was whitespace (BOF)
         mov     byte [prev_was_nl], 1  ; suppress leading blank lines
 
-        ;; Scan args for --64 flag; collect file args
+        ;; Scan args for flags; collect file args
         cmp     r12, 1
         jle     .do_stdin
 
-        ;; First pass: find --64, count file args
+        ;; First pass: find flags, process file args
         mov     r14, 1                 ; arg index (skip argv[0])
 .arg_loop:
         cmp     r14, r12
@@ -83,7 +85,7 @@ _start:
         cmp     byte [rdi+1], '-'
         jne     .arg_file
         cmp     byte [rdi+2], '6'
-        jne     .arg_file
+        jne     .try_debug_arg
         cmp     byte [rdi+3], '4'
         jne     .arg_file
         cmp     byte [rdi+4], 0
@@ -91,21 +93,34 @@ _start:
         mov     dword [flag_64], 1
         inc     r14
         jmp     .arg_loop
+.try_debug_arg:
+        ;; Check for --debug: '-','-','d','e','b','u','g',0
+        cmp     byte [rdi+2], 'd'
+        jne     .arg_file
+        cmp     byte [rdi+3], 'e'
+        jne     .arg_file
+        cmp     byte [rdi+4], 'b'
+        jne     .arg_file
+        cmp     byte [rdi+5], 'u'
+        jne     .arg_file
+        cmp     byte [rdi+6], 'g'
+        jne     .arg_file
+        cmp     byte [rdi+7], 0
+        jne     .arg_file
+        mov     dword [flag_debug], 1
+        inc     r14
+        jmp     .arg_loop
 
 .arg_file:
+        mov     dword [had_files], 1
         call    process_file
         inc     r14
         jmp     .arg_loop
 
 .args_done:
-        ;; If no file args were processed (only --64), read stdin
-        ;; Check: did we process any files? r14 > r12 means we finished.
-        ;; If flag_64 is set and argc==2, that was the only arg.
-        cmp     dword [flag_64], 0
-        je      .done
-        cmp     r12, 2
+        ;; If no file args were processed (only flags), read stdin
+        cmp     dword [had_files], 0
         jne     .done
-        ;; argc==2 and --64 was set — only arg was --64, read stdin
         jmp     .do_stdin
 
 .do_stdin:
@@ -304,9 +319,12 @@ process_buf:
         cmp     al, 0x16
         je      .maybe_include
 
-        ;; Regular character — emit if not suppressing
+        ;; Regular character — emit if not suppressing (or in passthru)
+        cmp     dword [passthru], 0
+        jne     .emit_char
         cmp     byte [suppressing], 0
         jne     .skip_char
+.emit_char:
         call    ob_putc
         mov     byte [prev_was_ws], 0
         mov     byte [prev_was_nl], 0
@@ -316,8 +334,11 @@ process_buf:
 
         ;; ---- Newline handling ----
 .got_newline:
+        cmp     dword [passthru], 0
+        jne     .emit_newline
         cmp     byte [suppressing], 0
         jne     .skip_newline          ; suppress newlines too
+.emit_newline:
         call    ob_rstrip              ; strip trailing whitespace
         cmp     byte [prev_was_nl], 0
         jne     .skip_newline          ; collapse multiple newlines
@@ -331,8 +352,11 @@ process_buf:
 
         ;; ---- Space/tab handling ----
 .got_space:
+        cmp     dword [passthru], 0
+        jne     .emit_space
         cmp     byte [suppressing], 0
         jne     .skip_space            ; suppress whitespace too
+.emit_space:
         cmp     byte [prev_was_ws], 0
         jne     .skip_space            ; collapse multiple spaces
         ;; Don't emit space if previous was newline (leading space)
@@ -585,6 +609,10 @@ process_buf:
         cmp     byte [prev_was_ws], 0
         je      .bracket_literal
 
+        ;; In passthru mode, only track [IF]/[THEN] nesting
+        cmp     dword [passthru], 0
+        jne     .passthru_bracket
+
         ;; Try matching [64], [32], [IF], [ELSE], [THEN]
         ;; All must end with ] followed by whitespace or EOF
 
@@ -686,6 +714,40 @@ process_buf:
         jmp     .normal
 
 .try_tilde:
+        ;; Check [DEBUG] — need 6 more bytes: 'D','E','B','U','G',']'
+        cmp     byte [rbp + r13 + 1], 'D'
+        jne     .try_tilde2
+        lea     rcx, [r13 + 7]
+        cmp     rcx, r12
+        jg      .bracket_literal
+        cmp     byte [rbp + r13 + 2], 'E'
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 3], 'B'
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 4], 'U'
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 5], 'G'
+        jne     .bracket_literal
+        cmp     byte [rbp + r13 + 6], ']'
+        jne     .bracket_literal
+        lea     rcx, [r13 + 7]
+        cmp     rcx, r12
+        jge     .got_debug
+        movzx   edx, byte [rbp + rcx]
+        cmp     dl, ' '
+        je      .got_debug
+        cmp     dl, 9
+        je      .got_debug
+        cmp     dl, 10
+        je      .got_debug
+        jmp     .bracket_literal
+.got_debug:
+        add     r13, 7                 ; skip [DEBUG]
+        mov     eax, [flag_debug]
+        mov     [last_bool], eax
+        jmp     .normal
+
+.try_tilde2:
         ;; Check [~] — 3 bytes: '[','~',']'
         cmp     byte [rbp + r13 + 1], '~'
         jne     .try_if
@@ -703,15 +765,112 @@ process_buf:
         je      .got_tilde
         jmp     .bracket_literal
 .got_tilde:
-        ;; [~] requires dictionary lookup — not supported in ffpp
-        mov     edi, STDERR
-        lea     rsi, [err_tilde]
-        mov     edx, err_tilde_len
-        mov     eax, SYS_WRITE
-        syscall
-        mov     edi, 1
-        mov     eax, SYS_EXIT
-        syscall
+        ;; [~] requires dictionary lookup — pass through to Forth compiler
+        ;; If already suppressing, just skip [~] as literal text
+        cmp     byte [suppressing], 0
+        jne     .got_tilde_skip
+        ;; Emit [~] literally and enter passthru mode: output everything
+        ;; verbatim until the matching [THEN] is seen.
+        mov     dword [passthru], 1
+        mov     al, '['
+        call    ob_putc
+        mov     al, '~'
+        call    ob_putc
+        mov     al, ']'
+        call    ob_putc
+        mov     byte [prev_was_ws], 0
+        mov     byte [prev_was_nl], 0
+        add     r13, 3
+        jmp     .normal
+.got_tilde_skip:
+        ;; Suppressing — skip [~] as 3 bytes
+        add     r13, 3
+        jmp     .normal
+
+        ;; ---- Passthru mode: emit bracket directives literally,
+        ;;      but track [IF]/[THEN] nesting depth ----
+.passthru_bracket:
+        ;; Check for [IF] — increment nesting
+        lea     rcx, [r13 + 3]
+        cmp     rcx, r12
+        jg      .passthru_emit
+        cmp     byte [rbp + r13 + 1], 'I'
+        jne     .passthru_try_then
+        cmp     byte [rbp + r13 + 2], 'F'
+        jne     .passthru_emit
+        cmp     byte [rbp + r13 + 3], ']'
+        jne     .passthru_emit
+        lea     rcx, [r13 + 4]
+        cmp     rcx, r12
+        jge     .passthru_got_if
+        movzx   edx, byte [rbp + rcx]
+        cmp     dl, ' '
+        je      .passthru_got_if
+        cmp     dl, 9
+        je      .passthru_got_if
+        cmp     dl, 10
+        je      .passthru_got_if
+        jmp     .passthru_emit
+.passthru_got_if:
+        inc     dword [passthru]
+        jmp     .passthru_emit
+
+.passthru_try_then:
+        ;; Check for [THEN] — decrement nesting, exit passthru at 0
+        lea     rcx, [r13 + 5]
+        cmp     rcx, r12
+        jg      .passthru_emit
+        cmp     byte [rbp + r13 + 1], 'T'
+        jne     .passthru_emit
+        cmp     byte [rbp + r13 + 2], 'H'
+        jne     .passthru_emit
+        cmp     byte [rbp + r13 + 3], 'E'
+        jne     .passthru_emit
+        cmp     byte [rbp + r13 + 4], 'N'
+        jne     .passthru_emit
+        cmp     byte [rbp + r13 + 5], ']'
+        jne     .passthru_emit
+        lea     rcx, [r13 + 6]
+        cmp     rcx, r12
+        jge     .passthru_got_then
+        movzx   edx, byte [rbp + rcx]
+        cmp     dl, ' '
+        je      .passthru_got_then
+        cmp     dl, 9
+        je      .passthru_got_then
+        cmp     dl, 10
+        je      .passthru_got_then
+        jmp     .passthru_emit
+.passthru_got_then:
+        dec     dword [passthru]
+        cmp     dword [passthru], 0
+        jne     .passthru_emit
+        ;; Exiting passthru: emit the final [THEN] and resume normal
+        mov     al, '['
+        call    ob_putc
+        mov     al, 'T'
+        call    ob_putc
+        mov     al, 'H'
+        call    ob_putc
+        mov     al, 'E'
+        call    ob_putc
+        mov     al, 'N'
+        call    ob_putc
+        mov     al, ']'
+        call    ob_putc
+        mov     byte [prev_was_ws], 0
+        mov     byte [prev_was_nl], 0
+        add     r13, 6
+        jmp     .normal
+
+.passthru_emit:
+        ;; Emit [ literally, let .normal handle the rest
+        mov     al, '['
+        call    ob_putc
+        mov     byte [prev_was_ws], 0
+        mov     byte [prev_was_nl], 0
+        inc     r13
+        jmp     .normal
 
 .try_if:
         ;; Check [IF] — need 3 more bytes: 'I','F',']'
@@ -935,7 +1094,10 @@ prev_was_ws     db 0
 prev_was_nl     db 0
 suppressing     db 0
 flag_64         dd 0
+flag_debug      dd 0
+had_files       dd 0
 last_bool       dd 0
+passthru        dd 0
 depth           dd 0
 pbuf            rb PBUF_SZ
 inc_stack       rb MAX_DEPTH * FRAME_SZ
