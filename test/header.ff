@@ -1,0 +1,16 @@
+needs test.ff
+4 >plan
+
+\ Regression tests for header and marker stack preservation.
+\ header ( @ # xt ct -- ) must not swap items beneath its args.
+\ marker calls header internally — test both.
+
+testing header preserves stack below args
+t{ 1 2 "x" here 0 header -> 1 2 }t
+t{ 10 20 30 "y" here 0 header -> 10 20 30 }t
+
+testing marker preserves stack below args
+t{ 1 2 "mtest1" marker -> 1 2 }t
+t{ 10 20 30 "mtest2" marker -> 10 20 30 }t
+
+tally-exit ;

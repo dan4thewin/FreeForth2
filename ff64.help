@@ -6,6 +6,15 @@
 \ with two spaces.  Related words form a block; "see also" lists the
 \ block head first so "help <head>" shows the whole group.
 
+\ -- @ # ; search preamble (same as ff.help)
+  H@ @ execute
+  swap dup>r swap dup>r  BEGIN 2drop lnparse
+    0= IF dropr> swap dropr> swap ;THEN
+  over 2r $- 0= drop TILL over r + c@ $BF& $20- 0= drop UNTIL 2rdrop
+  START lnparse ENTER 2dup type cr + >in@ over- 2* + 1- c@ 10- 0= drop UNTIL
+  0 EOF`
+;
+
 \ === x86-64 data sizes ===
 
 d@ ( addr -- n ) fetch 64-bit (double cell) value
@@ -109,8 +118,6 @@ ff_envp ( -- addr ) variable: pointer to envp array (environment)
   Set by assembly at startup from the kernel-provided stack layout.
   see also: ff_argc ff_argv ff_envp argv doargv getenv
 
-helpbuf ( -- addr ) 128KB buffer used by the help system
-  Used by lib/64/help.ff to read ff.help into memory.
 
 xfp ( -- addr ) variable: exception frame pointer for catch/throw
   Points to the current catch frame on the return stack.

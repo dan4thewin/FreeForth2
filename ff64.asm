@@ -541,8 +541,8 @@ _header_forth:
         mov r8, rdx             ; r8 = xt
         mov rcx, [r15]          ; rcx = name length
         mov rax, [r15+8]        ; rax = name address
-        mov rdx, [r15+16]
-        mov rbx, [r15+24]
+        mov rbx, [r15+16]
+        mov rdx, [r15+24]
         add r15, 32
         jmp _header
 
@@ -2051,7 +2051,6 @@ WORD64 ">in", tin, 1, 3
 WORD64 "tp", tp, 1, 2
 WORD64 "tib", tib, 1, 3
 WORD64 "eob", eob, 1, 3
-WORD64 "helpbuf", helpbuf, 1, 7
 WORD64 "xfp", xfp, 1, 3
 
 ;; Code words — ascending XT order
@@ -2174,6 +2173,5 @@ end if
 codebuf    rb 65536
 tib        rb 1024*256             ; terminal input and file-stack buffer (i386 layout)
 eob        rb 1024                 ; end-of-buffer scratch area
-helpbuf    rb 131072               ; 128KB buffer for help file reading
 dstack     rb 8192
 dstack_top:

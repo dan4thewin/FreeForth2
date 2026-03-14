@@ -4,6 +4,9 @@
 \ findxt ( @ # -- xt len )	looks for string in headers, skips constants and aliases
 \ findh ( @ -- hdr@ offset )	finds the header with xt closest to @
 \ findnm ( @ -- )		types the name of the header closest to @ and the offset
+needs shell.ff
+needs pno.ff
+needs console.ff
 " see" features append
 
 variable xt pvt

@@ -347,7 +347,8 @@ $c6 :. movi8	2b 0 m3 'b' ca 'y' ca 't' ca 'e' ca split nip mod ,a dup cs@ dup sp
 $c7 :. movi32	2b 0 m3 split nip mod ,a space .le dup d@ xa 4+ 0 ;op
 
 \ --- Word prefix ---
-$66 :. 66	dup 1+ c@ $89 CASE 3b drop 0 m3 'w' ca 'o' ca 'r' ca 'd' ca mr 0 ;; ;THEN 2drop drop .A? 0 ;op
+    :. 66movi	3b drop 0 m3 'w' ca 'o' ca 'r' ca 'd' ca split nip mod ,a dup space c@+ .b c@+ .b drop dup ws@ xa 2+ ;
+$66 :. 66	dup 1+ c@ BEGIN $89 CASE 3b drop 0 m3 'w' ca 'o' ca 'r' ca 'd' ca mr BREAK $c7 CASE 66movi BREAK drop .A? END 0 ;op
 
 \ --- Call/Jmp --- (mne4: 2=call, mne3: 2=jmp)
 $e8 :. call	5b 2 m4 over+ dup jba drop 0 ;op
@@ -380,7 +381,23 @@ $ff :. ff	2b split swap
 	6 CASE 4 ffn ;; ;THEN
 	2drop drop ??? 0 ;op
 
-\ --- Entry point ---
+\ --- dis` — GDB-based disassembly (like i386 see.ff) ---
+needs shell.ff
+needs pno.ff
+needs ior.ff
+:. da		0 <# #s #> ba ;
+:. gdbscript	over+ swap
+		0 buf!
+		"attach_" ba getpid da "^J" ba
+		"set_disassembly-flavor_intel^J" ba
+		"disass/r_" ba da "," ba da "^J" ba ;
+:. gdbrun	"gdb_--batch_-x_.see_|_less_-F_-+c" shell ;
+:. rmsave	"rm_-f_.see" shell ;
+:. tmpsave	rmsave openw ?ior ior@ write ?ior. ior@ close ?ior. ;
+:. gdbdump	gdbscript buf c@+ ".see" tmpsave gdbrun ;
+: dis`		wsparse findxt gdbdump ;
+
+\ --- see` must be last: needexec replaces boot stub with last def ---
 : see`		wsparse 0- 0= IF 2drop ;THEN 2dup findxt drop -rot type cr see. ;
 
 hidepvt " see" features append ;

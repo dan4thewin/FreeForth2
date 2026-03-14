@@ -1,6 +1,9 @@
+\ help.ff — Lavarenne's self-executing help file mechanism
+\ The search engine lives in ff.help's preamble (lines 7-16).
+\ needed loads ff.help into tib; eval runs the preamble which
+\ searches the remaining tib content for the keyword.
 " help" features append
-"help`" find 2drop '_' 8 which@ tuck ct|! h.nm+ c! \ to be deleted by hidepvt
-: help` \ <name> -- ; display help for <name>, or for "help" by default
+: help`
   wsparse 0= IF 2drop "help" THEN
-  [` 2>r "ff.help" needed 2r> _] 0; \ dup this line for your own help file(s)
+  [` 2>r "ff.help" needed 2r> _] 0;
   !"no_help_found_for_this_word"

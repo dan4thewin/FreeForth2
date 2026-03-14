@@ -1,55 +1,11 @@
-\ help.ff — help system for ff64
-\ Loaded on demand via needexec from help` stub in ff64.boot.
-\ Last definition (help`) replaces the stub.
-
-variable _hfd pvt
-variable _hkey pvt
-variable _hklen pvt
-
-:. _skipline
-  BEGIN 0- 0> WHILE
-    swap dupc@ 10 - 0- drop 0= IF 1+ swap 1- ;THEN
-    1+ swap 1-
-  REPEAT ;
-
-:. _printline
-  BEGIN 0- 0> WHILE
-    swap dupc@ dup 10 - 0- drop 0= IF drop 1+ swap 1- cr ;THEN
-    emit 1+ swap 1-
-  REPEAT cr ;
-
-:. _printentry
-  _printline
-  BEGIN 0- 0> WHILE
-    swap dupc@ $20 - 0- drop
-    0<> IF swap 2drop ;THEN
-    swap _printline
-  REPEAT 2drop ;
-
-:. _checkmatch
-  over _hkey @ _hklen @ $- 0- drop
-  0<> IF 0 ;THEN
-  over _hklen @ + c@ $20 - 0- drop 0= IF 1 ;THEN
-  over _hklen @ + c@ $60 - 0- drop 0= IF 1 ;THEN
-  0 ;
-
-:. _help
-  _hklen ! _hkey !
-  "ff.help" openr _hfd !
-  _hfd @ 0- 0< IF ."cannot_open_ff.help" cr ;THEN drop
-  helpbuf 130000 _hfd @ read _hfd @ close drop
-  0- 0<= IF drop ."cannot_read_ff.help" cr ;THEN
-  "ff64.help" openr _hfd !
-  _hfd @ 0- 0>= drop IF
-    >r helpbuf r + 130000 r - _hfd @ read _hfd @ close drop
-    dup 0- 0> drop IF r> + ELSE r> drop THEN
-  THEN
-  helpbuf swap
-  BEGIN 0- 0> WHILE
-    _checkmatch 0- drop 0<> IF _printentry ;THEN
-    _skipline
-  REPEAT 2drop ."no_help_found" cr ;
-
-: help` wsparse 0- 0<> IF _help ;THEN 2drop "help" _help ;
-
-hidepvt ;
+\ help.ff — Lavarenne's self-executing help file mechanism
+\ The search engine lives in ff.help/ff64.help preambles.
+\ needed loads help file into tib; eval runs the preamble which
+\ searches the remaining tib content for the keyword.
+\ ff64.help first (arch-specific), ff.help fallback (shared).
+" help" features append
+: help`
+  wsparse 0= IF 2drop "help" THEN
+  [` 2>r "ff64.help" needed 2r> _] 0;
+  [` 2>r "ff.help" needed 2r> _] 0;
+  !"no_help_found_for_this_word"

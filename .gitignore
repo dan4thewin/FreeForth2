@@ -36,6 +36,9 @@
 !/lib/
 !/test/
 
+# Test artifacts
+test/tmp/
+
 # Experiment build artifacts (removed by make -C exp clean)
 exp/*/*.o
 exp/*/hello64
