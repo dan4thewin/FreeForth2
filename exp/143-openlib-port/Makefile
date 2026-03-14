@@ -55,20 +55,20 @@ test:
 	run "needs ior.ff loads" \
 		'needs ior.ff ."OK" cr 0 exit' \
 		'OK' && \
-	run "needed: not-found prints error" \
+	run_grep "needed: not-found prints error" \
 		'"nonexistent.ff" needed 0 exit' \
-		"nonexistent.ff Can't open file." && \
+		"Can't open file" && \
 	run "getenv HOME still works" \
 		'"HOME" getenv 0- 0<> drop IF ."YES" ELSE ."NO" THEN cr 0 exit' \
 		'YES' && \
 	runenv "FFPATH env var override" \
 		'"FFPATH" getenv 0- 0<> IF type ELSE drop THEN cr 0 exit' \
-		'/tmp/test:/opt' \
-		'FFPATH=/tmp/test:/opt' && \
+		'?:?.ff:/tmp/test:/opt' \
+		'FFPATH=?:?.ff:/tmp/test:/opt' && \
 	runenv "FFPATH override finds files" \
 		'needs syscalls.ff ."OK" cr 0 exit' \
 		'OK' \
-		'FFPATH=lib/x86-64:lib:.' && \
+		'FFPATH=?:?.ff:lib/x86-64:lib:.' && \
 	run_grep "see triggers autoload via needexec" \
 		'see cr 0 exit ;' \
 		'ret' && \

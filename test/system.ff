@@ -1,6 +1,4 @@
-\ system.ff — system-level subprocess tests (ff64 only)
-\ i386 ff needs FFPATH fix to run from non-root dirs (TODO)
-[64] [IF]
+\ system.ff — system-level subprocess tests
 needs shell.ff
 needs fileops.ff
 needs stat.ff
@@ -98,10 +96,12 @@ variable _ea  variable _el
 \ Setup: create test/tmp and chdir into it
 \ ============================================================
 !! mkdir -p test/tmp
-!! ln -sf ../../ff64 test/tmp/ff
+[64] [IF] !! ln -sf ../../ff64 test/tmp/ff
+[ELSE]    !! ln -sf ../../ff test/tmp/ff
+[THEN]
 "test/tmp" zt chdir drop
 
-\ After chdir, ./ff is a symlink to ff64
+\ After chdir, ./ff is a symlink to the current binary
 \ !! commands use $PPID which == getpid in Forth
 
 \ ============================================================
@@ -144,10 +144,12 @@ t{ "SEGV" 5 _rd _has _clr -> -1 }t
 5 _ok
 
 testing SEGV recovery continues REPL
+[64] [IF]
 "0 @^J42 . cr^J0 exit" 6 _wf ;
 !! timeout 3 ./ff 'ui n^' < $PPID.6.in > $PPID.6.out 2>$PPID.6.err
 t{ "42" 6 _rd _has _clr -> -1 }t
 6 _ok
+[ELSE] skip [THEN]
 
 \ ============================================================
 \ Tail-call optimization (exp 042)
@@ -246,10 +248,12 @@ t{ 16 _rd drop _sbuf c@ _clr -> $34 }t
 \ ============================================================
 
 testing error recovery continues
+[64] [IF]
 "badword^J99 . cr^J0 exit" 17 _wf ;
 !! timeout 3 ./ff 'ui n^' < $PPID.17.in > $PPID.17.out 2>$PPID.17.err
 t{ "99" 17 _rd _has _clr -> -1 }t
 17 _ok
+[ELSE] skip [THEN]
 
 \ ============================================================
 \ Anon flush on variable (exp 089)
@@ -268,5 +272,3 @@ t{ 18 _rd drop _sbuf c@ _clr -> $41 }t
 !! rm -rf test/tmp 2>/dev/null
 
 tally-exit ;
-[ELSE] 0 exit ;
-[THEN]

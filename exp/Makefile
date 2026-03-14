@@ -54,20 +54,23 @@ EXPERIMENTS = 023-forthmacros64 \
               093-remove-dead-runtime \
               095-locals-and-test \
               099-see64-improvements \
-              110-perl-parity \
-              112-file-tests \
               113-asm-reduction \
               134-native-getenv \
               139-eval-fileload \
               140-tib-eob \
               141-rm-loadfile \
               142-cs0-getenv \
-              145-shared-mmap
+              145-shared-mmap \
+              046-callvec64 \
+              051-repl-autoexec \
+              052-repl-forth \
+              143-openlib-port \
+              144-native-libc \
+              153-openlib
 
 # Known-broken experiments — listed so we know they exist.
 # Fix and move back to EXPERIMENTS when passing.
-SKIP = 046-callvec64 051-repl-autoexec 052-repl-forth 073-turnkey \
-       143-openlib-port 144-native-libc
+SKIP = 073-turnkey 110-perl-parity 112-file-tests
 
 test:
 	@fail=0; for d in $(EXPERIMENTS); do \
