@@ -16,8 +16,8 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 | `zlen` | asm | forth | forth/forth | 1 | **done** — moved to shared |
 | `>C0` | asm | forth | forth/forth | 1 | no-op — already bifurcated |
 | `>C1` | asm | forth | forth/forth | 1 | no-op — already bifurcated |
-| `nip`` | asm | forth | forth/forth | 1 | no-op — already bifurcated |
-| `under`` | asm | forth | forth/forth | 1 | no-op — already bifurcated |
+| `nip`` | asm | forth | forth/forth | 1 | **done** — Forth in [ELSE], shared s01. |
+| `under`` | asm | forth | forth/forth | 1 | **done** — Forth in [ELSE], shared s01. |
 | `move` | asm | forth | forth/forth | 2 | pending — backtick macro |
 | `cmove>` | — | asm | forth/forth | 2 | pending — write for i386 |
 | `read` | asm | forth | forth/forth | 3 | pending — move to fflin2.boot |
@@ -69,8 +69,12 @@ not assembly.
 - **Tier 1 (exp 154)**: Moved `fill`/`erase`/`zlen` from [64] block
   to shared section. Added Forth `drop``/`over`` to [ELSE] block
   (i386 now has Forth defs that shadow assembly). `>C0`/`>C1`/`nip``/
-  `under`` were already bifurcated — no changes needed. 131 tests pass.
+  `under`` were already bifurcated -- no changes needed. 131 tests pass.
 - **Tier 2**: Added `,4`` self-bootstrap in [64] block using
   litcomma + comma-string (same trick as i386 `,3``). Then `,3``/`,2``
   use `,4`, `,1`` uses `,3`. All four generate identical code to asm.
-  Unblocks shared-s-dotted.
+- **Restructure**: ff2.boot now has 3 sections: primitives (bifurcated
+  `,N``/`under``/`nip``/`ext`), shared compositions (`over``/`drop``/
+  `dup``/`nipdup``/`tuck``/`s01.`/`s08.`/`s09.`), arch-specific macros.
+  i386 `under``=`>C1 $52, s1`, `nip``=`>C1 $5A, s1` (Forth backtick
+  macros shadowing assembly). `s01.`/`s08.`/`s09.` now shared.
