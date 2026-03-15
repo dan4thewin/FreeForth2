@@ -9,15 +9,15 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 
 | Word | i386 | x64 | Target | Tier | Status |
 |------|------|-----|--------|------|--------|
-| `drop`` | asm | forth | forth/forth | 1 | pending — remove i386 asm |
-| `over`` | asm | forth | forth/forth | 1 | pending — remove i386 asm |
-| `fill` | asm | forth | forth/forth | 1 | pending — move to shared |
-| `erase` | asm | forth | forth/forth | 1 | pending — move to shared |
-| `zlen` | asm | forth | forth/forth | 1 | pending — move to shared |
-| `>C0` | asm | forth | forth/forth | 1 | pending — already bifurcated |
-| `>C1` | asm | forth | forth/forth | 1 | pending — already bifurcated |
-| `nip`` | asm | forth | forth/forth | 1 | pending — already bifurcated |
-| `under`` | asm | forth | forth/forth | 1 | pending — already bifurcated |
+| `drop`` | asm | forth | forth/forth | 1 | **done** — Forth def in [ELSE] block |
+| `over`` | asm | forth | forth/forth | 1 | **done** — Forth def in [ELSE] block |
+| `fill` | asm | forth | forth/forth | 1 | **done** — moved to shared |
+| `erase` | asm | forth | forth/forth | 1 | **done** — moved to shared |
+| `zlen` | asm | forth | forth/forth | 1 | **done** — moved to shared |
+| `>C0` | asm | forth | forth/forth | 1 | no-op — already bifurcated |
+| `>C1` | asm | forth | forth/forth | 1 | no-op — already bifurcated |
+| `nip`` | asm | forth | forth/forth | 1 | no-op — already bifurcated |
+| `under`` | asm | forth | forth/forth | 1 | no-op — already bifurcated |
 | `move` | asm | forth | forth/forth | 2 | pending — backtick macro |
 | `cmove>` | — | asm | forth/forth | 2 | pending — write for i386 |
 | `read` | asm | forth | forth/forth | 3 | pending — move to fflin2.boot |
@@ -66,4 +66,7 @@ not assembly.
 
 ## Changelog
 
-*(updated after each experiment)*
+- **Tier 1 (exp 154)**: Moved `fill`/`erase`/`zlen` from [64] block
+  to shared section. Added Forth `drop``/`over`` to [ELSE] block
+  (i386 now has Forth defs that shadow assembly). `>C0`/`>C1`/`nip``/
+  `under`` were already bifurcated — no changes needed. 131 tests pass.

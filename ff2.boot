@@ -82,6 +82,8 @@
 : >C0 ; : >C1 ; \ no CALLbit in x86-64
 : ext $48, ,1 ; \ REX.W prefix
 [ELSE]
+: over` under` swap` ;
+: drop` swap` nip` ;
 : allot` $DD01, s08 drop` ;
 : ,3` $036D8D, ,"^M~m^C" ;
 : ,4` $046D8D, ,3 ;
@@ -553,9 +555,6 @@ variable features 100 allot
 [64] [IF]
 \ move -- smart overlapping copy: src dst n --
 : move >r 2dup u< 2drop IF r> cmove> ;THEN r> cmove ;
-: fill rot rot BEGIN 0- 0> WHILE 1- -rot 2dup c! 1+ rot REPEAT drop 2drop ;
-: erase 0 fill ;
-: zlen ( addr -- addr len ) dup BEGIN dup c@ 0- 0<> WHILE drop 1+ REPEAT drop over - ;
 
 \ locals -- direct access to call stack cells and bulk data<->call transfers
 \ r0/r0! alias r/r!; r1..r5 access deeper cells
@@ -624,6 +623,9 @@ r` ' alias r0`
 r0!` ' alias r!`
 +r` ' alias xxr`
 
+: fill rot rot BEGIN 0- 0> WHILE 1- -rot 2dup c! 1+ rot REPEAT drop 2drop ;
+: erase 0 fill ;
+: zlen ( addr -- addr len ) dup BEGIN dup c@ 0- 0<> WHILE drop 1+ REPEAT drop over - ;
 \ --------------------------------------------------------------------
 \ dictionary listing
 : words` H@ START 2dup+ 1+ -rot type space ENTER h.sz+ c@+ 0- 0= UNTIL 2drop cr ;
