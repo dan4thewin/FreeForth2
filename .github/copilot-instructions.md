@@ -248,8 +248,10 @@ Every task must end with:
 5. Update `QUICKREF` - if new/changed non-private words
 6. Update `.github/copilot-instructions.md` - if any change to SOP
    or new high-value lessons
-7. `git commit` with descriptive message
-8. `git push` (use `source ~/.bash_ssh` for SSH agent)
+7. Add any new or deferred todos to `exp/TODO.md` — session-only
+   tracking (SQL, plan.md) is not persistent across sessions
+8. `git commit` with descriptive message
+9. `git push` (use `source ~/.bash_ssh` for SSH agent)
 
 Do not mark the task complete until all steps are done.
 

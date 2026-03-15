@@ -60,6 +60,14 @@ Last verified: 131 PASSED, 1 SKIPPED (`make testall`).
   NUL-termination.
 - ~~**fill-bug**~~: FIXED — `fill` works for 100+ bytes.
 
+- **shared-s-dotted**: Make `s01.`/`s08.`/`s09.` (= `,1 s01` etc.)
+  shared across both arches. Currently defined separately in `[64]`
+  and `[ELSE]` blocks. Blocked by `,1` being an assembly primitive
+  on x86-64 but boot-defined (line 91 of `[ELSE]`) on i386 — a
+  single shared definition before the first bifurcation can't work.
+  Once resolved, shared macros (`w@`, `c@`, `over*`, etc.) can use
+  `ext ... s09.` instead of `ext ... ,1 s09`.
+
 - **io-extraction**: Extract I/O from ff64.asm into fflin64io.asm,
   create fflin64.asm glue file. Prep for future ARM64/macOS ports.
   The remaining assembly I/O (`_accept`, `_type`, `_emit`, syscall
@@ -147,8 +155,16 @@ Last verified: 131 PASSED, 1 SKIPPED (`make testall`).
   auto-loading added, lazy loader in fflin2.boot.
 - **dis-see-shared-words**: Factor shared header-walking words
   between dis.ff and see.ff into common utility.
+- **fas2gdb-shakedown**: Thorough shakedown of `fas2gdb` (FASM symbol
+  → GDB script converter). Test edge cases, then post on the
+  flatassembler board for community feedback.
 
 ## Side quests
+- **native-malloc**: Pure Forth malloc/free based on FreeRTOS heap_4.c
+  algorithm. First-fit with address-sorted coalescing, 2-cell block
+  headers, MSB-stolen allocated bit. ~50 lines of Forth. Eliminates
+  the last fixup.ff/libc dependency. Detailed feasibility study in
+  JOURNAL.md (lines ~11766–11999).
 - **register-aliases**: Consider exposing register names for x86-64
   assembly-level Forth programming. The original motivation (compat.ff
   `tos>si`/`di>tos`) is gone — compat.ff was rewritten as pure
