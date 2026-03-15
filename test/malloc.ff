@@ -6,7 +6,7 @@ needs test.ff
 testing malloc returns nonzero address
 variable _p
 : _alloc 256 malloc _p ! _p @ ;
-t{ _alloc 0- 0<> IF THEN drop -> }t
+t{ _alloc 0- 0<> drop BOOL -> -1 }t
 
 testing store and fetch in malloced memory
 : _store 42 _p @ ! _p @ @ ;

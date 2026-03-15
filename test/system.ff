@@ -10,7 +10,7 @@ needs test.ff
 \ ============================================================
 \ chdir to test/tmp; filenames are <pid>.<n>.{in,out,err,lib}
 \ Shell !! commands use $PPID for the pid prefix.
-\ Forth side uses putc->appendc trick (see tempnm.ff).
+\ Forth side uses putc->appendc trick (see "help putc").
 variable _fd
 create _sbuf 512 allot
 create _pfx 32 allot

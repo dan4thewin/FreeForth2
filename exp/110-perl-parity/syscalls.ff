@@ -54,4 +54,6 @@ test-link test-truncate test-tell test-flock test-nanosleep
 test-fchmod
 _ok @ . ."passed,_" _fail @ . ."failed" cr
 _fail @ 0- 0= drop IF ."ok" ELSE ."FAIL" THEN cr
+"test110t" unlink drop "test110u" unlink drop
+"test110f" unlink drop "test110m" unlink drop
 ; bye

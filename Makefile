@@ -65,7 +65,10 @@ fftk64s: fftk64s.asm
 	chmod +x $@
 
 clean:
-	rm -f ff ff64 ff64s fftk fftk64 fftk64s ffpp *.o *.fas *.sym ff64.boot.min cmpl64 cmpl64.cfg
+	rm -f ff{,tk}{,64}{,s} ff{,64}.boot ffpp *.o *.fas *.sym
+
+veryclean: clean
+	rm -f cmpl dict cmpl64 cmpl64.cfg .see
 
 test1:
 	@set -o pipefail; \
@@ -104,7 +107,7 @@ test: ff
 testnc:
 	$(MAKE) 'ARGS=needs console.ff nocolor' test
 
-testall:
+testall: all
 	@timeout 60 $(MAKE) testnc testexp 2>/dev/null | \
 	perl -lne 'print "$$1$$2" if m/^(not.*)|^(?!make)\S+\s+([A-Z].*)/' | \
 	sort | uniq -c
@@ -126,4 +129,4 @@ install-share: ff.ff ff.help lib/*
 
 install: install-bin install-share
 
-.PHONY: clean test1 test ci install install-bin install-share
+.PHONY: clean veryclean test1 test ci install install-bin install-share

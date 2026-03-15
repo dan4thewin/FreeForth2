@@ -1,62 +1,104 @@
 \ fileio.ff — file I/O tests (openr, openw, read, write, close, lseek)
-\ Uses shell.ff for temp file cleanup via !!
+\ Every test uses tell to cross-check that I/O actually happened.
+\ No test can pass via trivial stack juggling alone.
 needs shell.ff
 needs fileops.ff
 needs test.ff
-10 >plan
+9 >plan
 
-testing openr and close
 variable _fd
-: _opclose "ff64.asm" openr _fd ! _fd @ close ;
-t{ _opclose -> 0 }t
-
-testing openr nonexistent returns negative
-: _nofile "no_such_file_xyz" openr ;
-t{ _nofile -2 - drop -> }t
-
-testing read returns byte count
 create _buf 64 allot
-: _rdcount "ff64.asm" openr _fd ! _buf 10 _fd @ read _fd @ close drop ;
-t{ _rdcount -> 10 }t
 
-testing lseek then read
-: _seektest
-  "ff64.asm" openr _fd !
-  5 _fd @ 0 lseek drop
-  _buf 5 _fd @ read
+\ --- openr / close ---
+
+testing openr nonexistent returns -ENOENT
+t{ "no_such_file_xyz" openr -> -2 }t
+
+testing openr valid file, tell is zero, close returns zero
+: _t1 "ff64.asm" openr _fd ! _fd @ tell _fd @ close ;
+t{ _t1 -> 0 0 }t
+
+\ --- read, verified by tell and content ---
+\ ff64.asm begins with ";;; ff64.a" = $3B $3B $3B $20 $66 $66 ...
+
+testing read: tell advances and content is correct
+: _t2 "ff64.asm" openr _fd !
+  _buf 4 _fd @ read   \ should return 4
+  _fd @ tell           \ should be 4
+  _fd @ close drop
+  _buf c@ _buf 3+ c@ ; \ $3B (';') and $20 (' ')
+t{ _t2 -> 4 4 $3B $20 }t
+
+\ --- lseek, verified by tell and content ---
+
+testing lseek: tell confirms position, read confirms content
+\ byte 4 is $66 ('f'), byte 5 is $66 ('f')
+: _t3 "ff64.asm" openr _fd !
+  0 4 _fd @ lseek drop  \ seek to offset 4
+  _fd @ tell             \ should be 4
+  _buf 2 _fd @ read     \ should return 2
+  _fd @ tell             \ should be 6
+  _fd @ close drop
+  _buf c@ _buf 1+ c@ ;  \ $66 $66 ('ff')
+t{ _t3 -> 4 2 6 $66 $66 }t
+
+\ --- write / read round-trip, verified by tell and content ---
+
+!! rm -f ,test-io-tmp
+
+testing write: tell advances by bytes written
+: _t4 ",test-io-tmp" openw0 _fd !
+  "hello" drop 5 _fd @ write  \ should return 5
+  _fd @ tell                   \ should be 5
   _fd @ close drop ;
-t{ _seektest -> 5 }t
+t{ _t4 -> 5 5 }t
 
-testing write and read round-trip
-!! rm -f _test_io_tmp
-: _wrtest
-  "_test_io_tmp" openw _fd !
-  "hello" drop 5 _fd @ write
-  _fd @ close drop ;
-t{ _wrtest -> 5 }t
+testing read back: tell advances, content matches what was written
+: _t5 ",test-io-tmp" openr _fd !
+  _buf 5 _fd @ read  \ should return 5
+  _fd @ tell          \ should be 5
+  _fd @ close drop
+  _buf c@ _buf 4+ c@ ;  \ $68 ('h') and $6F ('o')
+t{ _t5 -> 5 5 $68 $6F }t
 
-: _rdtest
-  "_test_io_tmp" openr _fd !
-  _buf 5 _fd @ read
-  _fd @ close drop ;
-t{ _rdtest -> 5 }t
+\ --- overwrite and verify new content ---
 
-testing written data matches
-t{ _buf c@ -> $68 }t
-t{ _buf 1+ c@ -> $65 }t
-
-testing overwrite and verify
-: _owtest
-  "_test_io_tmp" openw _fd !
+testing overwrite: new content replaces old
+: _t6 ",test-io-tmp" openw0 _fd !
   "ABCDE" drop 5 _fd @ write drop
   _fd @ close drop
-  "_test_io_tmp" openr _fd !
-  _buf 5 _fd @ read drop
-  _fd @ close drop ;
-t{ _owtest _buf c@ -> $41 }t
-t{ _buf 4+ c@ -> $45 }t
+  ",test-io-tmp" openr _fd !
+  _buf 5 _fd @ read  \ should return 5
+  _fd @ tell          \ should be 5
+  _fd @ close drop
+  _buf c@ _buf 2+ c@ _buf 4+ c@ ;  \ $41 $43 $45 = A C E
+t{ _t6 -> 5 5 $41 $43 $45 }t
 
-!! rm -f _test_io_tmp
+\ --- lseek within written file ---
+
+testing lseek in written file: seek, read, verify content
+: _t7 ",test-io-tmp" openr _fd !
+  0 2 _fd @ lseek drop  \ seek to offset 2
+  _fd @ tell             \ should be 2
+  _buf 1 _fd @ read     \ should return 1
+  _fd @ close drop
+  _buf c@ ;              \ $43 ('C')
+t{ _t7 -> 2 1 $43 }t
+
+\ --- partial write then append ---
+
+testing partial write, seek to start, read all
+: _t8 ",test-io-tmp" openw0 _fd !
+  "XY" drop 2 _fd @ write drop  \ write 2 bytes
+  _fd @ tell                     \ should be 2
+  0 0 _fd @ lseek drop          \ seek back to 0
+  _fd @ tell                     \ should be 0
+  _buf 2 _fd @ read drop        \ read them back
+  _fd @ close drop
+  _buf c@ _buf 1+ c@ ;          \ $58 $59 = X Y
+t{ _t8 -> 2 0 $58 $59 }t
+
+!! rm -f ,test-io-tmp
 
 tally-exit ;
 

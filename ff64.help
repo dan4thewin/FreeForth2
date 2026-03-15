@@ -211,6 +211,18 @@ ior ( -- addr ) variable: last I/O result
   needs ior.ff
   see also: strerror ior ?ior ?ior.
 
+putc ( c -- ) redirectable vector, default: emit.  Used by . .\ .dec .x etc.
+  The "putc trick" redirects putc to appendc to capture formatted number
+  output into a counted-string buffer instead of printing it:
+    create _buf 40 dup allot erase
+    :. _ba _buf appendc ;
+    : numtostr  _ba ' putc !^ .\ putc ^^ ;
+    42 numtostr  _buf c@+ type  \ prints "42"
+  Pattern: define a helper that appends to your buffer. Redirect putc to
+  the helper with !^, call any display word (.\ .dec\ .x\ etc.), then
+  restore putc with ^^.  getpid .\ captures the PID as a string.
+  see also: emit .digit . .\ .dec .x base
+
 cls ( -- ) clear screen (ANSI escape)
 home ( -- ) move cursor to 0,0
 atxy ( col row -- ) position cursor
