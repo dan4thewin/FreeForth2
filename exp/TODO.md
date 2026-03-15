@@ -1,6 +1,6 @@
 # FreeForth2 — Backlog
 
-Last verified: 131 PASSED, 3 SKIPPED (`make testall`).
+Last verified: 131 PASSED, 1 SKIPPED (`make testall`).
 
 ## Bugs
 
@@ -34,11 +34,10 @@ Last verified: 131 PASSED, 3 SKIPPED (`make testall`).
   (main-based) vs crashing (REPL) paths. Currently SKIPPED in
   `exp/Makefile`. **Blocks treeshake.**
 
-- **hang-110-112**: Experiments 110-perl-parity and 112-file-tests
-  hang on `ff64s` (static build). Confirmed pre-existing — not caused
-  by openlib changes. Root cause unknown; likely related to static
-  linking missing something the dynamic build provides. Currently
-  SKIPPED in `exp/Makefile`.
+- ~~**hang-110-112**~~: FIXED — exp/110's `syscalls.ff` collided with
+  `lib/x86-64/syscalls.ff` via `-f` path search. Fixed Makefile to use
+  `cd ../.. && ./ff64 -f $(DIR)/syscalls.ff`. exp/112 was never broken.
+  Both un-skipped.
 
 - ~~**home-naming-conflict**~~: DONE — renamed boot's `home` to
   `homedir` in fflin2.boot and openlib.ff. console.ff keeps `home`.
@@ -144,7 +143,8 @@ Last verified: 131 PASSED, 3 SKIPPED (`make testall`).
   into see.ff] alike to the i386 see" — integration is done but needs
   verification that GDB-based disassembly output works for a real word.
 
-- **dis-move-to-lib**: Move dis.ff to lib/ as cross-platform tool (gdb-based, arch-independent).
+- ~~**dis-move-to-lib**~~: DONE — dis.ff promoted to lib/, sym
+  auto-loading added, lazy loader in fflin2.boot.
 - **dis-see-shared-words**: Factor shared header-walking words
   between dis.ff and see.ff into common utility.
 
