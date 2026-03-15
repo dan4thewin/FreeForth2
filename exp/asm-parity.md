@@ -33,7 +33,7 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 | `,2` | forth | asm→**forth** | forth/forth | 2 | **done** — uses ,4 |
 | `,3` | forth | asm→**forth** | forth/forth | 2 | **done** — uses ,4 |
 | `,4` | forth | asm→**forth** | forth/forth | 2 | **done** — self-bootstrap |
-| `tailrec` | asm | — | asm/asm | 7 | pending — expose on x64 |
+| `tailrec` | asm | — | asm/asm | 7 | **done** — added to ff64.asm + WORD64 |
 | `which` | asm | — | asm/asm | 7 | pending — expose on x64 |
 | `xfp` | asm* | asm | asm/asm | 7 | pending — expose on i386 |
 | `?#` | forth | asm | TBD | 7 | pending — type mismatch |
@@ -46,9 +46,23 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 | `>S1` | asm | — | TBD | 7 | pending — structural diff |
 | `c04` | asm | — | skip | 7 | accepted — i386-only encoding |
 | `rst` | asm | — | TBD | 7 | pending — x64 uses >S0 |
-| `;;`` | asm | forth | forth/forth | 8 | pending — move i386 to Forth |
+| `;;`` | asm | forth→**asm** | asm/asm | 8 | **done** — _semisemi in ff64.asm, Forth def removed |
 | `>cs` | — | asm | x64-only | 8 | accepted — i386 differs |
 | `cs>` | — | asm | x64-only | 8 | accepted — i386 differs |
+
+## Deferred: asm→Forth compiler words
+
+The original plan had a tier 4 calling for these core compiler words
+to become Forth. DG deferred this — they stay assembly-only on both
+arches. Revisit if self-hosting ever seems worthwhile.
+
+| Word | i386 | x64 | Status |
+|------|------|-----|--------|
+| `:`  | asm  | asm | **deferred** — stay asm |
+| `;`  | asm  | asm | **deferred** — stay asm |
+| `anon` | asm | asm | **deferred** — stay asm |
+| `anon:` | asm | asm | **deferred** — stay asm |
+| `;;` | asm | asm | **done** — was Forth on x64, moved to asm for parity |
 
 ## Symmetric words (already in parity)
 
@@ -78,3 +92,9 @@ not assembly.
   `dup``/`nipdup``/`tuck``/`s01.`/`s08.`/`s09.`), arch-specific macros.
   i386 `under``=`>C1 $52, s1`, `nip``=`>C1 $5A, s1` (Forth backtick
   macros shadowing assembly). `s01.`/`s08.`/`s09.` now shared.
+- **;;` + tailrec**: DG reversed ;;` target: keep in assembly on both
+  arches (not Forth). Added `_semisemi` to ff64.asm with tailrec check,
+  short-jump optimization, `_semi` calls `_semisemi` (matching i386).
+  `tailrec` variable exposed via WORD64. Forth `;;`` removed from
+  ff2.boot. Tier 4 compiler words (: ; anon anon:) deferred — stay
+  asm-only, revisit if self-hosting.

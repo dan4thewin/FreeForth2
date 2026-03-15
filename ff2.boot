@@ -330,8 +330,6 @@ $77 dup : u>`  lit _?2 ; : u>.`  lit _?2. ;
 :. _then here over- 4 - swap d! ;
 : ELSE` SKIP` swap THEN` ;
 
-\ ;;` with tail-call optimization: CALL -> JMP if last emitted was CALL
-: ;;` >S0 callmark@ here - 0= drop IF $E9 callmark@ 5- c! ELSE $C3, ,1 THEN ; \ E9(jmp)/C3(ret)
 : ;THEN` ;;` THEN` ;
 
 : -call callmark@ here = 2drop IF -c` ELSE drop THEN ;

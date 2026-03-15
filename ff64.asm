@@ -28,6 +28,7 @@ h.nm = 10
 H       dq 0
 anon    dq 0
 callmark dq 0
+tailrec dq -1                   ; non-zero enables tail-call optimization in ;;`
 tin     dq 0
 tp      dq 0
 xfp     dq 0                    ; exception frame pointer for catch/throw
@@ -945,27 +946,32 @@ _colon:
         pop rax
         ret
 
+_semisemi:                      ; ;;` — tail-call: change last CALL to JMP, or emit RET
+        call _rst
+        cmp qword [tailrec], 0
+        jz .ret
+        cmp rbp, [callmark]     ; preceded by a call?
+        jne .ret
+        cmp dword [rbp-4], -$83 ; short jump offset?
+        jl .long
+        sub rbp, 3              ; shorten: 5-byte call -> 2-byte jmp
+        add byte [rbp-1], 3     ; offset correction (was rel32 from +5, now rel8 from +2)
+        mov byte [rbp-2], $EB   ; EB(jmp short)
+        mov qword [callmark], 0
+        ret
+.long:  mov byte [rbp-5], $E9   ; E9(jmp long) replaces E8(call)
+        mov qword [callmark], 0
+        ret
+.ret:   mov byte [rbp], $C3     ; C3(ret)
+        inc rbp
+        ret
+
 _semi:
         call _rst               ; sync registers before ret
-        ;; Check for empty anonymous def: if [anon] == rbp, nothing was compiled
-        ;; since anon:` — just reset and return (like i386's cmp ecx,ebp / jz)
         mov rax, [anon]
-        cmp rax, rbp
+        cmp rax, rbp            ; empty?
         je .empty
-        ;; Tail-call optimization: if last compiled was a call, change to jmp
-        ;; Only for named defs (anon=0); anonymous defs need ret to return
-        test rax, rax
-        jnz .no_tailcall
-        mov rax, [callmark]
-        cmp rax, rbp
-        jne .no_tailcall
-        mov byte [rbp-5], $E9   ; change call ($E8) to jmp ($E9)
-        jmp .after_ret
-.no_tailcall:
-        mov byte [rbp], $C3
-        inc rbp
-.after_ret:
-        mov qword [callmark], 0 ; reset callmark
+        call _semisemi          ; close def (tail-call optimize or emit ret)
         mov rax, [anon]
         test rax, rax
         jnz .anonymous
@@ -2039,6 +2045,7 @@ macro GENWORDS64 {
 WORD64 "SC", SC, 1, 2
 WORD64 "?#", cond_jmp, 1, 2
 WORD64 "callmark", callmark, 1, 8
+WORD64 "tailrec", tailrec, 1, 7
 WORD64 "anon", anon, 1, 4
 WORD64 "H", H, 1, 1
 WORD64 "h.ct", h.ct, 1, 4
@@ -2081,6 +2088,7 @@ WORD64 "header", _header_forth, 0, 6
 WORD64 "exit", _exit_word, 0, 4
 WORD64 ":`", _colon, 0, 2
 WORD64 ";`", _semi, 0, 2
+WORD64 ";;`", _semisemi, 0, 3
 WORD64 "compiler", _compiler, 0, 8
 WORD64 "catch", _catch, 0, 5
 WORD64 "throw", _throw, 0, 5
