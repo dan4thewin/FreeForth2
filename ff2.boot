@@ -2,27 +2,43 @@
 \ backtick macros: "dup" in source compiles via dup` defined here
 
 \ --------------------------------------------------------------------
-\ inline code generators
+\ true primitives -- arch-specific register encodings
+\ swap` and SWAPbit adjusters (s01/s08/s09/s1) are assembly
+[64] [IF]
 \ x86-64 opcodes [REX.W = $48]:
 \   4D8D7FF8(lea r15,[r15-8])  push-NOS: allocate slot
 \   4D8D7F08(lea r15,[r15+8])  pop-NOS: release slot
 \   498917(mov [r15],rdx)      store NOS to data stack
 \   498B17(mov rdx,[r15])      load NOS from data stack
 \   4889DA(mov rdx,rbx)        copy TOS to NOS
-\ NB. comments in the file are stripped by ffpp
-
-\ core stack macros (swap` is an assembly primitive)
-[64] [IF]
 : ,4` $04C58348, ,"H^C~E~^D" ; \ self-bootstrap: 4883C504(add rbp,4)
 : ,3` $03C58348, ,4 ;
 : ,2` $02C58348, ,4 ;
 : ,1` $C5FF48, ,3 ;             \ 48FFC5(inc rbp) is 3 bytes
+: under` $F87F8D4D, ,4 $178949, ,1 s08 ; \ 4D8D7FF8 498917
+: nip` $178B49, ,1 s08 $087F8D4D, ,4 ;   \ 498B17 4D8D7F08
+: ext $48, ,1 ; \ REX.W prefix
+[ELSE]
+: ,3` $036D8D, ,"^M~m^C" ; \ self-bootstrap: 8D6D03(lea ebp,[ebp+3])
+: ,4` $046D8D, ,3 ;
+: ,2` $026D8D, ,3 ;
+: ,1` $45, ,"E" ;           \ 45(inc ebp) is 1 byte
+: under` >C1 $52, s1 ;     \ 52(push edx) with SWAPbit
+: nip` >C1 $5A, s1 ;       \ 5A(pop edx) with SWAPbit
+: ext ;
+[THEN]
 : s01. ,1 s01 ; : s08. ,1 s08 ; : s09. ,1 s09 ;
-: under` $F87F8D4D, ,4 $178949, s08. ; \ 4D8D7FF8(lea r15,[r15-8])498917(mov [r15],rdx)
+\ --------------------------------------------------------------------
+\ shared compositions -- arch-independent
 : over` under` swap` ;
-: nip` $178B49, s08. $087F8D4D, ,4 ; \ 498B17(mov rdx,[r15])4D8D7F08(lea r15,[r15+8])
 : drop` swap` nip` ;
+: dup` under`
+: nipdup` ext $DA89, s09 ; \ 4889DA(mov rdx,rbx) / 89DA(mov edx,ebx)
+: tuck` swap` over` ;
 
+\ --------------------------------------------------------------------
+\ arch-specific backtick macros
+[64] [IF]
 : allot` $DD0148, s08. drop` ; \ 4801DD(add rbp,rbx)
 : c,` $5D88, s08 $00, ,1 $C5FF48, ,3 drop` ; \ 885D00(mov [rbp],bl)48FFC5(inc rbp)
 : w,` $66, ,1 $5D89, s08 $00, ,1 $02C58348, ,4 drop` ; \ 66895D00(mov [rbp],bx)4883C502(add rbp,2)
@@ -84,15 +100,8 @@
 : 3dup` over` over` $F87F8D4D, ,4 $18478B49, ,4 $078949, ,3 ;
 
 : >C0 ; : >C1 ; \ no CALLbit in x86-64
-: ext $48, ,1 ; \ REX.W prefix
 [ELSE]
-: over` under` swap` ;
-: drop` swap` nip` ;
 : allot` $DD01, s08 drop` ;
-: ,3` $036D8D, ,"^M~m^C" ;
-: ,4` $046D8D, ,3 ;
-: ,2` $026D8D, ,3 ;
-: ,1` $45, ,"E" ;
 : c,` $45005D88, s08 ,2 drop` ;
 : d,` : ,` $FF005D89, s08 ,1 ,4` drop` ;
 : w,` $005D8966, ,1 s08 ,1 ,2` drop` ;
@@ -120,13 +129,7 @@
 : place` $D189DF89, s08 s08 >C1 $5AA4F35E, ,3 s1 ;
 
 : 3dup` over` over` $082474FF, ,4 ;
-: ext ;
-: s01. s01 ; : s08. s08 ; : s09. s09 ;
 [THEN]
-\ dup` falls through to nipdup` -- dup = under + nipdup
-: dup` under`
-: nipdup` ext $DA89, s09 ; \ 4889DA(mov rdx,rbx)
-: tuck` swap` over` ;
 : r>` over`
 : dropr>` >C0 $5B, s1 ; \ 5B(pop rbx)
 : dup>r`  >C0 $53, s1 ; \ 53(push rbx)
