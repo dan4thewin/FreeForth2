@@ -47,6 +47,6 @@ variable _stbuf pvt _stat.sz 4- allot
 : can-x ( mode -- mode ) dup  $40 &  $40 - drop ;
 
 \ one-shot convenience
-: file? ( addr len -- ) fmode $F000 & $8000 - drop drop ;
-: dir?  ( addr len -- ) fmode $F000 & $4000 - drop drop ;
-: link? ( addr len -- ) flmode $F000 & $A000 - drop drop ;
+: file? ( addr len -- ) fmode $F000 & $8000 - drop ;
+: dir?  ( addr len -- ) fmode $F000 & $4000 - drop ;
+: link? ( addr len -- ) flmode $F000 & $A000 - drop ;

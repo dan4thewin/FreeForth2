@@ -9,10 +9,22 @@
 \   ( == ) = return stack effect
 \   Backtick words (e.g. dup`) are compile-time macros.
 \   Without the backtick: inline at compile time. With it: call at runtime.
-\   FLAGS-based: comparisons set CPU flags, NOT a stack boolean.
 \   [x86-64]    = x86-64 only or differs from x86
 \   [x86 only]  = x86 only, not present on x86-64
 \
+\ FLAGS annotations (verified empirically on both platforms):
+\   [F:ZCSO] = sets Zero, Carry, Sign, Overflow flags (SUB, ADD, CMP)
+\   [F:ZS]   = sets Zero and Sign; clears Carry (AND, OR, XOR)
+\   [F:ZSO]  = sets Zero, Sign, Overflow; CF unchanged (INC, DEC)
+\   [F:ZF]   = sets/returns Zero flag (comparators like within, find)
+\   [F:--]   = flags undefined after this word (MUL, DIV)
+\   No annotation = flags-preserving (MOV/LEA/PUSH/POP don't touch FLAGS)
+\
+\ Jcc selector annotations (which flag the selector reads):
+\   [ZF] [SF] [CF] [ZF+SF]
+\
+\ FLAGS-based conditionals: comparisons set CPU flags, NOT booleans.
+\ 0=/0<>/0</0> store a Jcc opcode — NO runtime code emitted.
 
 \ ===================== STACK OPERATIONS =====================
 
@@ -74,80 +86,85 @@ sp@`		( -- @ )			push data stack pointer [ff64:R15]
 
 \ ================ INTEGER ARITHMETIC =======================
 
-+`		( x y -- x+y )			add
--`		( x y -- x-y )			subtract
-*`		( x y -- x*y )			multiply (signed)
-/`		( x y -- x/y )			divide (signed, rounds toward zero)
-%`		( x y -- x%y )			modulo (sign = x sign)
-&`		( x y -- x&y )			bitwise AND
-|`		( x y -- x|y )			bitwise OR
-^`		( x y -- x^y )			bitwise XOR
-over+`		( x y -- x y+x )		add NOS into TOS
-over-`		( x y -- x y-x )		subtract NOS from TOS
-over*`		( x y -- x x*y )		multiply NOS into TOS
-over&`		( x y -- x y&x )		AND NOS into TOS
-over|`		( x y -- x y|x )		OR NOS into TOS
-over^`		( x y -- x y^x )		XOR NOS into TOS
-2dup+`		( x y -- x y x+y )		push sum of TOS and NOS
-~`		( u -- ~u )			bitwise complement (no flag change!)
-negate`		( n -- -n )			two's complement negate
-bswap`		( n -- n' )			reverse byte order
-flip`		( n -- n' )			swap low two bytes
-1+`		( n -- n+1 )			increment
-1-`		( n -- n-1 )			decrement
-2+`		( n -- n+2 )			add 2
-4+`		( n -- n+4 )			add 4 (x86 cell+)
-8+`		( n -- n+8 )			add 8 (ff64 cell+) [ff64]
-8-`		( n -- n-8 )			subtract 8 [ff64]
-2*`		( n -- n*2 )			shift left 1
-2/`		( n -- n/2 )			arithmetic shift right 1
-4*`		( n -- n*4 )			shift left 2
-4/`		( n -- n/4 )			arithmetic shift right 2
-8*`		( n -- n*8 )			shift left 3
-8/`		( n -- n/8 )			arithmetic shift right 3
-<<`		( n u -- n<<u )			shift left by u bits
->>`		( u n -- u>>n )			logical shift right by n bits
-++`		( -- )				increment variable in place (macro)
---`		( -- )				decrement variable in place (macro)
-/%`		( x y -- x%y x/y )		signed divide with remainder
-m/mod`		( xl xh y -- r q )		signed 128/64-bit divide [ff64:128b]
-um/mod`		( xl xh y -- r q )		unsigned 128/64-bit divide
-m*`		( x y -- lo hi )		signed multiply to double-cell
-um*`		( x y -- lo hi )		unsigned multiply to double-cell
-*/mod`		( x y z -- r q )		x*y/z with double intermediate
-*/`		( x y z -- q )			x*y/z quotient only
++`		( x y -- x+y )			add				[F:ZCSO]
+-`		( x y -- x-y )			subtract			[F:ZCSO]
+*`		( x y -- x*y )			multiply (signed)		[F:--]
+/`		( x y -- x/y )			divide (signed, rounds to 0)	[F:--]
+%`		( x y -- x%y )			modulo (sign = x sign)		[F:--]
+&`		( x y -- x&y )			bitwise AND			[F:ZS]
+|`		( x y -- x|y )			bitwise OR			[F:ZS]
+^`		( x y -- x^y )			bitwise XOR			[F:ZS]
+over+`		( x y -- x y+x )		add NOS into TOS		[F:ZCSO]
+over-`		( x y -- x y-x )		subtract NOS from TOS		[F:ZCSO]
+over*`		( x y -- x x*y )		multiply NOS into TOS		[F:--]
+over&`		( x y -- x y&x )		AND NOS into TOS		[F:ZS]
+over|`		( x y -- x y|x )		OR NOS into TOS			[F:ZS]
+over^`		( x y -- x y^x )		XOR NOS into TOS		[F:ZS]
+2dup+`		( x y -- x y x+y )		push sum of TOS and NOS		[F:ZCSO]
+~`		( u -- ~u )			bitwise complement
+negate`		( n -- -n )			two's complement negate		[F:ZCSO]
+bswap`		( n -- n' )			reverse byte order		[F:--]
+flip`		( n -- n' )			swap low two bytes		[F:--]
+1+`		( n -- n+1 )			increment			[F:ZSO]
+1-`		( n -- n-1 )			decrement			[F:ZSO]
+2+`		( n -- n+2 )			add 2				[F:ZCSO]
+4+`		( n -- n+4 )			add 4 (x86 cell+)		[F:ZCSO]
+8+`		( n -- n+8 )			add 8 (ff64 cell+) [ff64]	[F:ZCSO]
+8-`		( n -- n-8 )			subtract 8 [ff64]		[F:ZCSO]
+2*`		( n -- n*2 )			shift left 1			[F:ZCSO]
+2/`		( n -- n/2 )			arithmetic shift right 1	[F:ZCSO]
+4*`		( n -- n*4 )			shift left 2			[F:ZCSO]
+4/`		( n -- n/4 )			arithmetic shift right 2	[F:ZCSO]
+8*`		( n -- n*8 )			shift left 3			[F:ZCSO]
+8/`		( n -- n/8 )			arithmetic shift right 3	[F:ZCSO]
+<<`		( n u -- n<<u )			shift left by u bits		[F:ZCSO]
+>>`		( u n -- u>>n )			logical shift right by n bits	[F:ZCSO]
+++`		( -- )				incr variable in place (macro)	[F:ZSO]
+--`		( -- )				decr variable in place (macro)	[F:ZSO]
+/%`		( x y -- x%y x/y )		signed divide with remainder	[F:--]
+m/mod`		( xl xh y -- r q )		signed 128/64 divide [ff64]	[F:--]
+um/mod`		( xl xh y -- r q )		unsigned 128/64-bit divide	[F:--]
+m*`		( x y -- lo hi )		signed multiply to double-cell	[F:--]
+um*`		( x y -- lo hi )		unsigned multiply to double	[F:--]
+*/mod`		( x y z -- r q )		x*y/z with double intermediate	[F:--]
+*/`		( x y z -- q )			x*y/z quotient only		[F:--]
 s>d`		( x -- xl xh )			sign-extend to double-cell
 d+`		( xl xh yl yh -- zl zh )	double-cell addition
 min`		( x y -- min )			signed minimum
 max`		( x y -- max )			signed maximum
-within		( n lo hi -- ; z? )		true if lo<=n<hi (sets FLAGS)
+within		( n lo hi -- ; z? )		true if lo<=n<hi		[F:ZF]
 abs`		( x -- |x| )			absolute value
 dnegate`	( dl dh -- -dl -dh )		negate double-cell
 dabs`		( dl dh -- |dl| |dh| )		absolute value double-cell
 
 \ =========== COMPARISONS / CONDITIONALS (FLAGS) ============
-\ These set CPU FLAGS and store a jump opcode. No boolean pushed.
-\ Use before IF, WHILE, UNTIL, TILL, ?.
+\ Two groups: flag-setters (emit runtime code) and Jcc selectors
+\ (compile-time only — store a jump opcode, no runtime code).
+\ Comparisons are NON-CONSUMING: they use CMP, not SUB.
 
-0-`		( -- )				test TOS (or ebx,ebx) — set FLAGS
-0=`		( -- )				select: jump if zero
-0<>`		( -- )				select: jump if nonzero
-0<`		( -- )				select: jump if negative
-0>=`		( -- )				select: jump if non-negative
-0>`		( -- )				select: jump if positive
-0<=`		( -- )				select: jump if non-positive
-C1?`		( -- )				select: jump if carry set
-C0?`		( -- )				select: jump if carry clear
-=`		( -- )				compare NOS vs TOS, jump if equal
-<>`		( -- )				compare NOS vs TOS, jump if not equal
-<`		( -- )				compare NOS vs TOS, jump if less
->`		( -- )				compare NOS vs TOS, jump if greater
-<=`		( -- )				compare NOS vs TOS, jump if <=
->=`		( -- )				compare NOS vs TOS, jump if >=
-u<`		( -- )				unsigned: jump if below
-u>`		( -- )				unsigned: jump if above
-u<=`		( -- )				unsigned: jump if not above
-u>=`		( -- )				unsigned: jump if not below
+0-`		( -- )				test TOS (or reg,reg)		[F:ZS]
+=`		( -- )				CMP NOS vs TOS			[F:ZCSO]
+<>`		( -- )				CMP NOS vs TOS			[F:ZCSO]
+<`		( -- )				CMP NOS vs TOS			[F:ZCSO]
+>`		( -- )				CMP NOS vs TOS			[F:ZCSO]
+<=`		( -- )				CMP NOS vs TOS			[F:ZCSO]
+>=`		( -- )				CMP NOS vs TOS			[F:ZCSO]
+u<`		( -- )				CMP NOS vs TOS (unsigned)	[F:ZCSO]
+u>`		( -- )				CMP NOS vs TOS (unsigned)	[F:ZCSO]
+u<=`		( -- )				CMP NOS vs TOS (unsigned)	[F:ZCSO]
+u>=`		( -- )				CMP NOS vs TOS (unsigned)	[F:ZCSO]
+
+\ Jcc selectors — compile-time only, NO runtime code emitted.
+\ Read flags set by a preceding operation; store jump opcode
+\ for IF/WHILE/UNTIL/TILL/? to emit.
+0=`		( -- )				select: jump if zero		[ZF]
+0<>`		( -- )				select: jump if nonzero		[ZF]
+0<`		( -- )				select: jump if negative	[SF]
+0>=`		( -- )				select: jump if non-negative	[SF]
+0>`		( -- )				select: jump if positive	[ZF+SF]
+0<=`		( -- )				select: jump if non-positive	[ZF+SF]
+C1?`		( -- )				select: jump if carry set	[CF]
+C0?`		( -- )				select: jump if carry clear	[CF]
 
 \ --- Dotted versions: push boolean, do NOT set ?# ---
 
@@ -171,8 +188,8 @@ u>=.`		( x y -- ? )			unsigned not below
 \ --- Boolean/flag utilities ---
 
 BOOL`		( -- ? )			convert FLAGS to stack boolean (-1/0)
-nzTRUE		( -- ; nz )			set nonzero flag (Z clear)
-zFALSE		( -- ; z )			set zero flag (Z set)
+nzTRUE		( -- ; nz )			set nonzero flag (Z clear)	[F:ZF]
+zFALSE		( -- ; z )			set zero flag (Z set)		[F:ZF]
 
 \ =================== MEMORY ACCESS =========================
 
@@ -223,9 +240,9 @@ fill		( @ # c -- )			fill # bytes at @ with c
 move		( @s @d # -- )			safe copy (handles overlap)
 cmove`		( @s @d # -- )			copy # bytes, ascending
 place`		( @s # @d -- @d )		copy # bytes to @d, return @d
-$-		( @1 @2 # -- n )		compare # bytes, return diff
-$-.		( @1 @2 # -- n )		case-insensitive compare
-search		( @ # @' #' -- @r #r ;z?)	find substring, sets Z if found
+$-		( @1 @2 # -- n )		compare # bytes, return diff	[F:ZF]
+$-.		( @1 @2 # -- n )		case-insensitive compare	[F:ZF]
+search		( @ # @' #' -- @r #r ;z?)	find substring, sets Z if found	[F:ZF]
 
 \ ================== COMPILATION ============================
 
@@ -298,7 +315,7 @@ cs>		( -- n )			pop from compile-time stack [ff64]
 \ ================ DEFINING WORDS ===========================
 
 :`		( <name> -- )			define a named word (code type)
-:.`		( <name> -- )			define a private named word
+:.`		( <name> -- )			define + mark private (: + pvt)
 alias`		( @ <name> -- )			create synonym for existing word
 create`		( <name> -- )			define data-type word
 variable`	( <name> -- ; -- @ )		define cell variable (init 0)
@@ -317,7 +334,7 @@ h.sz		( -- n )			offset of sz field in header
 h.nm		( -- n )			offset of nm field in header
 h.name		( hdr -- )			print header name [ff64]
 h.next		( hdr -- hdr' )			advance to next header [ff64]
-find		( @ # -- ptr 0 | @ # )		look up word in symbol table
+find		( @ # -- ptr 0 | @ # )		look up word in symbol table	[F:ZF]
 which		( -- @ )			var: last header found by find
 
 \ =================== FLOW CONTROL ==========================
@@ -396,6 +413,23 @@ appendc		( c @d -- )			append byte to counted @d
 \ 2000-3-1     Gregorian date
 \ 1:30:00      time (sexagesimal accumulation)
 \ 1_12:0:0     day_hour:min:sec
+
+\ ============= NUMBER LITERAL SUFFIXES ====================
+\ The compiler handles these on number (or data-label) tokens.
+\ Arithmetic suffixes compile the ALU op with an immediate operand.
+
+\ N,     emit mov [rbp], imm (NO rbp advance)
+\ N@     compile fetch from address N
+\ N!     compile store to address N (consumes TOS)
+\ N_     replace TOS with N
+\ N+     add N to TOS			[F:ZCSO]
+\ N-     subtract N from TOS		[F:ZCSO]
+\ N*     multiply TOS by N		[F:--]
+\ N/     divide TOS by N		[F:--]
+\ N%     modulo TOS by N		[F:--]
+\ N&     AND TOS with N			[F:ZS]
+\ N|     OR TOS with N			[F:ZS]
+\ N^     XOR TOS with N			[F:ZS]
 
 \ ================= I/O =====================================
 

@@ -290,25 +290,22 @@ caller's stack. **Trace the stack at IF; that's the ELSE stack.**
 
 ### What sets flags, what preserves them, what stores Jcc
 
-The `-` suffix convention signals "this word sets CPU flags via
-subtraction" — `$2F -` is `sub reg, 0x2F`, ZF=1 means was 0x2F.
-But nearly every ALU operation sets ZF usefully:
+**TINYREF is the source of truth for stack effects and flag behavior.**
+Every word is annotated: `[F:ZCSO]` (sets Zero/Carry/Sign/Overflow),
+`[F:ZS]` (sets Z/S, clears C), `[F:ZSO]` (Z/S/O, CF unchanged),
+`[F:--]` (flags undefined). No annotation = flags-preserving.
+Jcc selectors show which flag they read: `[ZF]`, `[SF]`, `[CF]`,
+`[ZF+SF]`. Consult TINYREF (or `grep QUICKREF`) before writing
+any flags-dependent code.
 
-**Flag-setting** (all set ZF when result is zero):
-`-` (sub), `+` (add), `1+` (inc), `1-` (dec),
-`&` (and), `|` (or), `^` (xor), `0-` (or reg,reg),
-`=`, `<`, `>`, `<>` (cmp/sub of two items).
-Examples: `1- 0= IF` = "was it 1?", `$FF & 0<> IF` = "low bits
-set?", `3 & 0= IF` = "aligned?".
-
-Words that **only store a Jcc opcode** (no runtime code):
-`0=`, `0<>`, `0<`, `0>` — they read the flags already set by a
-preceding operation. Then `IF`/`WHILE`/`UNTIL` emit the jump.
-
-**Flags-preserving** (safe between a flag-setter and IF):
-`drop`, `nip`, `2drop` (mov+lea), `r>`, `>r` (push/pop),
-`dup`, `over`, `swap` (mov), `@`, `c@` (mov/movzx),
-`!`, `c!` (mov to memory + drop).
+Key points (see TINYREF for the complete list):
+- Nearly every ALU op sets flags usefully: `+`, `-`, `1+`, `1-`,
+  `&`, `|`, `^`, `0-`, and all comparisons.
+- `*`/`/`/`%` leave flags **undefined** — don't rely on them.
+- `0=`/`0<>`/`0<`/`0>` are Jcc selectors — compile-time only,
+  NO runtime code. They read flags set by a preceding operation.
+- Most non-ALU words (drop, dup, swap, over, nip, >r, r>, @, c@,
+  !, c!) use MOV/LEA/PUSH/POP and preserve all flags by default.
 
 ### Park values with `>r` across comparisons
 

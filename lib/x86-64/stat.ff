@@ -52,6 +52,6 @@ variable _stbuf pvt 136 allot
 
 \ one-shot convenience  --  takes addr+len, nothing left on stack
 \ "path" dir? 0= IF ."yes" THEN
-: file? ( addr len -- ) fmode $F000 & $8000 - drop drop ;
-: dir?  ( addr len -- ) fmode $F000 & $4000 - drop drop ;
-: link? ( addr len -- ) flmode $F000 & $A000 - drop drop ;
+: file? ( addr len -- ) fmode $F000 & $8000 - drop ;
+: dir?  ( addr len -- ) fmode $F000 & $4000 - drop ;
+: link? ( addr len -- ) flmode $F000 & $A000 - drop ;
