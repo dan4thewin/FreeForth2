@@ -29,10 +29,10 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 | `type` | asm | forth | forth/forth | 3 | pending — shared once write is Forth |
 | `search` | asm | — | forth/forth | 4 | pending — preserve repnz/repz algo |
 | `$-.` | asm | — | forth/forth | 5 | pending — DG exercise |
-| `,1` | forth | asm | forth/forth | 6 | pending — write x64 Forth def |
-| `,2` | forth | asm | forth/forth | 6 | pending — write x64 Forth def |
-| `,3` | forth | asm | forth/forth | 6 | pending — write x64 Forth def |
-| `,4` | forth | asm | forth/forth | 6 | pending — write x64 Forth def |
+| `,1` | forth | asm→**forth** | forth/forth | 2 | **done** — self-bootstrap chain |
+| `,2` | forth | asm→**forth** | forth/forth | 2 | **done** — uses ,4 |
+| `,3` | forth | asm→**forth** | forth/forth | 2 | **done** — uses ,4 |
+| `,4` | forth | asm→**forth** | forth/forth | 2 | **done** — self-bootstrap |
 | `tailrec` | asm | — | asm/asm | 7 | pending — expose on x64 |
 | `which` | asm | — | asm/asm | 7 | pending — expose on x64 |
 | `xfp` | asm* | asm | asm/asm | 7 | pending — expose on i386 |
@@ -70,3 +70,7 @@ not assembly.
   to shared section. Added Forth `drop``/`over`` to [ELSE] block
   (i386 now has Forth defs that shadow assembly). `>C0`/`>C1`/`nip``/
   `under`` were already bifurcated — no changes needed. 131 tests pass.
+- **Tier 2**: Added `,4`` self-bootstrap in [64] block using
+  litcomma + comma-string (same trick as i386 `,3``). Then `,3``/`,2``
+  use `,4`, `,1`` uses `,3`. All four generate identical code to asm.
+  Unblocks shared-s-dotted.
