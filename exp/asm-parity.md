@@ -18,8 +18,8 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 | `>C1` | asm | forth | forth/forth | 1 | no-op — already bifurcated |
 | `nip`` | asm | forth | forth/forth | 1 | **done** — Forth in [ELSE], shared s01. |
 | `under`` | asm | forth | forth/forth | 1 | **done** — Forth in [ELSE], shared s01. |
-| `move` | asm | forth | forth/forth | 2 | pending — backtick macro |
-| `cmove>` | — | asm | forth/forth | 2 | pending — write for i386 |
+| `move` | asm | forth→**forth** | forth/forth | 2 | **done** — Forth with std/place/cld, removed cmove> |
+| `cmove>` | — | ~~asm~~ | removed | 2 | **done** — replaced by move's backward path |
 | `read` | asm | forth | forth/forth | 3 | pending — move to fflin2.boot |
 | `write` | asm | forth | forth/forth | 3 | pending — move to fflin2.boot |
 | `close` | asm | forth | forth/forth | 3 | pending — move to fflin2.boot |
@@ -98,3 +98,7 @@ not assembly.
   `tailrec` variable exposed via WORD64. Forth `;;`` removed from
   ff2.boot. Tier 4 compiler words (: ; anon anon:) deferred — stay
   asm-only, revisit if self-hosting.
+- **move / cmove>**: Rewrote x64 `move` as pure Forth using `std`
+  + `place` + `cld` — `place` emits inline `rep movsb`, `std`/`cld`
+  bracket it for backward direction. Removed `cmove>` from ff64.asm
+  (was a 64-ism). `_remove_hdr` now uses `move`. Updated exp 071 test.

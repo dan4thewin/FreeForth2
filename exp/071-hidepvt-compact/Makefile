@@ -37,10 +37,10 @@ test:
 	if echo "$$OUT" | grep -q 'dup.*dup'; then \
 		echo "  PASS: help works after compaction"; \
 	else echo "  FAIL: help broken: $$OUT"; exit 1; fi
-	@# Test 7: cmove> word exists
+	@# Test 7: move word exists (Forth, replaced asm cmove>)
 	@OUT=$$(printf '%s\n' 'words bye ;' | $(FF64) 2>/dev/null | tr ' ' '\n'); \
-	if echo "$$OUT" | grep -qaxF 'cmove>'; then \
-		echo "  PASS: cmove> in dictionary"; \
-	else echo "  FAIL: cmove> missing"; exit 1; fi
+	if echo "$$OUT" | grep -qaxF 'move'; then \
+		echo "  PASS: move in dictionary"; \
+	else echo "  FAIL: move missing"; exit 1; fi
 	@echo "  ----"
 	@echo "  7 passed, 0 failed"

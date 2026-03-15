@@ -136,25 +136,6 @@ _zlt:   test rbx, rbx           ; 0< ( n -- flag )
 
 ;; String/memory operations
 
-;; cmove> ( src dst n -- ) copy n bytes backward (for overlapping dst>src)
-_cmove_up:
-        push rsi
-        push rdi
-        mov rcx, rbx            ; n
-        mov rdi, rdx            ; dst
-        mov rsi, [r15]          ; src
-        lea rdi, [rdi+rcx-1]    ; point to last byte of dst
-        lea rsi, [rsi+rcx-1]    ; point to last byte of src
-        std
-        rep movsb
-        cld
-        pop rdi
-        pop rsi
-        mov rbx, [r15+8]
-        mov rdx, [r15+16]
-        add r15, 24
-        ret
-
 _strcmp: push rsi                ; $- ( @1 @2 # -- n ) 0=match
         push rdi
         mov rcx, rbx            ; # = count
@@ -2062,7 +2043,6 @@ WORD64 "xfp", xfp, 1, 3
 
 ;; Code words — ascending XT order
 WORD64 ">S0", _rst, 0, 3
-WORD64 "cmove>", _cmove_up, 0, 6
 WORD64 "$-", _strcmp, 0, 2
 WORD64 "depth", _depth, 0, 5
 WORD64 "DS0", _DS0, 0, 3

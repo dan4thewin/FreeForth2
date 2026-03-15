@@ -174,6 +174,8 @@
 
 : 2+` 1+` 1+` ;
 : cmove` swap` place` drop` ;
+: std` $FD, ,1 ;
+: cld` $FC, ,1 ;
 
 \ consuming binary ops
 : &` over&` nip` ;
@@ -557,10 +559,12 @@ variable features 100 allot
 : -v` ."\\ features: " features c@+ type cr ;
 
 "locals" features append ;
-[64] [IF]
-\ move -- smart overlapping copy: src dst n --
-: move >r 2dup u< 2drop IF r> cmove> ;THEN r> cmove ;
 
+\ move -- safe overlap-aware copy: std makes rep movsb go backward
+: move >r u>= IF r> cmove ;THEN
+  r 1- + swap r 1- + swap r> std cmove cld ;
+
+[64] [IF]
 \ locals -- direct access to call stack cells and bulk data<->call transfers
 \ r0/r0! alias r/r!; r1..r5 access deeper cells
 \ 48895C24NN(mov [rsp+N],rbx) s08 XORs 5C->54 for rdx
@@ -652,7 +656,7 @@ variable hide hide on
   dup _hdr_size
   >r dup H@ - H@
   swap H@ r + swap
-  cmove>
+  move
   r> dup H +! + ;
 :. _hidepvt hide@ 0; drop
   H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE

@@ -1103,39 +1103,7 @@ _classes dd icall,_call         ; 0: call
 ;;; memory/string utilities
 
 ;;; cmove/place are defined as macros in ff.boot for their quite frequent use.
-;;; erase/fill/move/$-/search, less frequently used, are defined here:
-
-CODE "erase",_erase             ; @ # --
-        DUP1 0                  ; @ # 0 --
-CODE "fill",_fill               ; @ # byte --
-        xchg eax,esp            ; 94
-        xchg eax,ebx            ; 93/92
-        mov  ecx,edx            ; 89D1/89D9
-        pop  edi                ; 5F
-        rep  stosb              ; F3AA
-        xchg eax,ebx            ; 93/92
-        pop ebx
-        pop edx
-        xchg eax,esp
-        ret
-
-CODE "move",_move               ; @src @dst # -- ; safe memory-block-move
-        xchg eax,esp
-        pop esi                 ; esi = @src
-        mov edi,edx             ; edi = @dst
-        mov ecx,ebx             ; ecx = #
-        cmp esi,edi
-        jae @f
-        dec ebx
-        add esi,ebx             ; esi = @src+#-1
-        add edi,ebx             ; edi = @dst+#-1
-        std                     ; by decreasing addresses
-@@:     rep movsb
-        cld
-        pop ebx
-        pop edx
-        xchg eax,esp
-        ret
+;;; erase/fill/move are now Forth in ff2.boot (shared with x86-64).
 
 CODE "$-",_stringsub            ; @1 @2 # -- n ; n=0:match
         xchg eax,esp            ; 94
