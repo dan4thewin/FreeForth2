@@ -13,6 +13,10 @@
 
 \ core stack macros (swap` is an assembly primitive)
 [64] [IF]
+: ,4` $04C58348, ,"H^C~E~^D" ; \ self-bootstrap: 4883C504(add rbp,4)
+: ,3` $03C58348, ,4 ;
+: ,2` $02C58348, ,4 ;
+: ,1` $C5FF48, ,3 ;             \ 48FFC5(inc rbp) is 3 bytes
 : s01. ,1 s01 ; : s08. ,1 s08 ; : s09. ,1 s09 ;
 : under` $F87F8D4D, ,4 $178949, s08. ; \ 4D8D7FF8(lea r15,[r15-8])498917(mov [r15],rdx)
 : over` under` swap` ;
