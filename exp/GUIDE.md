@@ -790,6 +790,25 @@ must be emitted separately:
 | `s01` | advance 2, XOR [rbp-1] with $01 | Dest reg field only |
 | `s1` | advance 1, XOR [rbp-1] with $01 | Single-byte opcodes |
 | `,1` through `,4` | advance N, no XOR | Fixed bytes (REX prefixes) |
+| `s09.` | `,1` + `s09` = advance 3, XOR $09 | x86-64: REX + op + ModR/M |
+| `s08.` | `,1` + `s08` = advance 3, XOR $08 | x86-64: REX + op + ModR/M |
+| `s01.` | `,1` + `s01` = advance 3, XOR $01 | x86-64: REX + op + ModR/M |
+
+The 3-byte dotted variants (experiment 152) compose `,1` with the
+2-byte adjuster, matching the stride of REX-prefixed register ops.
+They allow the REX byte to be packed into the litcomma value:
+
+```forth
+\ Before (x86-64): 2 litcomma calls
+: nipdup` $48, ,1 $DA89, s09 ;
+
+\ After: 1 litcomma call
+: nipdup` $DA8948, s09. ;
+```
+
+On i386, `s09.` is aliased to `s09` (no REX prefix, 2-byte stride).
+**Caution**: shared macros using `ext` must NOT use dotted adjusters —
+`ext` already includes `,1`, so `ext ... s09.` double-advances.
 
 The XOR values correspond to the bit positions that encode rbx vs rdx
 in the x86 ModR/M byte: bit 0 flips the r/m field (dest), bit 3 flips

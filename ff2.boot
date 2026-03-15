@@ -13,28 +13,29 @@
 
 \ core stack macros (swap` is an assembly primitive)
 [64] [IF]
-: under` $F87F8D4D, ,4 $49, ,1 $1789, s08 ; \ 4D8D7FF8(lea r15,[r15-8])498917(mov [r15],rdx)
+: s01. ,1 s01 ; : s08. ,1 s08 ; : s09. ,1 s09 ;
+: under` $F87F8D4D, ,4 $178949, s08. ; \ 4D8D7FF8(lea r15,[r15-8])498917(mov [r15],rdx)
 : over` under` swap` ;
-: nip` $49, ,1 $178B, s08 $087F8D4D, ,4 ; \ 498B17(mov rdx,[r15])4D8D7F08(lea r15,[r15+8])
+: nip` $178B49, s08. $087F8D4D, ,4 ; \ 498B17(mov rdx,[r15])4D8D7F08(lea r15,[r15+8])
 : drop` swap` nip` ;
 
-: allot` $48, ,1 $DD01, s08 drop` ; \ 4801DD(add rbp,rbx)
+: allot` $DD0148, s08. drop` ; \ 4801DD(add rbp,rbx)
 : c,` $5D88, s08 $00, ,1 $C5FF48, ,3 drop` ; \ 885D00(mov [rbp],bl)48FFC5(inc rbp)
 : w,` $66, ,1 $5D89, s08 $00, ,1 $02C58348, ,4 drop` ; \ 66895D00(mov [rbp],bx)4883C502(add rbp,2)
 : d,` $5D89, s08 $00, ,1 $04C58348, ,4 drop` ; \ 895D00(mov [rbp],ebx)4883C504(add rbp,4)
-: ,`  $48, ,1 $5D89, s08 $00, ,1 $086D8D48, ,4 drop` ; \ 48895D00(mov [rbp],rbx)488D6D08(lea rbp,[rbp+8])
+: ,`  $5D8948, s08. $00, ,1 $086D8D48, ,4 drop` ; \ 48895D00(mov [rbp],rbx)488D6D08(lea rbp,[rbp+8])
 
 \ r@: 488B1C24(mov rbx,[rsp])
 \ 2r@: 488B5C2408(mov rbx,[rsp+8]) then fall through to r`
-: 2r` over` $48, ,1 $5C8B, s08 $24, ,1 $08, ,1
-: r`  over` $48, ,1 $1C8B, s08 $24, ,1 ;
+: 2r` over` $5C8B48, s08. $24, ,1 $08, ,1
+: r`  over` $1C8B48, s08. $24, ,1 ;
 \ return stack inline macros
 : rdrop` $48, ,1 $C483, ,2 $08, ,1 ; \ 4883C408(add rsp,8)
 : 2rdrop` $48, ,1 $C483, ,2 $10, ,1 ; \ 4883C410(add rsp,16)
 
 \ rotation via xchg [r15],reg
 : -rot` swap`
-: >rswapr>` $49, ,1 $1787, s08 ; \ 498717(xchg [r15],rdx)
+: >rswapr>` $178749, s08. ; \ 498717(xchg [r15],rdx)
 
 \ --------------------------------------------------------------------
 \ I/O -- stdout, write, type needed before dictionary listing
@@ -47,20 +48,20 @@
 : /%` >S0 $48D08948, ,4 $FBF74899, ,4 $C38948, ,3 ;
 
 \ unary ops
-: 1-` $48, ,1 $CBFF, s01 ; \ 48FFCB(dec rbx)
-: 1+` $48, ,1 $C3FF, s01 ; \ 48FFC3(inc rbx)
-: 4+` $48, ,1 $C383, s01 $04, ,1 ; \ 4883C304(add rbx,4)
-: 8+` : cell+` $48, ,1 $C383, s01 $08, ,1 ; \ 4883C308(add rbx,8)
-: 2*` $48, ,1 $E3D1, s01 ; \ 48D1E3(shl rbx,1)
-: 2/` $48, ,1 $FBD1, s01 ; \ 48D1FB(sar rbx,1)
-: 4*` $48, ,1 $E3C1, s01 $02, ,1 ; \ 48C1E302(shl rbx,2)
-: 8*` : cell*` $48, ,1 $E3C1, s01 $03, ,1 ; \ 48C1E303(shl rbx,3)
-: 4/` $48, ,1 $FBC1, s01 $02, ,1 ; \ 48C1FB02(sar rbx,2)
-: 8/` $48, ,1 $FBC1, s01 $03, ,1 ; \ 48C1FB03(sar rbx,3)
-: <<` $48, ,1 $D989, s08 $48, ,1 $E2D3, s01 drop` ; \ 4889D9(mov rcx,rbx)48D3E2(shl rdx,cl)
-: >>` $48, ,1 $D989, s08 $48, ,1 $EAD3, s01 drop` ; \ 4889D9(mov rcx,rbx)48D3EA(shr rdx,cl)
+: 1-` $CBFF48, s01. ; \ 48FFCB(dec rbx)
+: 1+` $C3FF48, s01. ; \ 48FFC3(inc rbx)
+: 4+` $C38348, s01. $04, ,1 ; \ 4883C304(add rbx,4)
+: 8+` : cell+` $C38348, s01. $08, ,1 ; \ 4883C308(add rbx,8)
+: 2*` $E3D148, s01. ; \ 48D1E3(shl rbx,1)
+: 2/` $FBD148, s01. ; \ 48D1FB(sar rbx,1)
+: 4*` $E3C148, s01. $02, ,1 ; \ 48C1E302(shl rbx,2)
+: 8*` : cell*` $E3C148, s01. $03, ,1 ; \ 48C1E303(shl rbx,3)
+: 4/` $FBC148, s01. $02, ,1 ; \ 48C1FB02(sar rbx,2)
+: 8/` $FBC148, s01. $03, ,1 ; \ 48C1FB03(sar rbx,3)
+: <<` $D98948, s08. $E2D348, s01. drop` ; \ 4889D9(mov rcx,rbx)48D3E2(shl rdx,cl)
+: >>` $D98948, s08. $EAD348, s01. drop` ; \ 4889D9(mov rcx,rbx)48D3EA(shr rdx,cl)
 
-: d@` $48, ,1 $1B63, s09 ; \ 48631B(movsxd rbx,[rbx])
+: d@` $1B6348, s09. ; \ 48631B(movsxd rbx,[rbx])
 
 \ string/memory copy (rep movsb)
 \ place` ( src count dest -- dest )
@@ -114,6 +115,7 @@
 
 : 3dup` over` over` $082474FF, ,4 ;
 : ext ;
+: s01. s01 ; : s08. s08 ; : s09. s09 ;
 [THEN]
 \ dup` falls through to nipdup` -- dup = under + nipdup
 : dup` under`
@@ -259,7 +261,7 @@ variable noauto pvt
 \ FLAGS-based conditionals
 \ 0-` emits test TOS,TOS; SWAPbit via s09
 [64] [IF]
-: 0-` ext $DB85, s09 ; \ 4885DB(test rbx,rbx)
+: 0-` $DB8548, s09. ; \ 4885DB(test rbx,rbx)
 [ELSE]
 variable ?#
 : 0-` $DB09, s09 ; \ 09DB(or ebx,ebx)
@@ -559,17 +561,17 @@ variable features 100 allot
 \ r0/r0! alias r/r!; r1..r5 access deeper cells
 \ 48895C24NN(mov [rsp+N],rbx) s08 XORs 5C->54 for rdx
 \ 488B5C24NN(mov rbx,[rsp+N]) s08 XORs 5C->54 for rdx
-: r0!`       $48, ,1 $1C89, s08 $24, ,1         drop` ;
-: r1!`       $48, ,1 $5C89, s08 $24, ,1 $08, ,1 drop` ;
-: r2!`       $48, ,1 $5C89, s08 $24, ,1 $10, ,1 drop` ;
-: r3!`       $48, ,1 $5C89, s08 $24, ,1 $18, ,1 drop` ;
-: r4!`       $48, ,1 $5C89, s08 $24, ,1 $20, ,1 drop` ;
-: r5!`       $48, ,1 $5C89, s08 $24, ,1 $28, ,1 drop` ;
-: r1`  over` $48, ,1 $5C8B, s08 $24, ,1 $08, ,1 ;
-: r2`  over` $48, ,1 $5C8B, s08 $24, ,1 $10, ,1 ;
-: r3`  over` $48, ,1 $5C8B, s08 $24, ,1 $18, ,1 ;
-: r4`  over` $48, ,1 $5C8B, s08 $24, ,1 $20, ,1 ;
-: r5`  over` $48, ,1 $5C8B, s08 $24, ,1 $28, ,1 ;
+: r0!`       $1C8948, s08. $24, ,1         drop` ;
+: r1!`       $5C8948, s08. $24, ,1 $08, ,1 drop` ;
+: r2!`       $5C8948, s08. $24, ,1 $10, ,1 drop` ;
+: r3!`       $5C8948, s08. $24, ,1 $18, ,1 drop` ;
+: r4!`       $5C8948, s08. $24, ,1 $20, ,1 drop` ;
+: r5!`       $5C8948, s08. $24, ,1 $28, ,1 drop` ;
+: r1`  over` $5C8B48, s08. $24, ,1 $08, ,1 ;
+: r2`  over` $5C8B48, s08. $24, ,1 $10, ,1 ;
+: r3`  over` $5C8B48, s08. $24, ,1 $18, ,1 ;
+: r4`  over` $5C8B48, s08. $24, ,1 $20, ,1 ;
+: r5`  over` $5C8B48, s08. $24, ,1 $28, ,1 ;
 \ >>r ( xn..x1 n -- | == x1..xn ) move n items from data stack to call stack
 \ 41FF37(push [r15])4D8D7F08(lea r15,[r15+8])
 \ 48FFCB(dec rbx)75F4(jnz -12)
@@ -588,10 +590,10 @@ variable features 100 allot
   $D42948, ,3 THEN` 2drop` ;
 \ +r ( n -- | xn..x1 == ) pop n cells from call stack (lost)
 \ shl rbx,3(48 C1 E3 03); add rsp,rbx(48 01 DC)
-: +r` $48, ,1 $E3C1, s01 $03, ,1 $48, ,1 $DC01, s08 drop` ;
+: +r` $E3C148, s01. $03, ,1 $DC0148, s08. drop` ;
 \ -r ( n -- | == ?n..?1 ) reserve n uninitialized cells on call stack
 \ shl rbx,3(48 C1 E3 03); sub rsp,rbx(48 29 DC)
-: -r` $48, ,1 $E3C1, s01 $03, ,1 $48, ,1 $DC29, s08 drop` ;
+: -r` $E3C148, s01. $03, ,1 $DC2948, s08. drop` ;
 [ELSE]
 \ 8B5804(mov ebx,[eax+0x4])
 \ 8918(mov [eax],ebx) \ 895804(mov [eax+0x4],ebx)
@@ -698,8 +700,8 @@ xhidepvt` ' alias hidepvt`
   here 3- c@ $6A- here 1- c@ $FE& $5A- | 0<> IF !"pick:_need_constant" ;THEN
   drop _pick_6a ;
 
-: rp@` over` $48, ,1 $E389, s01 ;
-: sp@` over` $4C, ,1 $FB89, s01 ;
+: rp@` over` $E38948, s01. ;
+: sp@` over` $FB894C, s01. ;
 [ELSE]
 : pick` \ xn..x0 n -- xn..x0 xn
   \ must be preceded by "52(push edx)6Axx(push byte)5A(pop edx)"

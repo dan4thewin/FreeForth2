@@ -371,9 +371,16 @@ via `,1`–`,4` or `s01`/`s08`/`s09`/`s1`.
 | `s08` | +2 | bit 3 (src) | Source reg field |
 | `s09` | +2 | bits 0+3 | Both reg fields |
 | `s1` | +1 | bit 0 | Single-byte opcodes |
+| `s01.` | +3 | bit 0 (dst) | x86-64 REX+op+ModR/M |
+| `s08.` | +3 | bit 3 (src) | x86-64 REX+op+ModR/M |
+| `s09.` | +3 | bits 0+3 | x86-64 REX+op+ModR/M |
 
 **CRITICAL:** `s01`/`s08`/`s09` advance by 2 AND XOR. Don't use after
 `,N` if all bytes are already placed — adds 2 spurious bytes.
+
+**CRITICAL:** Dotted adjusters (`s09.` etc.) compose `,1` with the
+base adjuster. Do NOT use them in shared macros that also use `ext`
+— `ext` already includes `,1`, so `ext ... s09.` double-advances.
 
 ### String encoding
 

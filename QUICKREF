@@ -277,9 +277,12 @@ rst		( -- )				reset SC to default
 >C1		( -- )				set CALLbit [x86 only]
 c04		( -- )				toggle CALLbit in last byte [x86 only]
 s01		( -- )				toggle SWAPbit dest, advance 2
+s01.		( -- )				toggle SWAPbit dest, advance 3 (x86-64: ,1 s01)
 s1		( -- )				toggle SWAPbit dest, advance 1
 s08		( -- )				toggle SWAPbit source, advance 2
+s08.		( -- )				toggle SWAPbit source, advance 3 (x86-64: ,1 s08)
 s09		( -- )				toggle SWAPbit src+dest, advance 2
+s09.		( -- )				toggle SWAPbit src+dest, advance 3 (x86-64: ,1 s09)
 
 \ --- Parsing ---
 

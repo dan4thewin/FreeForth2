@@ -13696,3 +13696,80 @@ can't reach a prompt), `.hdrs`-based for everything else.
 ### Test results
 
 - `make testall`: 131 PASSED, 3 SKIPPED
+
+---
+
+## Experiment 152 — 3-byte SWAPbit adjusters for x86-64
+
+### Goal
+
+Reduce verbosity of x86-64 backtick macros. Every REX-prefixed
+register-register instruction is 3 bytes (REX + opcode + ModR/M), but
+the existing `s01`/`s08`/`s09` adjusters only stride 2 bytes. This
+forces every x86-64 macro to split the REX prefix into a separate
+`$48, ,1` litcomma call, doubling the litcomma count compared to i386.
+
+### Design
+
+Define three 3-byte-stride adjusters, composed from existing words:
+
+    : s01. ,1 s01 ;  \ advance 3, XOR bit 0
+    : s08. ,1 s08 ;  \ advance 3, XOR bit 3
+    : s09. ,1 s09 ;  \ advance 3, XOR bits 0+3
+
+The `,1` advances past the REX byte; the 2-byte adjuster then handles
+the opcode + ModR/M pair as usual. On i386, these are simple aliases
+(`s01.` = `s01`) defined in the `[ELSE]` block, so shared code that
+uses `s09.` works on both architectures — but only in macros that
+don't already use `ext` (see "Trap" below).
+
+### The trap: `ext` + `s09.` = double advance
+
+`ext` on x86-64 is `$48, ,1` — it writes the REX byte and advances
+by 1. If a shared macro uses both `ext` and `s09.`, the total advance
+is `ext`(1) + `s09.`(`,1`(1) + `s09`(2)) = 4 bytes for a 3-byte
+instruction. **This was the actual bug that caused two separate
+crashes during development.**
+
+Rule: `s09.` (dotted) is ONLY for `[64] [IF]` blocks where macros
+pack the REX byte into the litcomma value (e.g., `$D98948,`). Shared
+macros that use `ext` must keep the plain `s09`/`s01`/`s08`.
+
+Similarly, the `,1 sXX` pattern in 4-byte instructions (like `c@`,
+`w@`, `over*`) must NOT use dotted form — they already have their own
+`,1` for the 3rd byte, and `sXX` handles the last 2 bytes.
+
+### Actions
+
+1. Defined `s01.`/`s08.`/`s09.` at the top of the first `[64] [IF]`
+   block (line 16 of ff2.boot), before any macro that uses them.
+2. Added i386 aliases in the `[ELSE]` block (line 118): plain
+   `s01.` = `s01`, etc.
+3. Converted all `[64] [IF]` macros: under, nip, allot, comma, 2r,
+   r, >rswapr>, 1-, 1+, 4+, 8+, 2*, 2/, 4*, 8*, 4/, 8/, <<, >>,
+   d@, 0-, r0!–r5!, r1–r5, +r, -r, rp@, sp@.
+4. Left shared macros using `ext ... s09` unchanged (the critical
+   lesson from the two crashes).
+5. Left non-REX shared macros (w@, dupw@) using `$..., ,1 s09`
+   unchanged — their `,1` is for the 3rd opcode byte, not REX.
+
+### litcomma clarification (from DG)
+
+`$48,` writes one byte at HERE but does NOT advance rbp. Verified
+empirically: `here .x $48, here .x bye` → same address printed
+twice. The `,N` words and `sXX` words handle all advancement. The
+`add rbp, N` instructions seen in the `_litcomma` assembly are about
+the meta-instruction envelope (the `C6 45 00 xx` bytes compiled into
+the macro body), not about the runtime payload.
+
+### Verification
+
+- `see 1+` → `48 ff c3` (inc rbx) — correct 3-byte REX instruction
+- `see dup` → `4d 8d 7f f8 / 49 89 17 / 48 89 da` — all REX
+  instructions intact
+- `see 0-` → `48 85 d2` (test rdx,rdx with SWAPbit) — correct
+- `make testall`: 131 PASSED, 1 SKIPPED
+
+### Test results
+
+- `make testall`: 131 PASSED, 1 SKIPPED
