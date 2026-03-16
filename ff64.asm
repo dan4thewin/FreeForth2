@@ -29,6 +29,7 @@ H       dq 0
 anon    dq 0
 callmark dq 0
 tailrec dq -1                   ; non-zero enables tail-call optimization in ;;`
+which   dq 0                    ; last header found by find
 tin     dq 0
 tp      dq 0
 xfp     dq 0                    ; exception frame pointer for catch/throw
@@ -683,6 +684,7 @@ _find:  push r8
 .skip:  lea rsi, [rsi + rcx + 1]
         jmp .b
 .found: lea rsi, [rsi - h.nm]
+        mov [which], rsi        ; save header address
         mov rax, [rsi]          ; rax = xt
         movzx ecx, byte [rsi + h.ct]
         ;; If ct=0: test sets ZF (found, runtime). If ct!=0: ZF clear.
@@ -2040,9 +2042,12 @@ WORD64 "tp", tp, 1, 2
 WORD64 "tib", tib, 1, 3
 WORD64 "eob", eob, 1, 3
 WORD64 "xfp", xfp, 1, 3
+WORD64 "which", which, 1, 5
 
 ;; Code words — ascending XT order
 WORD64 ">S0", _rst, 0, 3
+WORD64 "rst", _rst, 0, 3
+WORD64 "number", _number, 0, 6
 WORD64 "$-", _strcmp, 0, 2
 WORD64 "depth", _depth, 0, 5
 WORD64 "DS0", _DS0, 0, 3

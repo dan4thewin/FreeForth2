@@ -511,6 +511,7 @@ CODE "nip`",_nip                ; x y -- y
 ;;; E2:loop/jecxz(byte) E8:call/jmp(long) EB:jmp(byte)
 
 xfp     dd 0                    ; exception frame pointer
+        WORD "xfp", xfp, 1     ; expose as data variable
 CODE "catch",_catch             ; xt -- exception ; 0=none
         push eax                ; 50        save dataSP
         push edx                ; 52        save NOS

@@ -11,8 +11,8 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 |------|------|-----|--------|------|--------|
 | `drop`` | asm | forth | forth/forth | 1 | **done** — Forth def in [ELSE] block |
 | `over`` | asm | forth | forth/forth | 1 | **done** — Forth def in [ELSE] block |
-| `fill` | asm | forth | forth/forth | 1 | **done** — moved to shared |
-| `erase` | asm | forth | forth/forth | 1 | **done** — moved to shared |
+| `fill` | ~~asm~~ | forth | forth/forth | 1 | **done** — shared, asm removed from ff.asm |
+| `erase` | ~~asm~~ | forth | forth/forth | 1 | **done** — shared, asm removed from ff.asm |
 | `zlen` | asm | forth | forth/forth | 1 | **done** — moved to shared |
 | `>C0` | asm | forth | forth/forth | 1 | no-op — already bifurcated |
 | `>C1` | asm | forth | forth/forth | 1 | no-op — already bifurcated |
@@ -34,18 +34,18 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 | `,3` | forth | asm→**forth** | forth/forth | 2 | **done** — uses ,4 |
 | `,4` | forth | asm→**forth** | forth/forth | 2 | **done** — self-bootstrap |
 | `tailrec` | asm | — | asm/asm | 7 | **done** — added to ff64.asm + WORD64 |
-| `which` | asm | — | asm/asm | 7 | pending — expose on x64 |
-| `xfp` | asm* | asm | asm/asm | 7 | pending — expose on i386 |
-| `?#` | forth | asm | TBD | 7 | pending — type mismatch |
-| `notfound` | asm | — | asm/asm | 7 | pending — x64 vector |
-| `number` | asm | — | asm/asm | 7 | pending — x64 vector |
-| `litcomp` | asm | — | asm/asm | 7 | pending — x64 label+WORD64 |
-| `number.` | asm | — | TBD | 7 | pending — structural diff |
-| `classes` | asm | — | TBD | 7 | pending — structural diff |
-| `>SC` | asm | — | TBD | 7 | pending — structural diff |
-| `>S1` | asm | — | TBD | 7 | pending — structural diff |
+| `which` | asm | — → **asm** | asm/asm | 7 | **done** — variable + WORD64 + _find saves hfa |
+| `xfp` | ~~—~~ → **asm** | asm | asm/asm | 7 | **done** — WORD header on i386 |
+| `?#` | forth | asm | both work | 7 | accepted — Forth variable / asm WORD64, same effect |
+| `notfound` | asm | — | asm/asm | 7 | **deferred** — x64 inlines char/string/number |
+| `number` | asm | — → **asm** | asm/asm | 7 | **done** — WORD64 exposing _number |
+| `litcomp` | asm | — | asm/asm | 7 | **deferred** — x64 inlines suffix dispatch |
+| `number.` | asm | — | TBD | 7 | **deferred** — structural diff |
+| `classes` | asm | — | TBD | 7 | **deferred** — structural diff |
+| `>SC` | asm | — | TBD | 7 | **deferred** — structural diff |
+| `>S1` | asm | — | TBD | 7 | **deferred** — structural diff |
 | `c04` | asm | — | skip | 7 | accepted — i386-only encoding |
-| `rst` | asm | — | TBD | 7 | pending — x64 uses >S0 |
+| `rst` | asm | — → **asm** | asm/asm | 7 | **done** — WORD64 alias for _rst (>S0) |
 | `;;`` | asm | forth→**asm** | asm/asm | 8 | **done** — _semisemi in ff64.asm, Forth def removed |
 | `>cs` | — | asm | x64-only | 8 | accepted — i386 differs |
 | `cs>` | — | asm | x64-only | 8 | accepted — i386 differs |
@@ -102,3 +102,7 @@ not assembly.
   + `place` + `cld` — `place` emits inline `rep movsb`, `std`/`cld`
   bracket it for backward direction. Removed `cmove>` from ff64.asm
   (was a 64-ism). `_remove_hdr` now uses `move`. Updated exp 071 test.
+  Also removed asm `fill`/`erase`/`move` from ff.asm — all shared Forth.
+- **Tier 7 exposures**: Added `rst` (alias for >S0), `which` (variable
+  + _find saves hfa), `number` (WORD64) to ff64.asm. Added `xfp`
+  (WORD header) to ff.asm.
