@@ -114,12 +114,12 @@ testnc:
 	$(MAKE) 'ARGS=needs console.ff nocolor' test
 
 testrpt: all
-	@timeout 60 $(MAKE) testnc testexp 2>/dev/null | \
+	@timeout 60 $(MAKE) testnc test64 testexp 2>/dev/null | \
 	perl -lne 'print "$$1$$2" if m/^(not.*)|^(?!make)\S+\s+([A-Z].*)/' | \
 	sort | uniq -c
 
 testall: all
-	@timeout 60 $(MAKE) testnc testexp 2>&1
+	@timeout 60 $(MAKE) testnc test64 testexp 2>&1
 
 ci:
 	sudo apt-get install -y fasm gcc-multilib
