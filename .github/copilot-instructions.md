@@ -267,6 +267,28 @@ Do not mark the task complete until all steps are done.
 - Assembler is FASM (flat assembler, version 1.73.32)
 - Linker warning about RWX segment is expected
 
+## Running FreeForth: wrapper policy
+
+**Always use `./ff-` and `./ff64-` instead of `./ff` and `./ff64`.**
+These wrappers (built from `ff-wrapper.c`) enforce safe invocation:
+
+- Every argument must be a regular file (rejects directories, devices,
+  nonexistent paths).
+- Stdin must be empty — **piping is rejected with a loud error**.
+- The wrapper interposes `-f` before each filename and execs the real
+  binary: `./ff64- a.ff b.ff` → `./ff64 -f a.ff -f b.ff`.
+
+**Escape hatch — REPL testing only:** When you need to test the
+interactive REPL itself (e.g., verifying prompt behavior, `bye`,
+line editing), invoke `./ff64` directly with no `-f` arguments.
+Document the reason in the JOURNAL entry. This is the *only*
+legitimate use of the bare binary.
+
+**Never `echo '...' | ./ff64-`** — the wrapper will reject it.
+**Never `echo '...' | ./ff64`** — write a temp .ff file instead.
+If you catch yourself constructing a pipe, stop: write the code
+to a file, pass the filename.
+
 ## Writing Forth: hard-won lessons
 
 ### Anonymous code compiles at HERE
@@ -449,7 +471,8 @@ ff64 port. The i386 closes `TIMES` with `REPEAT`. ff64 accepts both
 ### Test pattern
 
 ```bash
-timeout 5 ./ff64 -f test.ff bye
+timeout 5 ./ff64- test.ff
 ```
-Boot is baked in. Top-level code in loaded files needs trailing `;` to execute.
+The wrapper interposes `-f`. Boot is baked in. Top-level code in
+loaded files needs trailing `;` to execute.
 NB. Many words bake-in a call to `;` like needs and `:`.

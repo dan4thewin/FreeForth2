@@ -2,9 +2,9 @@ SHELL=/bin/bash
 LD=ld -m elf_i386 -lc --dynamic-linker=/lib/ld-linux.so.2 -s
 LD64=ld -m elf_x86_64 -lc -ldl --dynamic-linker=/lib64/ld-linux-x86-64.so.2
 
-all: ff ff64 ff64s
+all: ff ff64 ff64s ff- ff64-
 
-ffpp: ffpp.asm
+ffpp: tools/ffpp.asm
 	fasm $< $@
 	chmod +x $@
 
@@ -14,20 +14,20 @@ ff.o ff.fas: fflin.asm ff.asm fflinio.asm ff.boot fflin2.boot
 ff: ff.o
 	$(LD) -o $@ $<
 
-ff.sym: ff.fas ff fas2gdb
-	perl fas2gdb ff.fas
+ff.sym: ff.fas ff tools/fas2gdb
+	perl tools/fas2gdb ff.fas
 
-ff-full.sym: ff fas2gdb
-	./$< .hdrs bye 2>/dev/null | perl fas2gdb --hdrs -b $<
+ff-full.sym: ff tools/fas2gdb
+	./$< .hdrs bye 2>/dev/null | perl tools/fas2gdb --hdrs -b $<
 
 ff64: ff64.o
 	$(LD64) -o $@ $<
 
-ff64.sym: ff64.fas ff64 fas2gdb
-	perl fas2gdb ff64.fas
+ff64.sym: ff64.fas ff64 tools/fas2gdb
+	perl tools/fas2gdb ff64.fas
 
-ff64-full.sym: ff64 fas2gdb
-	./$< .hdrs bye 2>/dev/null | perl fas2gdb --hdrs -b $<
+ff64-full.sym: ff64 tools/fas2gdb
+	./$< .hdrs bye 2>/dev/null | perl tools/fas2gdb --hdrs -b $<
 
 ff.boot: ff2.boot fflin2.boot openlib.ff ffpp
 	./ffpp $< > $@
@@ -64,8 +64,14 @@ fftk64s: fftk64s.asm
 	fasm $< $@
 	chmod +x $@
 
+ff-: tools/ff-wrapper.c ff
+	$(CC) -DBINARY=./ff -o $@ $<
+
+ff64-: tools/ff-wrapper.c ff64
+	$(CC) -DBINARY=./ff64 -o $@ $<
+
 clean:
-	rm -f ff{,tk}{,64}{,s} ff{,64}.boot ffpp *.o *.fas *.sym
+	rm -f ff{,tk}{,64}{,s} ff{,64}- ff{,64}.boot ffpp *.o *.fas *.sym
 
 veryclean: clean
 	rm -f cmpl dict cmpl64 cmpl64.cfg .see

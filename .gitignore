@@ -30,8 +30,7 @@
 !/fftk.asm
 !/fftk64.asm
 !/fftk64s.asm
-!/ffpp.asm
-!/fas2gdb
+!/tools/
 !/hanoi
 !/hello
 !/style-check
