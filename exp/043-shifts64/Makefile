@@ -1,7 +1,7 @@
 SHELL=/bin/bash
-FF = ../../ff64
+FF = ../../ff64-
 
-test: ../../ff64
+test: ../../ff64-
 	@source ../test.sh && start "043: Shifts, parser, system words" && \
 	run "shl-basic" '1 3 << . cr ;' '8' && \
 	run "shr-basic" '200 3 >> . cr ;' '25' && \

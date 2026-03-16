@@ -1,6 +1,5 @@
-FF=../../ff64
+FF=../../ff64-
 FFs=../../ff64s
-BOOT=': prompt ;'
 
 .PHONY: test clean
 
@@ -10,12 +9,12 @@ test: test-io-ff64 test-io-ff64s
 
 test-io-ff64:
 	@printf "%-48s" "syscall I/O (ff64)"
-	@$(FF) $(BOOT) -f syscall-io.ff 2>&1 | grep -q "^ok" && echo "PASS" || (echo "FAIL"; exit 1)
+	@$(FF) -f syscall-io.ff 2>&1 | grep -q "^ok" && echo "PASS" || (echo "FAIL"; exit 1)
 	@rm -f test-108-tmp
 
 test-io-ff64s:
 	@printf "%-48s" "syscall I/O (ff64s)"
-	@$(FFs) $(BOOT) -f syscall-io.ff 2>&1 | grep -q "^ok" && echo "PASS" || (echo "FAIL"; exit 1)
+	@$(FFs) -f syscall-io.ff 2>&1 | grep -q "^ok" && echo "PASS" || (echo "FAIL"; exit 1)
 	@rm -f test-108-tmp
 
 clean:

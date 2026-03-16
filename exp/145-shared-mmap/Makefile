@@ -6,9 +6,10 @@ test:
 	@cd ../.. && pass=0 && fail=0 && \
 	run() { \
 		local desc="$$1" input="$$2" expected="$$3" bin="$$4"; \
-		[ -z "$$bin" ] && bin=./ff64; \
+		[ -z "$$bin" ] && bin=./ff64-; \
 		printf '%s\n' "$$input" > $(TMP); \
-		actual=$$(timeout 5 $$bin ': prompt ;' -f $(TMP) 2>/dev/null); \
+		case $$bin in *-) actual=$$(timeout 5 $$bin $(TMP) 2>/dev/null);; \
+		*) actual=$$(timeout 5 $$bin -f $(TMP) 2>/dev/null);; esac; \
 		if [ "$$actual" = "$$expected" ]; then \
 			printf '  %-52s PASS\n' "$$desc"; pass=$$((pass+1)); \
 		else \

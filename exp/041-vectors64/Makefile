@@ -1,6 +1,6 @@
 SHELL=/bin/bash
 
-test: ../../ff64
+test: ../../ff64-
 	@source ../test.sh; \
 	start "Exp 041: Vectors, d@/d!/d, and tick"; \
 	run "d, advances 4" \

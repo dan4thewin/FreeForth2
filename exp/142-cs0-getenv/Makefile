@@ -6,7 +6,7 @@ test:
 	run() { \
 		local desc="$$1" input="$$2" expected="$$3"; \
 		printf '%s' "$$input" > $(TMP).ff; \
-		actual=$$(timeout 5 ./ff64 ': prompt ;' -f $(TMP).ff 2>/dev/null); \
+		actual=$$(timeout 5 ./ff64- $(TMP).ff 2>/dev/null); \
 		if [ "$$actual" = "$$expected" ]; then \
 			pass=$$((pass+1)); \
 		else \

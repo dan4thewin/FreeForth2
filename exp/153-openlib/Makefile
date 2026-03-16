@@ -1,4 +1,4 @@
-FF=../../ff64
+FF=../../ff64-
 
 .PHONY: test
 test: test-default test-subdir test-full test-tilde test-ffpp-debug test-ffpp-passthru
@@ -7,22 +7,22 @@ test: test-default test-subdir test-full test-tilde test-ffpp-debug test-ffpp-pa
 # Test 1: default FFPATH from repo root
 test-default:
 	@echo -n "test-default: "
-	@cd ../.. && timeout 5 ./ff64 -f exp/153-openlib/test.ff
+	@cd ../.. && timeout 5 ./ff64- exp/153-openlib/test.ff
 
 # Test 2: running from exp dir — # resolves via /proc/self/exe
 test-subdir:
 	@echo -n "test-subdir: "
-	@timeout 5 ../../ff64 -f test.ff
+	@timeout 5 ../../ff64- test.ff
 
 # Test 3: full directory entries (no ?), exercises full/expand/exp#
 test-full:
 	@echo -n "test-full: "
-	@cd ../.. && FFPATH='?:?.ff:#/lib/x86-64:#/lib' timeout 5 ./ff64 -f exp/153-openlib/test-full.ff
+	@cd ../.. && FFPATH='?:?.ff:#/lib/x86-64:#/lib' timeout 5 ./ff64- exp/153-openlib/test-full.ff
 
 # Test 3: ~ sigil expansion, exercises exp~ in both partial and full entries
 test-tilde:
 	@echo -n "test-tilde: "
-	@cd ../.. && HOME=$$(pwd) FFPATH='?:?.ff:~/lib/?.ff:~/lib' timeout 5 ./ff64 -f exp/153-openlib/test-tilde.ff
+	@cd ../.. && HOME=$$(pwd) FFPATH='?:?.ff:~/lib/?.ff:~/lib' timeout 5 ./ff64- exp/153-openlib/test-tilde.ff
 
 # Test 4: ffpp [DEBUG] conditional — --debug flag
 test-ffpp-debug:

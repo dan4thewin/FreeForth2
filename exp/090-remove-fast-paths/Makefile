@@ -1,4 +1,4 @@
-FF = ../../ff64
+FF = ../../ff64-
 SHELL := /bin/bash
 TMP := /tmp/ff64-test-090.ff
 
@@ -9,7 +9,7 @@ test:
 	run() { \
 	local desc="$$1" input="$$2" expected="$$3"; \
 	printf '%s\n' "$$input" > $(TMP); \
-	actual=$$(timeout 5 $(FF) ': prompt ;' -f $(TMP) 2>/dev/null); \
+	actual=$$(timeout 5 $(FF) $(TMP) 2>/dev/null); \
 	if [[ $$actual = $$expected ]]; then \
 	echo "  PASS: $$desc"; pass=$$((pass+1)); \
 	else \

@@ -7,7 +7,7 @@ test:
 	run() { \
 		local desc="$$1" input="$$2" expected="$$3"; \
 		printf '%s\n' "$$input" > $(TMP); \
-		actual=$$(timeout 5 ./ff64 ': prompt ;' -f $(TMP) 2>/dev/null); \
+		actual=$$(timeout 5 ./ff64- $(TMP) 2>/dev/null); \
 		if [ "$$actual" = "$$expected" ]; then \
 			printf '  %-50s PASS\n' "$$desc"; pass=$$((pass+1)); \
 		else \
@@ -20,7 +20,7 @@ test:
 	runenv() { \
 		local desc="$$1" input="$$2" expected="$$3" env="$$4"; \
 		printf '%s\n' "$$input" > $(TMP); \
-		actual=$$(timeout 5 env $$env ./ff64 ': prompt ;' -f $(TMP) 2>/dev/null); \
+		actual=$$(timeout 5 env $$env ./ff64- $(TMP) 2>/dev/null); \
 		if [ "$$actual" = "$$expected" ]; then \
 			printf '  %-50s PASS\n' "$$desc"; pass=$$((pass+1)); \
 		else \
@@ -33,7 +33,7 @@ test:
 	run_grep() { \
 		local desc="$$1" input="$$2" pattern="$$3"; \
 		printf '%s\n' "$$input" > $(TMP); \
-		actual=$$(timeout 5 ./ff64 ': prompt ;' -f $(TMP) 2>/dev/null); \
+		actual=$$(timeout 5 ./ff64- $(TMP) 2>/dev/null); \
 		if echo "$$actual" | grep -q "$$pattern"; then \
 			printf '  %-50s PASS\n' "$$desc"; pass=$$((pass+1)); \
 		else \

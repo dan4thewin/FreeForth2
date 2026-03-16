@@ -1,4 +1,4 @@
-FF = ../../ff64
+FF = ../../ff64-
 ROOT = ../..
 
 .PHONY: test

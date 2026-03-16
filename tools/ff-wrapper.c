@@ -1,11 +1,14 @@
 /* ff-wrapper.c — guard against piped stdin, enforce file-only args.
  *
- * Compile with:  cc -DBINARY="./ff64" -o ff64- ff-wrapper.c
- *                cc -DBINARY="./ff"   -o ff-   ff-wrapper.c
+ * Compile with:  cc -DBINNAME="ff64" -o ff64- ff-wrapper.c
+ *                cc -DBINNAME="ff"   -o ff-   ff-wrapper.c
+ *
+ * Resolves the real binary as a sibling of the wrapper's own location
+ * (via /proc/self/exe), so it works from any CWD.
  */
 
-#ifndef BINARY
-#error "Define BINARY at compile time: cc -DBINARY=\"./ff64\" ..."
+#ifndef BINNAME
+#error "Define BINNAME at compile time: cc -DBINNAME=\"ff64\" ..."
 #endif
 
 #define STR(x) STR_(x)
@@ -17,12 +20,24 @@
 #include <sys/stat.h>
 #include <poll.h>
 #include <unistd.h>
+#include <libgen.h>
 
 int main(int argc, char **argv)
 {
-	const char *bin = STR(BINARY);
 	struct stat st;
 	int i;
+
+	/* Resolve path to the real binary (sibling of this wrapper) */
+	char self[4096];
+	ssize_t len = readlink("/proc/self/exe", self, sizeof(self) - 1);
+	if (len <= 0) {
+		fprintf(stderr, "%s: error: cannot resolve /proc/self/exe\n", argv[0]);
+		return 1;
+	}
+	self[len] = '\0';
+	char *dir = dirname(self);
+	char bin[4096];
+	snprintf(bin, sizeof(bin), "%s/%s", dir, STR(BINNAME));
 
 	if (argc < 2) {
 		fprintf(stderr, "%s: error: no arguments. usage: %s file1.ff [file2.ff ...]\n",
@@ -70,7 +85,7 @@ int main(int argc, char **argv)
 	}
 
 	int j = 0;
-	nargv[j++] = (char *)bin;
+	nargv[j++] = bin;
 	for (i = 1; i < argc; i++) {
 		nargv[j++] = "-f";
 		nargv[j++] = argv[i];

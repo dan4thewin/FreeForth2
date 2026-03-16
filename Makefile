@@ -65,10 +65,10 @@ fftk64s: fftk64s.asm
 	chmod +x $@
 
 ff-: tools/ff-wrapper.c ff
-	$(CC) -DBINARY=./ff -o $@ $<
+	$(CC) -DBINNAME=ff -o $@ $<
 
 ff64-: tools/ff-wrapper.c ff64
-	$(CC) -DBINARY=./ff64 -o $@ $<
+	$(CC) -DBINNAME=ff64 -o $@ $<
 
 clean:
 	rm -f ff{,tk}{,64}{,s} ff{,64}- ff{,64}.boot ffpp *.o *.fas *.sym
@@ -83,19 +83,19 @@ test1:
 		timeout 10 $(FF) $(ARGS) -f $$d | tail -1; let e+=$$?; \
 	done; exit $$e
 
-test64: ff64
+test64: ff64-
 	@set -o pipefail; e=0; \
 	skip="core1.ff core2.ff"; \
 	for d in test/*.ff; do \
 		b=$$(basename $$d); \
 		echo -n $$d; printf %$$((20-$${#d}))s; \
 		case " $$skip " in *" $$b "*) echo "SKIPPED"; continue;; esac; \
-		r=$$(timeout 10 ./ff64 ': prompt ;' -f $$d 2>&1 | tail -1); \
+		r=$$(timeout 10 ./ff64- $$d 2>&1 | tail -1); \
 		echo "$$r"; \
 		echo "$$r" | grep -q PASSED || echo "$$r" | grep -q SKIPPED || let e+=1; \
 	done; exit $$e
 
-testexp: ff64
+testexp: ff64-
 	timeout 60 $(MAKE) -C exp test
 
 test: ff
@@ -113,10 +113,13 @@ test: ff
 testnc:
 	$(MAKE) 'ARGS=needs console.ff nocolor' test
 
-testall: all
+testrpt: all
 	@timeout 60 $(MAKE) testnc testexp 2>/dev/null | \
 	perl -lne 'print "$$1$$2" if m/^(not.*)|^(?!make)\S+\s+([A-Z].*)/' | \
 	sort | uniq -c
+
+testall: all
+	@timeout 60 $(MAKE) testnc testexp 2>&1
 
 ci:
 	sudo apt-get install -y fasm gcc-multilib
@@ -135,4 +138,4 @@ install-share: ff.ff ff.help lib/*
 
 install: install-bin install-share
 
-.PHONY: clean veryclean test1 test ci install install-bin install-share
+.PHONY: clean veryclean test1 test testrpt testall ci install install-bin install-share

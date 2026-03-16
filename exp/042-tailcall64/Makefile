@@ -1,7 +1,7 @@
 SHELL=/bin/bash
-FF = ../../ff64
+FF = ../../ff64-
 
-test: ../../ff64 ## Run all tests
+test: ../../ff64- ## Run all tests
 	@source ../test.sh && start "042: Tail-call optimization" && \
 	run "jmp-named" ': foo 42 . cr ; : bar foo ; bar ;' '42' && \
 	run "jmp-opcode" ': foo 42 . ; : bar foo ; bar H@ @ c@ .x cr ;' 'e9' && \

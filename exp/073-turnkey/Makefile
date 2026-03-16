@@ -1,4 +1,4 @@
-FF = ../../ff64
+FF = ../../ff64-
 FFTK = ../../fftk64
 MKIMAGE = ../../lib/x86-64/mkimage.ff
 ROOT = ../..
@@ -26,12 +26,12 @@ test:
 	build_turnkey() { \
 		rm -f $(ROOT)/cmpl64 $(ROOT)/cmpl64.cfg; \
 		if [ -n "$$1" ]; then \
-			cd $(ROOT) && ./ff64 -f "$$1" -f lib/x86-64/mkimage.ff && \
+			cd $(ROOT) && ./ff64- "$$1" lib/x86-64/mkimage.ff && \
 			$(FASM) fftk64.asm fftk64.o >/dev/null && \
 			$(LD) -o fftk64 fftk64.o 2>/dev/null; \
 			cd - >/dev/null; \
 		else \
-			cd $(ROOT) && ./ff64 -f lib/x86-64/mkimage.ff && \
+			cd $(ROOT) && ./ff64- lib/x86-64/mkimage.ff && \
 			$(FASM) fftk64.asm fftk64.o >/dev/null && \
 			$(LD) -o fftk64 fftk64.o 2>/dev/null; \
 			cd - >/dev/null; \

@@ -10,7 +10,7 @@ test:
 	run() { \
 		local desc="$$1" input="$$2" expected="$$3" bin="$${4:-$(FF)}"; \
 		printf '%s\n' "$$input" > $(TMP); \
-		actual=$$(timeout 5 $$bin ': prompt ;' -f $(TMP) 2>/dev/null); \
+		actual=$$(timeout 5 $$bin -f $(TMP) 2>/dev/null); \
 		if [[ $$actual = $$expected ]]; then \
 			printf '  %-50s PASS\n' "$$desc"; pass=$$((pass+1)); \
 		else \
@@ -30,14 +30,14 @@ test:
 		'42 .\ cr bye' '42' $(FFS); \
 	run "emit still works (ff64)" \
 		'65 emit cr bye' 'A'; \
-	actual=$$(printf ': t 0 @ ; t bye\n' | timeout 2 $(FF) ': prompt ;' 2>/dev/null | head -3); \
+	actual=$$(printf ': t 0 @ ; t bye\n' | timeout 2 $(FF) 2>/dev/null | head -3); \
 	if echo "$$actual" | grep -q "SEGV"; then \
 		printf '  %-50s PASS\n' "SEGV recovery (ff64)"; pass=$$((pass+1)); \
 	else \
 		printf '  %-50s FAIL\n' "SEGV recovery (ff64)"; \
 		echo "    actual: [$$actual]"; fail=$$((fail+1)); \
 	fi; \
-	actual=$$(printf ': t 0 @ ; t bye\n' | timeout 2 $(FFS) ': prompt ;' 2>/dev/null | head -3); \
+	actual=$$(printf ': t 0 @ ; t bye\n' | timeout 2 $(FFS) 2>/dev/null | head -3); \
 	if echo "$$actual" | grep -q "SEGV"; then \
 		printf '  %-50s PASS\n' "SEGV recovery (ff64s)"; pass=$$((pass+1)); \
 	else \

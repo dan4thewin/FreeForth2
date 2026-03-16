@@ -1,6 +1,5 @@
-FF=../../ff64
+FF=../../ff64-
 FFs=../../ff64s
-BOOT=': prompt ;'
 DIR=exp/112-file-tests
 
 .PHONY: test clean
@@ -11,11 +10,11 @@ test: test-stat-ff64 test-stat-ff64s
 
 test-stat-ff64:
 	@printf "%-48s" "stat file tests (ff64)"
-	@cd ../.. && ./ff64 $(BOOT) -f $(DIR)/stat-tests.ff 2>&1 | grep -q "^ok" && echo "PASS" || (cd ../.. && ./ff64 $(BOOT) -f $(DIR)/stat-tests.ff 2>&1; echo "FAIL"; exit 1)
+	@cd ../.. && ./ff64- $(DIR)/stat-tests.ff 2>&1 | grep -q "^ok" && echo "PASS" || (cd ../.. && ./ff64- $(DIR)/stat-tests.ff 2>&1; echo "FAIL"; exit 1)
 
 test-stat-ff64s:
 	@printf "%-48s" "stat file tests (ff64s)"
-	@cd ../.. && ./ff64s $(BOOT) -f $(DIR)/stat-tests.ff 2>&1 | grep -q "^ok" && echo "PASS" || (cd ../.. && ./ff64s $(BOOT) -f $(DIR)/stat-tests.ff 2>&1; echo "FAIL"; exit 1)
+	@cd ../.. && ./ff64s -f $(DIR)/stat-tests.ff 2>&1 | grep -q "^ok" && echo "PASS" || (cd ../.. && ./ff64s -f $(DIR)/stat-tests.ff 2>&1; echo "FAIL"; exit 1)
 
 clean:
 	@true
