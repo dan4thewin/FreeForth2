@@ -1147,38 +1147,6 @@ CODE "$-.",_stringsubdot        ; @1 @2 # -- n ; n=0:match
         xchg eax,esp            ; 94
         ret
 
-CODE "search",_search           ; @ # @k #k -- @r #r ; z:match, nz:fail
-        mov ecx,[eax]           ; ecx=#
-        mov edi,[eax+4]         ; edi=@
-        xchg eax,esp
-        push eax                ; save callSP
-        sub ecx,ebx
-        inc ecx                 ; for initial in very last position
-        jle .fail
-        mov al,[edx]            ; al=kInitial
-.loop:  repnz scasb             ; look for kInitial
-        jnz .fail
-        push edi                ; edi after matched initial
-        push ecx                ; ecx=remainingBytes
-        dec edi                 ; back over initial
-        mov ecx,ebx             ; ecx=#k
-        mov esi,edx             ; esi=@k
-        repz cmpsb              ; z:match
-        pop ecx
-        pop edi                 ; resume after initial
-        jnz .loop
-        lea edx,[edi-1]         ; back over initial
-        lea ebx,[ebx+ecx]       ; remaining count
-        pop eax                 ; restore callSP
-        xchg eax,esp
-        lea eax,[eax+8]         ; -- @found #remaining ; z:match
-        ret
-.fail:  pop eax                 ; restore callSP
-        pop ebx                 ; restore @ and #
-        pop edx                 ; -- @ # ; nz:failed
-        xchg eax,esp
-        ret
-
 ;; count a nul terminated string, keep the address
 ;; eg. "HOME" 1_ libc. getenv zlen type
 CODE "zlen",zlen                ; @ -- @ #

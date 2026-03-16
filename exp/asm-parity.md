@@ -27,7 +27,7 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 | `openw` | asm | forth | forth/forth | 3 | pending — move to fflin2.boot |
 | `openw0` | asm | forth | forth/forth | 3 | pending — move to fflin2.boot |
 | `type` | asm | forth | forth/forth | 3 | pending — shared once write is Forth |
-| `search` | asm | — | forth/forth | 4 | pending — preserve repnz/repz algo |
+| `search` | asm→forth | forth | forth/forth | 4 | ✓ done — pure Forth with >>r locals, $- comparison |
 | `$-.` | asm | — | forth/forth | 5 | pending — DG exercise |
 | `,1` | forth | asm→**forth** | forth/forth | 2 | **done** — self-bootstrap chain |
 | `,2` | forth | asm→**forth** | forth/forth | 2 | **done** — uses ,4 |
@@ -106,3 +106,8 @@ not assembly.
 - **Tier 7 exposures**: Added `rst` (alias for >S0), `which` (variable
   + _find saves hfa), `number` (WORD64) to ff64.asm. Added `xfp`
   (WORD header) to ff.asm.
+- **search**: Pure Forth using >>r locals and $- comparison. DG wrote
+  the definition using 4 >>r locals (r0=@hay r1=#hay r2=@ndl r3=#ndl),
+  START/ENTER/WHILE/REPEAT loop, BREAK on match. Returns (@ # ; z?)
+  via boolean→flags conversion. Removed asm search from ff.asm.
+  Added to ff2.boot after zlen (shared, both arches). 131 PASSED.

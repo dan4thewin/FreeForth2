@@ -635,6 +635,13 @@ r0!` ' alias r!`
 : fill rot rot BEGIN 0- 0> WHILE 1- -rot 2dup c! 1+ rot REPEAT drop 2drop ;
 : erase 0 fill ;
 : zlen ( addr -- addr len ) dup BEGIN dup c@ 0- 0<> WHILE drop 1+ REPEAT drop over - ;
+: search ( @hay #hay @ndl #ndl -- @r #r ; z? )
+  4 >>r r0 r1 1
+  START r0 r2 r3 $- drop 0= IF 0_ BREAK
+  r0 1+ r0! r1 1- r1!
+  ENTER r1 r3 - drop 0>= WHILE REPEAT
+  r0 r1 4 +r rot
+  0- drop 0= IF 2>r 2drop 2r> ELSE 2drop THEN ;
 \ --------------------------------------------------------------------
 \ dictionary listing
 : words` H@ START 2dup+ 1+ -rot type space ENTER h.sz+ c@+ 0- 0= UNTIL 2drop cr ;
