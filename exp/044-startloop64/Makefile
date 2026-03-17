@@ -1,11 +1,12 @@
-FF=../../ff64
+FF=../../ff64-
+TMP = /tmp/ff-044.ff
 SHELL=/bin/bash
 
 test: $(FF)
 	@echo "=== Exp 044: Flow control: BEGIN/CASE/BREAK/END and loops ==="
 	@pass=0; fail=0; \
 	run() { \
-		result=$$(echo "$$2" | $(FF) 2>/dev/null); \
+		echo "$$2" > $(TMP); result=$$($(FF) $(TMP) 2>/dev/null); \
 		if echo "$$result" | grep -qF -- "$$3"; then \
 			echo "  PASS: $$1"; pass=$$((pass+1)); \
 		else \
@@ -47,3 +48,6 @@ test: $(FF)
 	test $$fail -eq 0
 
 .PHONY: test
+
+clean:
+	@rm -f $(TMP)

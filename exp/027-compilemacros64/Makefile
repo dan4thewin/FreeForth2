@@ -1,4 +1,5 @@
-BIN = ../../ff64
+BIN = ../../ff64-
+TMP = /tmp/ff-027.ff
 
 all: $(BIN)
 
@@ -10,7 +11,8 @@ test: $(BIN)
 	@PASS=0; FAIL=0; \
 	run_test() { \
 		local desc="$$1"; local input="$$2"; local expected="$$3"; \
-		actual=$$(printf '%s\n' "$$input" | ./$(BIN) -f macros.ff 2>/dev/null | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//' | tr -d '\n' | sed 's/ *$$//'); \
+		printf '%s\n' "$$input" > $(TMP); \
+		actual=$$(./$(BIN) macros.ff $(TMP) 2>/dev/null | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//' | tr -d '\n' | sed 's/ *$$//'); \
 		if [ "$$actual" = "$$expected" ]; then \
 			PASS=$$((PASS+1)); \
 		else \
@@ -29,3 +31,6 @@ test: $(BIN)
 	run_test ", value"        "here 42 , @ . cr ;"                           "42"; \
 	run_test ", big value"    "here 1000000 , @ . cr ;"                      "1000000"; \
 	if [ $$FAIL -eq 0 ]; then echo "PASS"; else echo "$$FAIL FAILED ($$PASS passed)"; exit 1; fi
+
+clean:
+	@rm -f $(TMP)

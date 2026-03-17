@@ -1,5 +1,6 @@
-FF = ../../ff64
+FF = ../../ff64-
 TIMEOUT = 5
+TMP = /tmp/ff-099.ff
 
 test:
 	@echo "=== Exp 099: see improvements ==="
@@ -16,23 +17,27 @@ test:
 		fi; \
 	}; \
 	run "see dump clean stack" \
-		"echo 'see dump depth .\ cr bye' | timeout $(TIMEOUT) $(FF) 'hide off' -f ../../lib/x86-64/see.ff | sed '/^$$/d' | tail -1" \
+		"printf 'hide off\nneeds see.ff\nsee dump depth .\\ cr bye\n' > $(TMP); timeout $(TIMEOUT) $(FF) $(TMP) | sed '/^$$/d' | tail -1" \
 		"0"; \
 	run "see . clean stack" \
-		"echo 'see . depth .\ cr bye' | timeout $(TIMEOUT) $(FF) 'hide off' -f ../../lib/x86-64/see.ff | sed '/^$$/d' | tail -1" \
+		"printf 'hide off\nneeds see.ff\nsee . depth .\\ cr bye\n' > $(TMP); timeout $(TIMEOUT) $(FF) $(TMP) | sed '/^$$/d' | tail -1" \
 		"0"; \
 	run "see words clean stack" \
-		"echo 'see words\` depth .\ cr bye' | timeout $(TIMEOUT) $(FF) 'hide off' -f ../../lib/x86-64/see.ff | sed '/^$$/d' | tail -1" \
+		"printf 'hide off\nneeds see.ff\nsee words\` depth .\\ cr bye\n' > $(TMP); timeout $(TIMEOUT) $(FF) $(TMP) | sed '/^$$/d' | tail -1" \
 		"0"; \
 	run "see max clean stack" \
-		"echo 'see max\` depth .\ cr bye' | timeout $(TIMEOUT) $(FF) 'hide off' -f ../../lib/x86-64/see.ff | sed '/^$$/d' | tail -1" \
+		"printf 'hide off\nneeds see.ff\nsee max\` depth .\\ cr bye\n' > $(TMP); timeout $(TIMEOUT) $(FF) $(TMP) | sed '/^$$/d' | tail -1" \
 		"0"; \
 	run "see h.next clean stack" \
-		"echo 'see h.next depth .\ cr bye' | timeout $(TIMEOUT) $(FF) 'hide off' -f ../../lib/x86-64/see.ff | sed '/^$$/d' | tail -1" \
+		"printf 'hide off\nneeds see.ff\nsee h.next depth .\\ cr bye\n' > $(TMP); timeout $(TIMEOUT) $(FF) $(TMP) | sed '/^$$/d' | tail -1" \
 		"0"; \
 	run "findnm resolves cr" \
-		"printf '\"cr\" findxt drop findnm cr bye\n' | timeout $(TIMEOUT) $(FF) 'hide off' -f ../../lib/x86-64/see.ff | sed '/^$$/d' | tail -1 | sed 's/^ *0; //'" \
+		"printf 'hide off\nneeds see.ff\n\"cr\" findxt drop findnm cr bye\n' > $(TMP); timeout $(TIMEOUT) $(FF) $(TMP) | sed '/^$$/d' | tail -1 | sed 's/^ *0; //'" \
 		"cr"; \
 	echo "  ----"; \
 	echo "  $$pass passed, $$fail failed"; \
+	rm -f $(TMP); \
 	[ $$fail -eq 0 ]
+
+clean:
+	@rm -f $(TMP)

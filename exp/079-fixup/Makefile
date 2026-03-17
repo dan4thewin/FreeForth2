@@ -8,12 +8,12 @@ test: test-fixup-resolve test-fixup-patched test-strerror test-strerror-needed t
 # Test: fixup resolves a libc symbol on first call
 test-fixup-resolve:
 	@printf ': fixup libc@ #fun here swap $$48 c, $$BB c, , $$C3 c, r> 5- dup>r - 5- r 1+ d! ;\n:. _xstrerror "strerror" fixup ;\n: strerror negate 1 dup _xstrerror #call zlen type cr ;\n2 strerror\n0 exit ;\n' > /tmp/079-fixup-resolve.ff
-	@$(FF) -f /tmp/079-fixup-resolve.ff 2>&1 | grep -q "Unknown error" && echo "  PASS test-fixup-resolve" || (echo "  FAIL test-fixup-resolve"; exit 1)
+	@$(FF) /tmp/079-fixup-resolve.ff 2>&1 | grep -q "Unknown error" && echo "  PASS test-fixup-resolve" || (echo "  FAIL test-fixup-resolve"; exit 1)
 
 # Test: second call uses patched trampoline (no re-resolution)
 test-fixup-patched:
 	@printf ': fixup libc@ #fun here swap $$48 c, $$BB c, , $$C3 c, r> 5- dup>r - 5- r 1+ d! ;\n:. _xstrerror "strerror" fixup ;\n: strerror negate 1 dup _xstrerror #call zlen type cr ;\n2 strerror\n3 strerror\n0 exit ;\n' > /tmp/079-fixup-patched.ff
-	@OUT=$$($(FF) -f /tmp/079-fixup-patched.ff 2>&1); \
+	@OUT=$$($(FF) /tmp/079-fixup-patched.ff 2>&1); \
 	echo "$$OUT" | head -1 | grep -q "Unknown error -2" && \
 	echo "$$OUT" | tail -1 | grep -q "Unknown error -3" && \
 	echo "  PASS test-fixup-patched" || (echo "  FAIL test-fixup-patched"; exit 1)

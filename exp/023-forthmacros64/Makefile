@@ -1,6 +1,7 @@
 ASM = forthmacros64.asm
 BIN = forthmacros64
 OBJ = forthmacros64.o
+TMP = /tmp/ff-023.ff
 
 all: $(BIN)
 
@@ -12,7 +13,8 @@ test: $(BIN)
 	@PASS=0; FAIL=0; \
 	run_test() { \
 		local desc="$$1"; local input="$$2"; local expected="$$3"; \
-		actual=$$(printf '%s\n' "$$input" | cat macros.ff - | ./$(BIN) 2>/dev/null | sed '/^> ok$$/d;/^ok$$/d;/^> *$$/d;s/^> //' | tr -d '\n' | sed 's/ *$$//'); \
+		cat macros.ff > $(TMP); printf '%s\n' "$$input" >> $(TMP); \
+		actual=$$(./$(BIN) < $(TMP) 2>/dev/null | sed '/^> ok$$/d;/^ok$$/d;/^> *$$/d;s/^> //' | tr -d '\n' | sed 's/ *$$//'); \
 		if [ "$$actual" = "$$expected" ]; then \
 			PASS=$$((PASS+1)); \
 		else \
@@ -72,6 +74,7 @@ test: $(BIN)
 	if [ $$FAIL -eq 0 ]; then echo "PASS"; else echo "$$FAIL FAILED"; exit 1; fi
 
 clean:
+	rm -f $(TMP)
 	rm -f $(BIN) $(OBJ)
 
 .PHONY: all test clean

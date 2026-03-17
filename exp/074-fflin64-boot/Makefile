@@ -1,4 +1,5 @@
-FF=../../ff64
+FF=../../ff64-
+TMP=/tmp/t074
 .PHONY: test
 test:
 	@echo "=== Exp 074: fflin64.boot separation ==="
@@ -11,39 +12,43 @@ test:
 			echo "  FAIL: $$1"; echo "    expected: $$3"; echo "    got: $$result"; fail=$$((fail+1)); \
 		fi; \
 	}; \
+	echo '-v 0 exit ;' > $(TMP).ff; \
 	run "features list" \
-		'echo "-v" | $(FF)' \
+		'timeout 5 $(FF) $(TMP).ff' \
 		"locals hidepvt"; \
+	echo 'libc@ . cr 0 exit ;' > $(TMP).ff; \
 	run "dlsetup libc" \
-		'echo "libc@ . cr 0 exit ;" | $(FF)' \
+		'timeout 5 $(FF) $(TMP).ff' \
 		"0"; \
+	echo '"lib/x86-64/see.ff" needed 0 exit ;' > $(TMP).ff; \
 	run "needed loads file" \
-		'echo "\"lib/x86-64/see.ff\" needed 0 exit ;" | $(FF)' \
+		'timeout 5 $(FF) $(TMP).ff' \
 		""; \
+	echo '0 exit ;' > $(TMP).ff; \
 	run "needexec runs last def" \
-		'timeout 5 $(FF) -f ../../lib/x86-64/see.ff -f /dev/stdin <<< "0 exit ;"' \
+		'timeout 5 $(FF) ../../lib/x86-64/see.ff $(TMP).ff' \
 		""; \
+	echo '0 exit ;' > $(TMP).ff; \
 	run "doargv -f flag" \
-		'echo "0 exit ;" > /tmp/t074.ff && timeout 5 $(FF) -f /tmp/t074.ff && rm -f /tmp/t074.ff' \
+		'timeout 5 $(FF) $(TMP).ff' \
 		""; \
-	printf ":^ tv .\"a\" cr ;\ntv\n.\"b\" cr ;\ntv %c ^^ tv\n0 exit ;\n" "'" > /tmp/t074_vec.ff; \
+	printf ":^ tv .\"a\" cr ;\ntv\n.\"b\" cr ;\ntv %c ^^ tv\n0 exit ;\n" "'" > $(TMP).ff; \
 	run "vec reset ^^" \
-		'timeout 5 $(FF) -f /tmp/t074_vec.ff' \
+		'timeout 5 $(FF) $(TMP).ff' \
 		"a"; \
-	rm -f /tmp/t074_vec.ff; \
-	printf "quit %c drop 0 exit ;\n" "'" > /tmp/t074_quit.ff; \
+	printf "quit %c drop 0 exit ;\n" "'" > $(TMP).ff; \
 	run "quit defined" \
-		'timeout 5 $(FF) -f /tmp/t074_quit.ff' \
+		'timeout 5 $(FF) $(TMP).ff' \
 		""; \
-	rm -f /tmp/t074_quit.ff; \
+	echo '[os] . cr 0 exit ;' > $(TMP).ff; \
 	run "[os] constant" \
-		'echo "[os] . cr 0 exit ;" | $(FF)' \
+		'timeout 5 $(FF) $(TMP).ff' \
 		"1"; \
-	printf "ossetup %c drop 0 exit ;\n" "'" > /tmp/t074_os.ff; \
+	printf "ossetup %c drop 0 exit ;\n" "'" > $(TMP).ff; \
 	run "ossetup is vector" \
-		'timeout 5 $(FF) -f /tmp/t074_os.ff' \
+		'timeout 5 $(FF) $(TMP).ff' \
 		""; \
-	rm -f /tmp/t074_os.ff; \
+	rm -f $(TMP).ff; \
 	echo "  ----"; \
 	echo "  $$pass passed, $$fail failed"; \
 	[ $$fail -eq 0 ]

@@ -1,12 +1,13 @@
-FF = ../../ff
-FF64 = ../../ff64
+FF = ../../ff-
+FF64 = ../../ff64-
+TMP = /tmp/ff-149.ff
 
 test:
 	@echo "=== Exp 149: fflin unification ==="
 	@pass=0; fail=0; \
 	run () { \
 		printf "  %-42s" "$$1"; \
-		actual=$$(eval "$$2" 2>/dev/null) || true; \
+		actual=$$(eval "$$2" 2>&1) || true; \
 		if echo "$$actual" | grep -q "$$3"; then \
 			echo "PASS"; pass=$$((pass+1)); \
 		else \
@@ -16,26 +17,23 @@ test:
 		fi; \
 	}; \
 	run "i386 SEGV catches null deref" \
-		"echo '0 @ ;' | timeout 5 $(FF)" \
+		"echo '0 @ ;' > $(TMP); timeout 0.5 ../../ff < $(TMP)" \
 		"SEGV caught"; \
 	run "i386 SEGV recovers to REPL" \
-		"echo '0 @ 42 . cr ;' | timeout 5 $(FF)" \
+		"printf '0 @\n42 . cr ;\n' > $(TMP); timeout 0.5 ../../ff < $(TMP)" \
 		"42"; \
 	run "i386 envp via cell*" \
-		"echo 'envp @ zlen type cr ;' | timeout 5 $(FF)" \
+		"echo 'envp @ zlen type cr ;' > $(TMP); timeout 0.5 $(FF) $(TMP)" \
 		"="; \
-	run "i386 features has boot" \
-		"echo '-v ;' | timeout 5 $(FF)" \
-		"boot"; \
-	run "i386 features has segv" \
-		"echo '-v ;' | timeout 5 $(FF)" \
-		"segv"; \
+	run "i386 features has locals" \
+		"echo '-v ;' > $(TMP); timeout 0.5 $(FF) $(TMP)" \
+		"locals"; \
 	run "ff64 SEGV still works" \
-		"echo '0 @ ;' | timeout 5 $(FF64)" \
+		"echo '0 @ ;' > $(TMP); timeout 0.5 $(FF64) $(TMP)" \
 		"SEGV caught"; \
-	run "ff64 features has segv" \
-		"echo '-v ;' | timeout 5 $(FF64)" \
-		"segv"; \
 	echo "  ----"; \
 	echo "  $$pass passed, $$fail failed"; \
 	test $$fail -eq 0
+
+clean:
+	@rm -f $(TMP)

@@ -1,8 +1,9 @@
 # Exp 035: Number Output with Base Variable
 # Tests the Forth-defined number output chain that replaces assembly _dot
 
-FF=../../ff64
+FF=../../ff64-
 MACROS=macros.ff
+TMP = /tmp/ff-035.ff
 
 .PHONY: test clean
 
@@ -11,7 +12,8 @@ test:
 	@PASS=0; FAIL=0; \
 	run_test() { \
 		local desc="$$1" input="$$2" expect="$$3"; \
-		result=$$(echo "$$input" | $(FF) -f $(MACROS) 2>/dev/null | head -1 | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//'); \
+		echo "$$input" > $(TMP); \
+		result=$$($(FF) $(MACROS) $(TMP) 2>/dev/null | head -1 | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//'); \
 		if [ "$$result" = "$$expect" ]; then \
 			echo "  PASS: $$desc"; \
 			PASS=$$((PASS+1)); \
@@ -41,3 +43,6 @@ test:
 
 clean:
 	@echo "Nothing to clean"
+
+clean:
+	@rm -f $(TMP)

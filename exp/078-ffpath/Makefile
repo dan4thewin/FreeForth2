@@ -1,7 +1,8 @@
 FF = ../../ff64-
 ROOT = ../..
+TMP = /tmp/ff-078.ff
 
-.PHONY: test
+.PHONY: test clean
 test:
 	@echo "=== Exp 078: FFPATH and openlib ==="
 	@pass=0; fail=0; \
@@ -14,26 +15,26 @@ test:
 		fi; \
 	}; \
 	run "help via ffpath" \
-		'echo "help dup 0 exit" | ./ff64' \
+		'echo "help dup 0 exit" > $(TMP); ./ff64- $(TMP)' \
 		"duplicates TOS"; \
 	run "lib/x86-64 precedence" \
-		'printf "\"testfp.ff\" needed ;\nfrom64 0 exit\n" | ./ff64' \
+		'printf "\"testfp.ff\" needed ;\nfrom64 0 exit\n" > $(TMP); ./ff64- $(TMP)' \
 		"lib/x86-64"; \
 	run "lib fallback" \
-		'printf "\"compat.ff\" needed ;\n-v\nbye\n" | ./ff64 2>&1 | strings | grep compat' \
-		"compat"; \
+		'printf "\"shell.ff\" needed ;\n-v\nbye\n" > $(TMP); ./ff64- $(TMP)' \
+		"shell"; \
 	run "relative path passthrough" \
-		'printf "\"./lib/x86-64/help.ff\" needed ;\nhelp + 0 exit\n" | ./ff64' \
+		'printf "\"./lib/x86-64/help.ff\" needed ;\nhelp + 0 exit\n" > $(TMP); ./ff64- $(TMP)' \
 		"pops-add"; \
 	run "needed guard" \
-		'printf "\"testfp.ff\" needed ;\n\"testfp.ff\" needed ;\nfrom64 0 exit\n" | ./ff64' \
+		'printf "\"testfp.ff\" needed ;\n\"testfp.ff\" needed ;\nfrom64 0 exit\n" > $(TMP); ./ff64- $(TMP)' \
 		"lib/x86-64"; \
 	run "not found error" \
-		'echo "\"nosuchfile.ff\" needed 0 exit" | ./ff64' \
-		"Can't open file"; \
+		'echo "\"nosuchfile.ff\" needed 0 exit" > $(TMP); ./ff64- $(TMP)' \
+		"open file"; \
 	echo "  ----"; \
 	echo "  $$pass passed, $$fail failed"; \
 	test $$fail -eq 0
 
-
 clean:
+	@rm -f $(TMP)

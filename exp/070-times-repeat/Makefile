@@ -1,11 +1,12 @@
-FF = ../../ff64
+FF = ../../ff64-
+TMP = /tmp/ff-070.ff
 
 .PHONY: test
 test:
 	@echo "=== Exp 070: TIMES...REPEAT compatibility ==="
 	@PASS=0; FAIL=0; \
 	run() { \
-		result=$$(printf '%s\n' "$$2" | $(FF) 2>/dev/null \
+		result=$$(printf '%s\n' "$$2" > $(TMP); $(FF) $(TMP) 2>/dev/null \
 		  | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//' \
 		  | grep -v '^$$' | tail -1); \
 		if [ "$$result" = "$$3" ]; then \
@@ -45,3 +46,6 @@ test:
 	echo "  ----"; \
 	echo "  $$PASS passed, $$FAIL failed"; \
 	test $$FAIL -eq 0
+
+clean:
+	@rm -f $(TMP)

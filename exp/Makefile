@@ -42,6 +42,9 @@ EXPERIMENTS = 023-forthmacros64 \
               071-hidepvt-compact \
               072-features-words \
               074-fflin64-boot \
+              078-ffpath \
+              079-fixup \
+              080-lib64 \
               081-numlit \
               082-restore-lits \
               086-shrink \
@@ -54,13 +57,16 @@ EXPERIMENTS = 023-forthmacros64 \
               093-remove-dead-runtime \
               095-locals-and-test \
               099-see64-improvements \
+              102-s2d-fix \
               113-asm-reduction \
               134-native-getenv \
+              135-loop-cond-audit \
               139-eval-fileload \
               140-tib-eob \
               141-rm-loadfile \
               142-cs0-getenv \
               145-shared-mmap \
+              149-fflin-unify \
               046-callvec64 \
               051-repl-autoexec \
               052-repl-forth \

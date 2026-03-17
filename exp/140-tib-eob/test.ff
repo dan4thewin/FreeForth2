@@ -9,7 +9,7 @@ tp@ tib >= 2drop IF tp@ eob < 2drop IF ."PASS:_tp-in-range" cr ;THEN THEN ."FAIL
 
 ( Test 3: eval with tp@ eob over- as buffer size )
 : evalload openr dup tp@ eob over- rot read swap close drop tp@ swap eval ;
-"exp/139-eval-fileload/file1.ff" evalload
+"exp/139-eval-fileload/file1.ff" evalload ;
 hello 42 - 0- 0= IF ."PASS:_eval-with-eob" cr ;THEN ."FAIL:_eval-with-eob" cr ;
 
 0 exit ;

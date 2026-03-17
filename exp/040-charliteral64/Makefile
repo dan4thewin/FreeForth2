@@ -1,11 +1,12 @@
-FF=../../ff64
+FF=../../ff64-
+TMP = /tmp/ff-040.ff
 SHELL=/bin/bash
 
 test: $(FF)
 	@echo "=== Exp 040: Character literals and prompt cleanup ==="
 	@pass=0; fail=0; \
 	run() { \
-		result=$$(echo "$$2" | $(FF) 2>/dev/null); \
+		echo "$$2" > $(TMP); result=$$($(FF) $(TMP) 2>/dev/null); \
 		if echo "$$result" | grep -q "$$3"; then \
 			echo "  PASS: $$1"; pass=$$((pass+1)); \
 		else \
@@ -27,3 +28,6 @@ test: $(FF)
 	echo "  $$pass passed, $$fail failed"
 
 .PHONY: test
+
+clean:
+	@rm -f $(TMP)

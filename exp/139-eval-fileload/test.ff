@@ -9,11 +9,11 @@
 : evalload openr dup tp@ 60000 rot read swap close drop tp@ swap eval ;
 
 ( === Test 1: Load a single file via eval, call defined word === )
-"exp/139-eval-fileload/file1.ff" evalload
+"exp/139-eval-fileload/file1.ff" evalload ;
 hello 42 - 0- 0= IF ."PASS:_eval-single" cr ;THEN ."FAIL:_eval-single" cr ;
 
 ( === Test 2: Load two files sequentially === )
-"exp/139-eval-fileload/file2.ff" evalload
+"exp/139-eval-fileload/file2.ff" evalload ;
 hello answer + 141 - 0- 0= IF ."PASS:_eval-sequential" cr ;THEN ."FAIL:_eval-sequential" cr ;
 
 ( === Test 3: Define a word that calls an eval-loaded definition === )
@@ -21,7 +21,7 @@ hello answer + 141 - 0- 0= IF ."PASS:_eval-sequential" cr ;THEN ."FAIL:_eval-seq
 use_hello 43 - 0- 0= IF ."PASS:_eval-use-loaded" cr ;THEN ."FAIL:_eval-use-loaded" cr ;
 
 ( === Test 4: Nested eval — file4.ff calls evalload inside eval === )
-"exp/139-eval-fileload/file4.ff" evalload
+"exp/139-eval-fileload/file4.ff" evalload ;
 combined 141 - 0- 0= IF ."PASS:_eval-nested" cr ;THEN ."FAIL:_eval-nested" cr ;
 
 ( === Test 5: All definitions persist after multiple evals === )

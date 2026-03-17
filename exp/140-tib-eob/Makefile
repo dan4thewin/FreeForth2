@@ -1,10 +1,11 @@
 FF64 = ../../ff64-
+TMP = /tmp/ff-140.ff
 
 all: test
 
 test:
-	@cd ../.. && result=$$(printf ': prompt ;\n' | cat - exp/140-tib-eob/test.ff \
-	  | timeout 10 ./ff64 2>&1); \
+	@printf ': prompt ;\n' > $(TMP); cat test.ff >> $(TMP)
+	@cd ../.. && result=$$(timeout 10 ./ff64- $(TMP) 2>&1); \
 	pass=$$(echo "$$result" | grep -c "PASS:"); \
 	fail=$$(echo "$$result" | grep -c "FAIL:"); \
 	if [ "$$fail" -gt 0 ]; then \
@@ -17,4 +18,7 @@ test:
 	  echo "$$result"; exit 1; \
 	fi
 
-.PHONY: all test
+clean:
+	@rm -f $(TMP)
+
+.PHONY: all test clean

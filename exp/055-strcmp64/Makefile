@@ -1,11 +1,12 @@
-FF      = ../../ff64
+FF      = ../../ff64-
+TMP = /tmp/ff-055.ff
 
 test:
 	@echo "=== 055: \$$- string comparison and string literals ==="
 	@PASS=0; FAIL=0; \
 	run_one() { \
 		printf '  --- %s ---\n' "$$1"; \
-		OUT=$$(printf '%s\n' "$$2" | timeout 5 $(FF) 2>&1); \
+		OUT=$$(printf '%s\n' "$$2" > $(TMP); timeout 5 $(FF) $(TMP) 2>&1); \
 		if echo "$$OUT" | grep -qF -- "$$3"; then \
 			printf '  PASS: %s\n' "$$1"; PASS=$$((PASS+1)); \
 		else \
@@ -56,3 +57,6 @@ test:
 	[ "$$FAIL" = "0" ]
 
 .PHONY: test
+
+clean:
+	@rm -f $(TMP)

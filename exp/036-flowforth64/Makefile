@@ -2,7 +2,8 @@
 # Tests that Forth-defined IF/THEN/ELSE/BEGIN/UNTIL/WHILE/REPEAT
 # produce correct code after removing ~140 lines of assembly
 
-FF=../../ff64
+FF=../../ff64-
+TMP = /tmp/ff-036.ff
 
 .PHONY: test clean
 
@@ -11,7 +12,8 @@ test:
 	@PASS=0; FAIL=0; \
 	run_test() { \
 		local desc="$$1" input="$$2" expect="$$3"; \
-		result=$$(echo "$$input" | $(FF) 2>/dev/null | head -1 | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//'); \
+		echo "$$input" > $(TMP); \
+		result=$$($(FF) $(TMP) 2>/dev/null | head -1 | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//'); \
 		if [ "$$result" = "$$expect" ]; then \
 			echo "  PASS: $$desc"; \
 			PASS=$$((PASS+1)); \
@@ -46,3 +48,6 @@ test:
 
 clean:
 	@echo "Nothing to clean"
+
+clean:
+	@rm -f $(TMP)

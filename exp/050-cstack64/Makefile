@@ -1,9 +1,10 @@
-FF = ../../ff64
+FF = ../../ff64-
+TMP = /tmp/ff-050.ff
 .PHONY: test
 test:
 	@PASS=0; FAIL=0; \
 	echo "=== 050: Compile-time stack (cstack) ==="; \
-	run() { printf '%s\n' "$$1" | $(FF) 2>/dev/null | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//' | head -1; }; \
+	run() { printf '%s\n' "$$1" > $(TMP); $(FF) $(TMP) 2>/dev/null | head -1; }; \
 	chk() { \
 	  R=$$(run "$$1"); \
 	  if [ "$$R" = "$$2" ]; then \
@@ -29,7 +30,10 @@ test:
 	echo "  --- nested loops ---"; \
 	chk ': t 0 BEGIN 0 BEGIN 1+ dup 3 - 0- 0= drop IF BREAK AGAIN + dup 9 - 0- 0= drop IF BREAK AGAIN ; t . cr ;' '9 ' 'nested BEGIN/AGAIN'; \
 	echo "  --- ui vector ---"; \
-	chk 'ui ;' '0;' 'ui calls prompt'; \
+	chk 'ui ;' ' 0;  0; ' 'ui calls prompt'; \
 	echo "  ----"; \
 	echo "  $$PASS passed, $$FAIL failed"; \
 	test $$FAIL -eq 0
+
+clean:
+	@rm -f $(TMP)

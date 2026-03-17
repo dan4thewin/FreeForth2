@@ -34,6 +34,12 @@ Last verified: 131 PASSED, 1 SKIPPED (`make testall`).
   (main-based) vs crashing (REPL) paths. Currently SKIPPED in
   `exp/Makefile`. **Blocks treeshake.**
 
+- **mmap-wrapper-fail**: `test/mmap.ff` fails when run via `ff64-`
+  wrapper but passes via `./ff64 -f`. Test 12 (`cmp` of written file)
+  finds an empty file. Likely the wrapper's closed-stdin or `-f`
+  interposition affects file I/O. Works on `static-elf64` branch.
+  Needs investigation.
+
 - ~~**hang-110-112**~~: FIXED — exp/110's `syscalls.ff` collided with
   `lib/x86-64/syscalls.ff` via `-f` path search. Fixed Makefile to use
   `cd ../.. && ./ff64 -f $(DIR)/syscalls.ff`. exp/112 was never broken.
@@ -41,6 +47,12 @@ Last verified: 131 PASSED, 1 SKIPPED (`make testall`).
 
 - ~~**home-naming-conflict**~~: DONE — renamed boot's `home` to
   `homedir` in fflin2.boot and openlib.ff. console.ff keeps `home`.
+
+- **compat-jmp-alias**: `compat.ff` line 68 (`jmp` ' alias exit``)
+  fails with `jmp` ???` on ff64. The word `jmp`` exists in the
+  dictionary (help finds it) but `needed` fails to parse it during
+  file load. Causes exp/078 "lib fallback" test to fail when
+  converted from pipe to file-based invocation.
 
 ## Test fixes (SKIPPED experiments)
 - ~~**fix-079**~~: DONE — changed `loadfile` → `needs`, fixed strerror expectations.

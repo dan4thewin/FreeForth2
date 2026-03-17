@@ -1,5 +1,6 @@
-FF = ../../ff64
+FF = ../../ff64-
 MACROS = macros.ff
+TMP = /tmp/ff-031.ff
 
 .PHONY: test clean
 
@@ -8,7 +9,8 @@ test:
 	@PASS=0; FAIL=0; \
 	run_test() { \
 		desc="$$1"; input="$$2"; expect="$$3"; \
-		actual=$$(printf '%s\n' "$$input" | $(FF) -f $(MACROS) 2>/dev/null | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//' | tr -d '\n' | sed 's/ *$$//'); \
+		printf '%s\n' "$$input" > $(TMP); \
+		actual=$$($(FF) $(MACROS) $(TMP) 2>/dev/null | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//' | tr -d '\n' | sed 's/ *$$//'); \
 		if [ "$$actual" = "$$expect" ]; then \
 			echo "PASS: $$desc"; PASS=$$((PASS+1)); \
 		else \
@@ -71,3 +73,6 @@ test:
 
 clean:
 	@echo "Nothing to clean (uses production ff64)"
+
+clean:
+	@rm -f $(TMP)
