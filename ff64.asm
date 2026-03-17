@@ -707,13 +707,43 @@ _find:  push r8
 
 numaccu dq 0
 
+;; number. ( @ # base -- @ # | n 0 ) parse number with explicit base
+;; Forth-callable wrapper matching i386 stack effect.
+_numberdot:
+        push r10                ; save caller's r10
+        mov r10d, ebx           ; r10 = base (TOS)
+        ;; DROP1: remove base → rbx=# rdx=@
+        mov rbx, rdx
+        mov rdx, [r15]
+        add r15, 8
+        ;; Call _number with custom base via _number_with_base
+        mov rax, rdx            ; rax = string addr (@)
+        mov ecx, ebx            ; ecx = string length (#)
+        call _number_with_base
+        pop r10                 ; restore caller's r10
+        jnz .fail               ; ZF clear = parse failed
+        ;; Success: rax=result. Put ( n 0 ) on data stack
+        mov rdx, rax            ; NOS = result
+        xor ebx, ebx            ; TOS = 0 (success)
+        ret
+.fail:  ret                     ; data stack still has ( @ # )
+
+;; _number_with_base: internal — parse with base in r10d
+;; rax=addr, ecx=len, r10d=base. Returns rax=result+ZF or addr+NZ.
+_number_with_base:
+        push r8
+        push rdx
+        push r10                ; save (for restore on exit)
+        mov r8, rax
+        jmp _number.setup
+
 _number:
         push r8
         push rdx                ; save NOS (data stack)
         push r10                ; save r10 (used as current base)
         mov r8, rax             ; r8 = original string addr (for fail)
         mov r10d, 10            ; default base = decimal
-        mov rsi, rax            ; rsi = scan pointer
+.setup: mov rsi, rax            ; rsi = scan pointer
         lea rdi, [rax + rcx]   ; rdi = string end
         xor ecx, ecx            ; accumulator = 0
         mov [numaccu], rcx      ; secondary accumulator = 0
@@ -1012,6 +1042,15 @@ _compiler:
 .notfound:
         pop rcx
         pop rax
+        call _literalcompiler
+        jmp _compiler
+
+;; ─── Literal compiler ───
+;; rax = token address, ecx = token length (from _wsparse)
+;; Tries: character literal, string, suffix dispatch, number.
+;; If all fail, calls _notfound.
+;; Matches i386's CODE "litcomp",literalcompiler.
+_literalcompiler:
         ;; Check for character literal: 'X' syntax (length=3, quotes)
         cmp ecx, 3
         jne .not_charlit
@@ -1021,7 +1060,7 @@ _compiler:
         jne .not_charlit
         movzx eax, byte [rax+1] ; extract the character
         call _lit_compile
-        jmp _compiler
+        ret
 .not_charlit:
         ;; ─── String compiler ───
         ;; Check if last char is " (trailing quote = string literal)
@@ -1134,7 +1173,7 @@ _compiler:
         mov byte [rbp], 0      ; zero-terminate
         inc rbp
         add rsp, 16             ; discard outer saved rax/rcx
-        jmp _compiler
+        ret
 .str_memcomma:
         ;; ,"..." — raw data, no call, no count
         pop rcx                 ; content length
@@ -1176,7 +1215,7 @@ _compiler:
         inc rbp
         jmp .str_rawcopy
 .str_rawend:
-        jmp _compiler
+        ret
 .not_string:
         ;; ─── Suffix mechanism ───
         ;; Check if last char is an interpreted suffix: +-*/%&|^,@!_
@@ -1242,37 +1281,20 @@ _compiler:
         jz .gotnum
         pop rax
         pop rcx
-        jmp .error
+        call _notfound
+        ret
 .gotnum:
         add rsp, 16
         call _lit_compile
-        jmp _compiler
-.error:
-        ;; If a catch frame is active (xfp != 0), throw the error.
-        ;; Otherwise, print "error: <word>\n" and continue compiling.
-        cmp qword [xfp], 0
-        jne .error_throw
-        ;; No catch frame: print error inline and continue
-        push rcx
-        push rax
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [errmsg]
-        mov rdx, 7
-        syscall
-        pop rsi
-        pop rdx
-        and rsi, -2             ; clear low bit (wsparse artifact)
-        mov rax, 1
-        mov rdi, 1
-        syscall
-        mov rax, 1
-        mov rdi, 1
-        lea rsi, [nl_char]
-        mov rdx, 1
-        syscall
-        jmp _compiler
-.error_throw:
+        ret
+;; ─── Not-found handler (vectorizable) ───
+;; rax = token address, ecx = token length
+;; Default: call _error with "???" — matching i386 exactly.
+;; Vectorizable so user code can override word resolution.
+_notfound:
+        db $68                  ; push imm32
+        dd $+5                  ; address of default handler (past ret)
+        ret                     ; C3
         call _error
         db 3, "???"
 
@@ -1722,7 +1744,8 @@ macro WORD64 name, xt_val, ct_val, namelen {
 
 macro VECT64 name, entry, namelen {     ; vectorizable subroutine entry
         WORD64 name, entry, 0, namelen
-entry:  push dword $+6                  ; 68(push dword)
+entry:  db $68                          ; push imm32
+        dd $+5                          ; address of default handler
         ret                             ; C3(ret)
 }
 
@@ -1770,6 +1793,7 @@ WORD64 "which", which, 1, 5
 WORD64 ">S0", _rst, 0, 3
 WORD64 "rst", _rst, 0, 3
 WORD64 "number", _number, 0, 6
+WORD64 "number.", _numberdot, 0, 7
 WORD64 "$-", _strcmp, 0, 2
 WORD64 "depth", _depth, 0, 5
 WORD64 "DS0", _DS0, 0, 3
@@ -1795,6 +1819,8 @@ WORD64 "header", _header_forth, 0, 6
 WORD64 ":`", _colon, 0, 2
 WORD64 ";`", _semi, 0, 2
 WORD64 ";;`", _semisemi, 0, 3
+WORD64 "litcomp", _literalcompiler, 0, 7
+WORD64 "notfound", _notfound, 0, 8
 WORD64 "compiler", _compiler, 0, 8
 WORD64 "catch", _catch, 0, 5
 WORD64 "throw", _throw, 0, 5
@@ -1846,7 +1872,6 @@ _start:
 ;; Data
 ;; =====================================================================
 
-errmsg:       db "error: "
 err_noname:   db "error: : without name"
               db 10
 err_noname_len = $ - err_noname

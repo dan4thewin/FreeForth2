@@ -39,11 +39,11 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 | `which` | asm | — → **asm** | asm/asm | 7 | **done** — variable + WORD64 + _find saves hfa |
 | `xfp` | ~~—~~ → **asm** | asm | asm/asm | 7 | **done** — WORD header on i386 |
 | `?#` | forth | ~~asm~~ forth | forth/forth | 7 | **done** — shared `variable ?#` in ff2.boot, removed asm cond_jmp+WORD64 |
-| `notfound` | asm | — | asm/asm | 7 | **deferred** — x64 inlines char/string/number |
+| `notfound` | asm | — → **asm** | asm/asm | 7 | **done** — VECT with default `call _error / "???"` |
 | `number` | asm | — → **asm** | asm/asm | 7 | **done** — WORD64 exposing _number |
-| `litcomp` | asm | — | asm/asm | 7 | **deferred** — x64 inlines suffix dispatch |
-| `number.` | asm | — | TBD | 7 | **deferred** — structural diff |
-| `classes` | asm | — → **asm** | asm/asm | 7 | **done** — VECT64 macro + _classes table + _icall/_ilit/_ccerr handlers |
+| `litcomp` | asm | — → **asm** | asm/asm | 7 | **done** — _literalcompiler extracted as callable subroutine |
+| `number.` | asm | — → **asm** | asm/asm | 7 | **done** — Forth-callable wrapper with explicit base |
+| `classes` | asm | — → **asm** | asm/asm | 7 | **done** — _classes table + _icall/_ilit/_ccerr handlers |
 | `>SC` | asm | — | TBD | 7 | **deferred** — structural diff |
 | `>S1` | asm | — | TBD | 7 | **deferred** — structural diff |
 | `c04` | asm | — | skip | 7 | accepted — i386-only encoding |

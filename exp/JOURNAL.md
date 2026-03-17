@@ -14142,3 +14142,101 @@ The data table itself (_classes dq ...) can go anywhere in .flat.
 - `make testall`: 149 PASSED, 1 SKIPPED (073-turnkey)
 - ff64: 92920 bytes (was 92304, +616 for table + handlers)
 - `classes` word accessible: returns table address
+
+## Experiment 161: Extract `notfound` as a vector
+
+### Goal
+
+Make `_notfound` a vectorizable word matching i386's VECT "notfound".
+
+### Actions
+
+Extracted the error path from the compiler as `_notfound` with a
+push-imm32/ret trampoline (hand-coded as `db $68 / dd $+5 / ret`
+because FASM rejects `push dword` in 64-bit mode). Default handler:
+`call _error / db 3, "???"` — matching i386 exactly.
+
+Changed the number-fail path from `jmp .error` to `call _notfound /
+jmp _compiler`. The `call` ensures a custom notfound handler can
+return and resume compilation.
+
+DG corrected the initial version which had an inline error printer
+with xfp-conditional logic. i386's notfound is simply `call _error /
+CDB "???"` — no conditional needed.
+
+Removed dead `errmsg` data ("error: ") that was only used by the
+removed inline error printer.
+
+### FASM gotcha
+
+`push dword $+6` is illegal in 64-bit FASM. Manual encoding:
+`db $68 / dd $+5 / ret`. The VECT64 macro was updated to match.
+
+### Test results
+
+- `make testall`: all PASSED
+- Verified vector is patchable: custom notfound handler works and
+  compiler resumes after it returns
+
+## Experiment 162: Extract `litcomp` (literal compiler)
+
+### Goal
+
+Extract the charlit/string/suffix/number chain as a callable
+`_literalcompiler` matching i386's CODE "litcomp".
+
+### Actions
+
+Added `_literalcompiler:` label at the start of the not-found handler
+chain (charlit check). Changed all `jmp _compiler` exits to `ret`.
+The compiler loop now does `call _literalcompiler / jmp _compiler`.
+
+The literal compiler tries in order:
+1. Character literal ('X' syntax)
+2. String literal ("...", ."...", !"...", ,"...")
+3. Suffix dispatch (+-*/%&|^,@!_)
+4. Bare number
+5. `call _notfound` if all fail
+
+This matches i386's flow: `call literalcompiler` from the compiler
+loop, `jnz _notfound` from litnum on parse failure.
+
+### Test results
+
+- `make testall`: all PASSED
+- `litcomp '` returns code address
+
+## Experiment 163: Extract `number.` (number parser with explicit base)
+
+### Goal
+
+Expose `_numberdot` as `number.` with i386-compatible Forth stack
+effect: `( @ # base -- @ # | n 0 )`.
+
+### Actions
+
+Created `_numberdot` as a Forth-callable wrapper:
+1. Saves base from TOS, does DROP1 to get ( @ # )
+2. Sets up rax=addr, ecx=len, r10d=base
+3. Calls `_number_with_base` (shared entry point into _number body)
+4. On success (ZF): sets rdx=result, rbx=0 → ( n 0 )
+5. On failure (NZ): leaves ( @ # ) unchanged
+
+Added `_number_with_base` entry point that pushes the same frame
+as `_number` and jumps to `_number.setup`. This avoids duplicating
+the parser body — both `_number` (default base=10) and `_numberdot`
+(explicit base) share the same code after setup.
+
+### Design note
+
+x64's `_number` returns results in registers (rax=value, ZF=success),
+not on the data stack like i386 (edx=value, ebx=0). The wrapper
+translates between these conventions. This is the expected pattern:
+assembly internals use register conventions; Forth-callable words
+use the data stack.
+
+### Test results
+
+- `make testall`: all PASSED
+- Verified: `"FF" 16 number.` → 255, `"1010" 2 number.` → 10,
+  `"77" 8 number.` → 63
