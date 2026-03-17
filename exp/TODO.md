@@ -1,6 +1,6 @@
 # FreeForth2 — Backlog
 
-Last verified: 131 PASSED, 1 SKIPPED (`make testall`).
+Last verified: 151 PASSED, 1 SKIPPED (`make testall`).
 
 ## Bugs
 
@@ -78,12 +78,13 @@ Last verified: 131 PASSED, 1 SKIPPED (`make testall`).
   Once resolved, shared macros (`w@`, `c@`, `over*`, etc.) can use
   `ext ... s09.` instead of `ext ... ,1 s09`.
 
-- **io-extraction**: Extract I/O from ff64.asm into fflin64io.asm,
-  create fflin64.asm glue file. Prep for future ARM64/macOS ports.
-  The remaining assembly I/O (`_accept`, `_type`, `_emit`, syscall
-  wrappers) needs splitting out of ff64.asm. ARM64 would replace
-  ff64.asm but keep fflin2.boot; macOS would replace fflin2.boot but
-  keep ff64.asm.
+- ~~**io-extraction**~~: MOSTLY DONE (tier 3) — I/O words moved from
+  fflinio.asm to shared Forth.  fflinio.asm down to ~100 lines:
+  accept, syscall, sigrestorer, dlopen.  ff64.asm _accept removed.
+  Remaining: syscall/sigrestorer/dlopen are genuinely asm-mandatory.
+  ARM64/macOS split would still need an fflin-style glue file for
+  the remaining asm, but the Forth-side OS interface (fflin2.boot)
+  is already clean.
 
 - **fflin2-comment-porting**: Port comments from old fflin.boot and
   fflin64.boot into the unified fflin2.boot. When the two files were

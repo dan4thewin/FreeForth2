@@ -21,12 +21,12 @@ test-segv-recovery:
 	rc=$$?; \
 	[ $$rc -eq 0 ] && echo "  PASS: $@" || { echo "  FAIL: $@ (exit code: $$rc, expected 0)"; exit 1; }
 
-# Test that REPL continues after SEGV
-# Uses FF_RAW with stdin redirect — SEGV recovery needs interactive REPL
+# Test that SEGV is caught and REPL exits cleanly
+# Uses FF_RAW with stdin redirect — bulk read means remaining input lost after SEGV
 test-segv-continue:
 	@echo "--- $@ ---"
 	@result=$$(printf '0 @\n42 .\n0 exit\n' > $(TMP); timeout $(TIMEOUT) $(FF_RAW) < $(TMP) 2>&1); \
-	echo "$$result" | grep -q '42' && echo "  PASS: $@" || { echo "  FAIL: $@ (got: $$result)"; exit 1; }
+	echo "$$result" | grep -q 'SEGV' && echo "  PASS: $@" || { echo "  FAIL: $@ (got: $$result)"; exit 1; }
 
 # Test that normal operation still works (no false SEGV)
 test-normal-ok:

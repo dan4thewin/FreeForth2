@@ -2774,22 +2774,27 @@ outer . cr                 \ → prints "55" (propagates through call chain)
 
 ### I/O Primitives: write, read, accept, type
 
-The I/O words wrap Linux syscalls. A critical implementation detail: the
-`syscall` instruction on x86-64 **clobbers rcx and r11**. All I/O words
-must save/restore rax, rdi, rsi, and rcx around the syscall to prevent
-corrupting FreeForth's internal state.
+The I/O words are shared Forth definitions, not assembly. They call the
+`syscall` word, which handles all register save/restore (including the
+rcx/r11 clobber from the x86-64 `syscall` instruction) internally.
 
 **write ( addr count fd -- written )**
 
-Maps to Linux `sys_write` (rax=1). Stack layout: TOS=fd, NOS=count,
-third=addr. Note the stack order — addr is pushed first, then count,
-then fd. The implementation saves count from NOS (rdx) into rcx before
-overwriting rdx with the syscall argument.
+Defined in ff2.boot with a bifurcated syscall number: `sys_write` is 4
+on i386 and 1 on x86-64. The Forth definition selects the correct
+number at compile time.
 
 **type ( addr count -- )**
 
 Defined in Forth as `stdout write drop`. Pushes fd=1, calls write,
 drops the return value (bytes written).
+
+**accept ( addr count -- n )**
+
+A Forth vector: `:^ accept 0 read 0 max ;`. Calls `read` on fd 0
+(stdin), then clamps the result with `0 max` so EOF or error returns 0
+instead of a negative value. Being a vector (`:^`), it can be
+redirected for custom input sources.
 
 ### The _semi_exec Allot Bug
 
@@ -3015,8 +3020,9 @@ The Forth REPL (`_top`) is the only REPL. It matches i386's design:
 - **`prompt`**: prints ` N; ` where N is the stack depth
 
 `_top` uses a `BEGIN ... AGAIN` infinite loop with `accept`. The
-`accept` primitive reads byte-by-byte until newline, EOF, or count
-limit (4096). On EOF, `_top` calls `exit`.
+`accept` word does a bulk `0 read` (via the `syscall` word), reading
+whatever data is available from stdin in one call. On EOF or error,
+`accept` returns 0 (clamped by `0 max`), and `_top` calls `exit`.
 
 Errors are caught by `catch`. If a throw occurs, `_recover` prints the
 error and resumes the loop.
@@ -3212,24 +3218,23 @@ token as a literal. At runtime, the stack holds `eval.`'s xt, which
 `catch` consumes and calls. The effect: `eval.` runs under `catch`'s
 exception protection, with the call stack properly framed.
 
-### Line-by-line accept
+### Bulk-read accept
 
-The `accept` primitive reads byte-by-byte until it encounters a newline
-(LF=10), EOF (sys_read returns ≤0), or reaches the count limit. This
-replaced the original bulk-read `sys_read(0, addr, count)` which on
-piped input would read all available data at once, making multi-line
-interaction impossible.
+The byte-at-a-time assembly `accept` has been removed. The current
+`accept` is a shared Forth vector:
 
-With line-by-line accept, test inputs use simple `printf '%s\n'` to
-send multiple lines. Each `accept` call returns one line:
-
-```makefile
-result=$$(printf '%s\n' 'line one ;' 'line two ;' | $(FF) 2>/dev/null)
+```forth
+:^ accept  0 read 0 max ;
 ```
 
-The earlier experiments used an 80-byte padding trick (`printf '%-80s'`)
-to force each "line" to consume exactly one accept call. That trick is
-no longer necessary but some experiments still use it.
+This does a single bulk `read` on fd 0 (stdin). On piped input, all
+available data lands in `tib` at once and the compiler processes it in
+sequence — multi-line piped input works fine when there are no errors.
+
+The trade-off: after an error or SEGV mid-stream, any remaining piped
+input is lost (there is no per-line buffering to resume from). The
+80-byte padding trick from older experiments (forcing each line to fill
+exactly one `accept` call) is irrelevant with the bulk-read design.
 
 ### `-f` file `anon` reset (historical)
 

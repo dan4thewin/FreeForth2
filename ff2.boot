@@ -57,11 +57,6 @@
 : -rot` swap`
 : >rswapr>` $178749, s08. ; \ 498717(xchg [r15],rdx)
 
-\ --------------------------------------------------------------------
-\ I/O -- stdout, write, type needed before dictionary listing
-: write ( addr # fd -- n ) >rswapr> 3 1 syscall ;
-: type 1 write drop ;
-
 \ division -- >S0 forces rbx=TOS, rdx=NOS before hardcoded register ops
 \ /%` ( a b -- a%b a/b )
 \ 4889D0(mov rax,rdx)4899(cqo)48F7FB(idiv rbx)4889C3(mov rbx,rax)
@@ -136,6 +131,9 @@
 : >r` dup>r` drop` ;
 : rot` >rswapr>` swap` ;
 : 2xchg` swap` >rswapr>` swap` ;
+
+\ I/O -- write needed before dictionary listing
+: write ( addr # fd -- n ) >rswapr> 3 [64] [IF] 1 [ELSE] 4 [THEN] syscall ;
 
 \ compilation helpers
 : here` over` ext $EB89, s01 ; \ 4889EB(mov rbx,rbp)
@@ -493,8 +491,8 @@ cell 4 - 0= drop BOOL constant [32]`
 0 constant stdin
 1 constant stdout
 2 constant stderr
+: type stdout write drop ;
 
-: key tib 1 under accept drop c@ ; \ -- c
 : space 32
 :^ putc : emit tib 2dupc! swap 1_ type ; [THEN]
 :^ cr ."^J" ; \ print newline
@@ -751,6 +749,11 @@ xhidepvt` ' alias hidepvt`
 \ eval. -- evaluate with auto-execution
 :. eval. >in@ tp@ 2>r over+ tp! >in! compiler _auto 2r> tp! >in! ;
 
+\ --------------------------------------------------------------------
+\ Linux platform -- syscalls, SEGV, env, file loading
+fflin2.boot
+:^ accept 0 read 0 max ;
+: key tib 1 under accept drop c@ ; \ -- c
 
 \ --------------------------------------------------------------------
 \ REPL coroutine -- _exec/_top form cross-word START...UNTIL loop
@@ -764,6 +767,15 @@ xhidepvt` ' alias hidepvt`
 :^ _top pvt ui 0 noauto! tib 4096 under accept 0- 0= UNTIL
 : bye` ;` cr 0 exit ;
 :^ doargv argc 1- 0; 1 _argv swap 2+ _argv over- tuck tib place swap _eval ;
-fflin2.boot
+
+\ --------------------------------------------------------------------
+\ turnkey support (-f` loads file, finds "main", rewrites vectors)
+\ _postboot runs doargv + hidepvt; nop'd by -f` via n^ for turnkey images
+variable mainxt pvt
+:. _main mainxt @ execute 0 exit
+:. _ffhide "FFHIDE" getenv 0- 0<> IF swap c@ '0'- 0= IF hide off THEN THEN 2drop ;
+:^ _postboot _ffhide doargv hidepvt` ;
+: -f` needs` "main" find 0- 0= drop IF mainxt ! _main ' _top !^ doargv n^ ELSE drop THEN ;
+: quit _top ^^ _top ;
 :. _boot ossetup _postboot _top ;
 _boot ' _bootxt! _boot ' >r ;

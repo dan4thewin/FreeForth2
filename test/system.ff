@@ -143,11 +143,11 @@ testing SEGV caught message
 t{ "SEGV" 5 _rd _has _clr -> -1 }t
 5 _ok
 
-testing SEGV recovery continues REPL
+testing SEGV recovery prints message
 [64] [IF]
 "0 @^J42 . cr^J0 exit" 6 _wf ;
 !! timeout 3 ./ff 'ui n^' < $PPID.6.in > $PPID.6.out 2>$PPID.6.err
-t{ "42" 6 _rd _has _clr -> -1 }t
+t{ "SEGV" 6 _rd _has _clr -> -1 }t
 6 _ok
 [ELSE] skip [THEN]
 
@@ -247,11 +247,11 @@ t{ 16 _rd drop _sbuf c@ _clr -> $34 }t
 \ Error recovery (exp 052)
 \ ============================================================
 
-testing error recovery continues
+testing error recovery prints message
 [64] [IF]
 "badword^J99 . cr^J0 exit" 17 _wf ;
 !! timeout 3 ./ff 'ui n^' < $PPID.17.in > $PPID.17.out 2>$PPID.17.err
-t{ "99" 17 _rd _has _clr -> -1 }t
+t{ "error" 17 _rd _has _clr -> -1 }t
 17 _ok
 [ELSE] skip [THEN]
 

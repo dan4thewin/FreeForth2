@@ -2,7 +2,13 @@
 \ All words match x86-64 stack effects; only syscall numbers differ.
 \ Loaded at boot via ^V from fflin2.boot. Also loadable via needs.
 
-\ File I/O (read/openr/openw/openw0/close are in fflinio.asm)
+\ File I/O (write/type in ff2.boot; accept in ff2.boot; syscall/sigrestorer in fflinio.asm)
+: exit       ( n -- )  1 1 syscall ;
+: read       ( addr # fd -- n ) >r swap r> 3 3 syscall ;
+: openr      ( addr # -- fd ) zt $1A4  0 rot 3 5 syscall ;
+: openw      ( addr # -- fd ) zt $1A4 $142 rot 3 5 syscall ;
+: openw0     ( addr # -- fd ) zt $1A4 $342 rot 3 5 syscall ;
+: close      ( fd -- n )  1 6 syscall ;
 : _lseek     ( whence offset fd -- pos )  3 19 syscall ;
 : _fstat     ( buf fd -- ior )  2 197 syscall ;
 : _stat      ( buf addr -- ior )  2 195 syscall ;
@@ -32,6 +38,7 @@
 : wait4      ( rusage options status pid -- pid )  4 114 syscall ;
 : kill       ( sig pid -- ior )  2 37 syscall ;
 : exit_group ( status -- )  1 252 syscall ;
+: rt_sigaction ( sigsetsize oldact act signum -- ior )  4 174 syscall ;
 
 \ Directory / filesystem
 : getcwd     ( size buf -- addr )  2 183 syscall ;

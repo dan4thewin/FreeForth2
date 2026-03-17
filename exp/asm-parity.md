@@ -20,15 +20,17 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 | `under`` | asm | forth | forth/forth | 1 | **done** — Forth in [ELSE], shared s01. |
 | `move` | asm | forth→**forth** | forth/forth | 2 | **done** — Forth with std/place/cld, removed cmove> |
 | `cmove>` | — | ~~asm~~ | removed | 2 | **done** — replaced by move's backward path |
-| `read` | asm | forth | forth/forth | 3 | pending — move to fflin2.boot |
-| `write` | asm | forth | forth/forth | 3 | pending — move to fflin2.boot |
-| `close` | asm | forth | forth/forth | 3 | pending — move to fflin2.boot |
-| `openr` | asm | forth | forth/forth | 3 | pending — move to fflin2.boot |
-| `openw` | asm | forth | forth/forth | 3 | pending — move to fflin2.boot |
-| `openw0` | asm | forth | forth/forth | 3 | pending — move to fflin2.boot |
-| `type` | asm | forth | forth/forth | 3 | pending — shared once write is Forth |
+| `read` | ~~asm~~ | forth | forth/forth | 3 | **done** — in syscalls.ff (both arches) |
+| `write` | ~~asm~~ | forth | forth/forth | 3 | **done** — shared in ff2.boot |
+| `close` | ~~asm~~ | forth | forth/forth | 3 | **done** — in syscalls.ff (both arches) |
+| `openr` | ~~asm~~ | forth | forth/forth | 3 | **done** — in syscalls.ff (both arches) |
+| `openw` | ~~asm~~ | forth | forth/forth | 3 | **done** — in syscalls.ff (both arches) |
+| `openw0` | ~~asm~~ | forth | forth/forth | 3 | **done** — in syscalls.ff (both arches) |
+| `type` | ~~asm~~ | forth | forth/forth | 3 | **done** — shared in ff2.boot |
+| `exit` | ~~asm~~ | asm | forth/asm | 3 | **done** — i386 in syscalls.ff, x64 stays asm |
+| `accept` | ~~asm~~ | ~~asm~~ | forth/forth | 3 | **done** — shared `:^ accept 0 read 0 max ;` |
 | `search` | asm→forth | forth | forth/forth | 4 | ✓ done — pure Forth with >>r locals, $- comparison |
-| `$-.` | asm | — | forth/forth | 5 | pending — DG exercise |
+| `$-.` | asm | — | forth/forth | 5 | pending — same as ff |
 | `,1` | forth | asm→**forth** | forth/forth | 2 | **done** — self-bootstrap chain |
 | `,2` | forth | asm→**forth** | forth/forth | 2 | **done** — uses ,4 |
 | `,3` | forth | asm→**forth** | forth/forth | 2 | **done** — uses ,4 |
@@ -111,3 +113,18 @@ not assembly.
   START/ENTER/WHILE/REPEAT loop, BREAK on match. Returns (@ # ; z?)
   via boolean→flags conversion. Removed asm search from ff.asm.
   Added to ff2.boot after zlen (shared, both arches). 131 PASSED.
+- **Tier 3 (I/O parity)**: Removed 10 assembly I/O words from
+  fflinio.asm (exit, read, write, close, openr, openw, openw0, type,
+  stdin, stdout) and 48-line _accept from ff64.asm.  Replacements:
+  `write` shared in ff2.boot with `[64] [IF] 1 [ELSE] 4 [THEN]`
+  syscall number; `type` = `stdout write drop ;` (after stdout const);
+  `exit` in lib/x86/syscalls.ff; `read`/`open*`/`close` in both
+  syscalls.ff; `accept` = `:^ accept 0 read 0 max ;` (shared Forth,
+  vector for override).  Structural: moved `^Vfflin2.boot` before REPL
+  in ff2.boot (unlocks Forth exit/read before bye); turnkey section
+  moved from fflin2.boot to ff2.boot (depends on _top/doargv).
+  Rewrote ff.asm `dotstr` to inline `int $80` sys_write (no _type
+  dependency). Removed ff.asm dead debugger REPL (46 lines).  Unified
+  SEGV handler with `cell*` arithmetic (6 shared lines).  fflinio.asm
+  reduced from 160 to ~100 lines (accept, syscall, sigrestorer, dlopen).
+  151 PASSED.

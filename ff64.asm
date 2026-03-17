@@ -1691,7 +1691,7 @@ _throw:
         ret
 
 ;; =====================================================================
-;; I/O — Forth-callable read/write/accept
+;; I/O — Forth-callable read/write
 ;; =====================================================================
 
 ;; find ( addr len -- addr len | xt 0 )
@@ -1708,55 +1708,6 @@ _find_forth:
         ret
 .find_not_found:
         ret
-
-;; accept ( addr count -- nread ) read from stdin, one line at a time
-;; Reads byte-by-byte until newline, EOF, or count reached.
-_accept:
-        push rax
-        push rdi
-        push rsi
-        push rcx
-        mov rsi, rdx            ; rsi = buffer addr (NOS)
-        mov rcx, rbx            ; rcx = max count (TOS)
-        xor r8d, r8d            ; r8 = bytes read so far
-.loop:  cmp r8, rcx
-        jge .done               ; reached max count
-        lea rdi, [rsi + r8]     ; read position
-        push rcx
-        push rsi
-        push r8
-        xor eax, eax            ; sys_read
-        xor edi, edi            ; fd=0 (stdin)
-        lea rsi, [rsp-1]        ; temp stack byte
-        mov edx, 1              ; read 1 byte
-        push rax                ; allocate stack byte
-        lea rsi, [rsp]
-        syscall
-        cmp rax, 1
-        jne .eof_pop
-        movzx eax, byte [rsp]   ; get the byte
-        add rsp, 8              ; free stack byte
-        pop r8
-        pop rsi
-        pop rcx
-        mov byte [rsi + r8], al ; store byte
-        inc r8
-        cmp al, 10              ; newline?
-        jne .loop
-.done:  mov rbx, r8             ; TOS = bytes read
-        mov rdx, [r15]          ; NOS = item below addr
-        add r15, 8              ; pop addr
-        pop rcx
-        pop rsi
-        pop rdi
-        pop rax
-        ret
-.eof_pop:
-        add rsp, 8              ; free stack byte
-        pop r8
-        pop rsi
-        pop rcx
-        jmp .done
 
 ;; syscall ( args... #args syscall# -- ior )
 ;; Generic Linux syscall dispatcher. Same Forth interface as i386 fflinio.asm.
@@ -2078,7 +2029,6 @@ WORD64 "compiler", _compiler, 0, 8
 WORD64 "catch", _catch, 0, 5
 WORD64 "throw", _throw, 0, 5
 WORD64 "find", _find_forth, 0, 4
-WORD64 "accept", _accept, 0, 6
 WORD64 "syscall", _syscall, 0, 7
 WORD64 "#lib", _dllib, 0, 4
 WORD64 "#fun", _dlfun, 0, 4

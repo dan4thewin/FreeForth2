@@ -14,33 +14,23 @@ dlsetup
 : libc_ libc@ #fun #call ; \ runtime version, turnkey safe
 
 \ --------------------------------------------------------------------
-\ SEGV handler (raw rt_sigaction, no libc)
-
-[64] [IF]
-create _ksa pvt 32 allot \ handler(8) flags(8) restorer(8) mask(8)
-:. SEGVhndlr !"SEGV caught" ;
-SEGVhndlr ' _ksa !
-$14000004 _ksa 8+ !
-sigrestorer _ksa 16+ !
-0 _ksa 24+ !
-:. SEGVthrow 8 0 _ksa 11 4 13 syscall drop ;
-[ELSE]
-create _ksa pvt 20 allot _ksa 20 0 fill \ handler(4) flags(4) restorer(4) mask(8)
-:. SEGVhndlr !"SEGV caught" ;
-SEGVhndlr ' _ksa !
-$44000000 _ksa 4+ !
-sigrestorer _ksa 8+ !
-:. SEGVthrow 8 0 _ksa 11 4 174 syscall drop ;
-[THEN]
-SEGVthrow ;
-
-\ --------------------------------------------------------------------
-\ syscall wrappers (i386 read/openr/openw/openw0/close in fflinio.asm)
+\ syscall wrappers (bifurcated by arch for syscall numbers)
 
 "syscalls.ff" marker
 [64] [IF] lib/x86-64/syscalls.ff
 [ELSE] lib/x86/syscalls.ff
 [THEN]
+
+\ --------------------------------------------------------------------
+\ SEGV handler (rt_sigaction struct: handler flags restorer mask)
+
+create _ksa pvt 3 cell* 8+ dup allot _ksa swap 0 fill
+:. SEGVhndlr !"SEGV caught" ;
+SEGVhndlr ' _ksa !
+[64] [IF] $14000004 [ELSE] $44000000 [THEN] _ksa cell+ !
+sigrestorer _ksa 2 cell* + !
+:. SEGVthrow 8 0 _ksa 11 rt_sigaction drop ;
+SEGVthrow ;
 
 here 256 dup allot over "/proc/self/exe" drop readlink dup 256- allot swap
 : exe lit lit ;
@@ -83,17 +73,6 @@ here 256 dup allot over "/proc/self/exe" drop readlink dup 256- allot swap
 : -d` "debug.ff" needexec ;
 : +longconds` "longconds.ff" needexec ;
 [THEN]
-
-\ --------------------------------------------------------------------
-\ turnkey support (-f` loads file, finds "main", rewrites vectors)
-\ _postboot runs doargv + hidepvt; nop'd by -f` via n^ for turnkey images
-
-variable mainxt pvt
-:. _main mainxt @ execute 0 exit
-:. _ffhide "FFHIDE" getenv 0- 0<> IF swap c@ '0'- 0= IF hide off THEN THEN 2drop ;
-:^ _postboot _ffhide doargv hidepvt` ;
-: -f` needs` "main" find 0- 0= drop IF mainxt ! _main ' _top !^ doargv n^ ELSE drop THEN ;
-: quit _top ^^ _top ;
 
 \ --------------------------------------------------------------------
 \ boot hook (dlopen + SEGV; wired to ossetup for turnkey re-entry)

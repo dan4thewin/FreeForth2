@@ -37,6 +37,7 @@
 : wait4      ( rusage options status pid -- pid )  4 61 syscall ;
 : kill       ( sig pid -- ior )  2 62 syscall ;
 : exit_group ( status -- )  1 231 syscall ;
+: rt_sigaction ( sigsetsize oldact act signum -- ior )  4 13 syscall ;
 
 \ Directory / filesystem
 : getcwd     ( size buf -- addr )  2 79 syscall ;

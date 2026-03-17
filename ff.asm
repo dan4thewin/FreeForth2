@@ -689,9 +689,22 @@ litstr:                         ; -- @ # ; _quote compiles call litstr
         call skipstr
         jmp ecx                 ; resume execution after string
 dotstr:                         ; -- ; _dotquote compiles call dotstr
-        call skipstr
-        push ecx                ; push return address
-        jmp _type
+        pop esi                 ; esi = return address = count byte
+        push edx                ; save NOS
+        push ebx                ; save TOS
+        push ebp                ; save compilation pointer
+        push eax                ; save data stack pointer
+        movzx edx,byte[esi]     ; edx = string length
+        lea ecx,[esi+1]         ; ecx = string data
+        lea edi,[ecx+edx+1]     ; edi = resume address (after string+NUL)
+        mov eax,4               ; sys_write
+        mov ebx,1               ; fd = stdout
+        int $80
+        pop eax                 ; restore data stack pointer
+        pop ebp                 ; restore compilation pointer
+        pop ebx                 ; restore TOS
+        pop edx                 ; restore NOS
+        jmp edi                 ; resume execution after string
 litquote:                       ; @ # -- ; embed a string literal
         cmp byte[edx],','       ; initial comma
         jz memcomma
@@ -1199,53 +1212,7 @@ _start: ;; relocate headers and boot source: H->[headers]tib:[boot]<-tp
         xor ebx,ebx
         xor edx,edx
         ;; compile boot source:
-if 1    ;; 0 allows ff.boot debugging, 1 saves 160 bytes
         jmp _compiler
-else    ;; this allows debugging of boot source:
-        ;; refs: _compiler _catch _type dotstr _read
-        ;; refs: tin tib anon SC eob tp
-.0:     DUP1                    ; tin and tp initially on both ends of boot
-        mov ebx,_compiler
-        call _catch             ; first call returns on boot compilation error
-        or ebx,ebx              ; -- 0 | @ # error ; counted string address
-        jz .3                   ; error=0 when no error
-        mov [eax],ebx           ;  -- error * *
-        mov edx,[tin]           ; look back,
-        lea ebx,[edx-1]
-.1:     dec edx
-        cmp edx,tib             ; for tib address,
-        jz .2
-        cmp byte[edx-1],10      ; or for newline.
-        jnz .1
-.2:     sub ebx,edx             ; -- error @ #
-        call _type              ; -- error ; display error context
-        call dotstr
-        CDB " <-Error: "        ; point on word which triggered the error
-        xchg eax,esp            ; 94
-        push edx                ; 52
-        xchg eax,esp            ; 94
-        lea edx,[ebx+1]
-        movzx ebx,byte[ebx]     ; -- error+1 #
-        call _type              ; -- ; display error message
-        mov [anon],ebp          ; reset anon
-        mov byte[SC],0          ; reset SC
-.3:     call dotstr
-        CDB 10,"Ok> "           ; display prompt (lowercas o in boot)
-        DUP2                    ; accept user input into tib:
-        mov edx,tib
-        mov [tin],edx           ; setup >in
-        mov ebx,eob-tib         ; -- tib eob-tib
-        call _accept            ; -- n ; number of bytes accepted
-        or ebx,ebx              ; exit if input empty
-        jz @f
-        add ebx,tib
-        mov [tp],ebx            ; setup tp
-        DROP1                   ; --
-        jmp .0
-@@:     call dotstr
-        CDB "^J"                ; cleanly,
-        ret                     ; return to shell.
-end if
 
 ;;; ----------------------------------------------------------------------
 ;;; include Operating-System interface

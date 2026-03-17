@@ -2,70 +2,8 @@
 ;;; $Id: fflinio.asm,v 1.6 2009-09-03 20:47:46 lavarec Exp $
 
 ;;; --------------------------------------------------
-;;; FreeForth interface to Linux syscall and file-I/O
-
-CODE "exit",_exit               ; n -- ; 1 1 syscall ;
-        mov ecx,1
-        jmp _sys1
-
-CODE "close",_close             ; fd -- ? ; 1 6 syscall ;
-        mov ecx,6
-_sys1:  DUP2
-        mov edx,1
-        mov ebx,ecx
-        jmp _syscall
-
-;;; (see man 2 open, values taken from /usr/include/bits/fcntl.h):
-;;; . O_RDONLY=0, O_WRONLY=1, O_RDWR=2 (these are the main flags)
-;;; . O_CREAT=$40, O_EXCL=$80, O_NOCTTY=$100, O_TRUNC=$200, O_APPEND=$400,
-;;;   O_NONBLOCK=O_NDELAY=$800, O_SYNC=O_FSYNC=$1000, O_ASYNC=$2000
-;;; "mode" specifies the "rwxrwxrwx" user/group/other rights on the file,
-;;; they are conveniently specified in octal (see man 2 open), usually "&644"
-
-;;; openr opens existing file for read-only
-CODE "openr",_openr             ; @ # -- fd ; zt &644 r/o rot 3 5 syscall ;
-        xor ecx,ecx             ; $00(O_RDONLY)
-        jmp _open               ; Note: &644 not needed, but code factorized
-
-;;; openw0 opens (existing if: truncates else: creates) file for read-write
-CODE "openw0",_openw0           ; @ # -- fd ; zt &644 rw/cre rot 3 5 syscall ;
-        mov ecx,$342            ; $200(TRUNC)+$100(NOCTTY)+$40(CREAT)+$02(RDWR)
-        jmp _open
-
-;;; openw opens (and creates if non-existing) file for read-write
-CODE "openw",_openw             ; @ # -- fd ; zt &644 rw/cre rot 3 5 syscall ;
-        mov ecx,$142            ; $100(O_NOCTTY)+$40(O_CREAT)+$02(O_RDWR)
-_open:  mov byte[edx+ebx],0     ; append zero-terminator (another whitespace)
-        xchg eax,esp
-        pushd 420               ; mode=420=&644
-        push ecx                ; flags
-        push edx                ; -- mode flags zt
-        xchg eax,esp
-        mov edx,3
-        mov ebx,5
-        jmp _syscall
-
-CSTE "stdin",0
-VECT "accept",_accept           ; @ # -- n ; 0 read ;
-        DUP1 0                  ; stdin=0
-;;;     jmp _read
-CODE "read",_read               ; @ # fd -- n ; >rswapr> 3 3 syscall ;
-        mov ecx,3
-        jmp _sys3
-
-CSTE "stdout",1
-VECT "type",_type               ; @ # -- ; 1 write drop ;
-        DUP1 1                  ; stdout=1
-        call _write
-        jmp drop1
-
-CODE "write",_write             ; @ # fd -- n ; >rswapr> 3 4 syscall ;
-        mov ecx,4
-_sys3:  xchg [eax],edx          ; -- # @ fd
-        DUP2
-        mov edx,3
-        mov ebx,ecx
-;;;     jmp _syscall
+;;; FreeForth interface to Linux syscall
+;;; exit/accept now in Forth (syscalls.ff / ff2.boot)
 
 CODE "syscall",_syscall         ; args arg# syscall# -- ior
         ;; syscalls can take a variable number of arguments, from 0 to 6.

@@ -13773,3 +13773,176 @@ the macro body), not about the runtime payload.
 ### Test results
 
 - `make testall`: 131 PASSED, 1 SKIPPED
+
+---
+
+## Experiment 158: Tier 3 — I/O parity milestone
+
+### Goal
+
+Complete tier 3 of the asm-parity effort: move all I/O words from i386
+assembly (fflinio.asm) to shared Forth, matching the x64 architecture.
+This is the session that closes the I/O chapter — fflinio.asm started as
+Lavarenne's 160-line i386 Linux I/O layer and is reduced to its
+irreducible core: `syscall`, `sigrestorer`, `accept`, and the dlopen block.
+
+### Context
+
+Tiers 1 and 2 moved stack operations and SWAPbit helpers to shared Forth.
+Tier 3 targets the OS interface: `read`, `write`, `close`, `openr`,
+`openw`, `openw0`, `type`, `stdin`, `stdout`, `exit`, and `accept`.
+
+On the x64 side, these were already Forth (via syscalls.ff and ff64.asm).
+On i386, they were assembly CODE/VECT/CSTE entries in fflinio.asm. The
+strategy: add i386 equivalents to lib/x86/syscalls.ff and shared
+definitions in ff2.boot, then remove the assembly.
+
+### Actions
+
+**Phase 1: write and type (shared Forth)**
+
+Moved `write` from the x64-only block to shared code in ff2.boot:
+```
+[64] [IF] 1 [ELSE] 4 [THEN] \ sys_write number
+: write ( @ # fd -- n ) >r swap r> 3 rot syscall ;
+```
+The syscall number bifurcates (1 on x64, 4 on i386) but the definition
+is shared. Later, `type` was moved after the `stdout` constant:
+`: type stdout write drop ;` — cleaner than inlining `1 write drop`.
+
+**Phase 2: syscalls.ff and the SEGV handler**
+
+Added `read`, `openr`, `openw`, `openw0`, `close`, and `rt_sigaction`
+to lib/x86/syscalls.ff (matching x64 versions with i386 syscall numbers).
+Moved the `^Vsyscalls.ff` include in fflin2.boot to before the SEGV
+handler, so `rt_sigaction` is a named word instead of a raw syscall
+number. Unified the SEGV handler with `cell*` arithmetic — 14 bifurcated
+lines became 6 shared lines, with only the flags value needing `[64] [IF]`.
+
+**Phase 3: ff.asm cleanup**
+
+The ff.asm `dotstr` routine (runtime for `."..."`) did `jmp _type`,
+creating a dependency on the assembly `_type` label. Rewrote `dotstr`
+to inline `int $80` sys_write directly, matching ff64's `_dotstr_rt`
+pattern: save registers, raw syscall, restore, jump past string.
+
+Removed the dead debugger REPL in ff.asm — 46 lines guarded by
+`if 1...else...end if`, never compiled in production. DG confirmed:
+"I've never used it (though maybe I should have)." This eliminated
+the last references to `_type` and `_accept` labels in ff.asm.
+
+**Phase 4: structural reorganization**
+
+DG asked: "can we move the fflin2.boot include before the REPL section?"
+
+This was the key insight. Previously, `^Vfflin2.boot` loaded at line 766
+of ff2.boot — after the REPL (`_top`, `bye`, `doargv`). This forced
+`exit` to remain in assembly because `bye` (line 764) uses `exit` and
+syscalls.ff hadn't loaded yet.
+
+The reorganization:
+1. Moved `^Vfflin2.boot` from after the REPL to before it (after `eval.`)
+2. Extracted the turnkey section (`_postboot`, `-f`, `quit`, `mainxt`,
+   `_ffhide`, `_main`) from fflin2.boot into ff2.boot — these depend on
+   `_top`/`doargv` which are in the REPL section
+3. fflin2.boot became pure OS setup: syscalls, SEGV, env, file loading,
+   boot hook
+
+With syscalls.ff loading before `bye`, `exit` could move to Forth
+(`: exit 1 1 syscall ;` in lib/x86/syscalls.ff).
+
+**Phase 5: accept — from assembly to Forth**
+
+DG noted that `key` isn't used until lib/console.ff, so it could move
+after the fflin2.boot include. And about the x64 assembly line editor:
+"I can think of no reason to have editor in asm — if I wanted that
+functionality, I'd ultimately want it written in Forth. fwiw, I usually
+use rlwrap."
+
+This unlocked removing `accept` from both arches:
+- Removed 48-line byte-at-a-time `_accept` from ff64.asm + WORD64 entry
+- Removed `accept` + `_read_asm` from fflinio.asm
+- Added shared Forth: `:^ accept 0 read 0 max ;`
+
+The `0 max` clamp handles the case where stdin is closed (the wrapper
+does `close(STDIN_FILENO)` after processing `-f` files). Without it,
+`read` returns -EBADF, which is nonzero, causing `_top`'s UNTIL loop
+to spin forever. The old x64 assembly treated read errors as EOF by
+returning 0; the Forth version needs the explicit clamp.
+
+**Phase 6: test updates**
+
+The behavioral change from byte-at-a-time to bulk `accept` means that
+after an error/SEGV, remaining piped input is lost (the first `accept`
+consumed all bytes; after error recovery, `accept` finds the pipe empty).
+DG's policy: "SEGV should be a cold start (no trailing input processed)."
+
+Updated tests to match:
+- test/system.ff tests 6 and 17: now verify error message appears,
+  not that subsequent piped lines execute
+- exp/064-segv: test-segv-continue checks for SEGV message, not "42"
+- exp/052-repl-forth: error-recovery/prompt/error-cleanup tests updated
+  for bulk-read semantics
+
+### Reasoning
+
+**Why this is a milestone.** fflinio.asm was the i386's bridge to Linux.
+After tier 3, its remaining contents are genuinely assembly-mandatory:
+- `accept` — VECT with `_read_asm` fallthrough (could become Forth but
+  boot order prevents it without further restructuring... actually, this
+  was resolved — accept is now Forth)
+- `syscall` — register shuffling + `int $80`, impossible in Forth
+- `sigrestorer` — kernel signal return callback, must be asm
+- dlopen block — C ABI interop (`call dlopen/dlsym/dlerror`)
+
+Everything that CAN be Forth IS Forth. The OS interface is now a thin
+assembly layer (syscall dispatch + signal handling + C FFI) with
+everything else expressed in the language itself. This is Lavarenne's
+philosophy made real on both architectures.
+
+**The structural insight.** Moving `^Vfflin2.boot` before the REPL was
+the domino that unlocked everything. It resolved the boot-order chicken-
+and-egg: exit/read needed for bye/accept, but only available after the
+include. DG's question — "can we move the fflin2.boot include before
+the REPL section?" — cut the Gordian knot. The turnkey section naturally
+separated out (it's REPL-coupled, not OS-coupled).
+
+**accept design choice.** The old x64 `_accept` was a 48-line assembly
+routine reading one byte at a time with backspace handling. DG's
+decision to remove it reflects a preference for Forth over assembly and
+for external tools (`rlwrap`) over built-in line editing. The bulk-read
+Forth `accept` is simpler, matches i386 behavior, and can be overridden
+(it's a `:^` vector) if a Forth line editor is ever desired.
+
+### Files changed
+
+- **fflinio.asm**: Removed exit (5 lines), accept+_read_asm (15 lines),
+  read/write/close/openr/openw/openw0 (CODE entries), type/stdin/stdout
+  (VECT/CSTE entries). Down from 160 to ~100 lines.
+- **ff64.asm**: Removed _accept (48 lines) + WORD64 "accept" entry.
+  Updated section comment.
+- **ff.asm**: Rewrote dotstr (inline sys_write, 15 lines replacing 9).
+  Removed dead debugger REPL (46 lines).
+- **ff2.boot**: Moved ^Vfflin2.boot before REPL. Added shared `write`,
+  `type`, `accept`, `key` at appropriate points. Turnkey section
+  (mainxt, _main, _ffhide, _postboot, -f, quit) moved here from
+  fflin2.boot.
+- **fflin2.boot**: Removed turnkey section (16 lines). Moved syscalls.ff
+  include before SEGV handler. Unified SEGV handler with cell* (14→6
+  lines). Now pure OS setup.
+- **lib/x86/syscalls.ff**: Added exit, read, openr, openw, openw0,
+  close, rt_sigaction.
+- **lib/x86-64/syscalls.ff**: Added rt_sigaction.
+- **test/system.ff**: Tests 6, 17 updated for bulk-read semantics.
+- **exp/052-repl-forth/Makefile**: 3 tests updated for bulk-read.
+- **exp/064-segv/Makefile**: test-segv-continue updated.
+- **exp/asm-parity.md**: Tier 3 rows marked done, changelog added.
+
+### Binary size delta
+
+- ff.o: 22052 → 21996 bytes (−56)
+- ff64.o: 92576 → 92448 bytes (−128)
+
+### Test results
+
+- `make testall`: 151 PASSED, 1 SKIPPED (073-turnkey)

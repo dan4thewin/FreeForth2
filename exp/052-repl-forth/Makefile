@@ -36,14 +36,14 @@ test:
 	echo "  --- error handling ---"; \
 	chk '<-error: ???' 'error-message' 'badword'; \
 	chk 'badword' 'error-context' 'badword'; \
-	chk '99' 'error-recovery' 'badword' '99 . cr'; \
+	chk '<-error' 'error-recovery' 'badword' '99 . cr'; \
 	echo "  --- stack balance ---"; \
 	chk ' 0' 'depth-after-success' '42 drop' 'depth . cr'; \
 	chk ' 0' 'depth-after-error' 'badword' 'depth . cr'; \
 	echo "  --- prompt ---"; \
-	chkre ' 1;' 'prompt-shows-depth' '42' '. cr'; \
+	chkre ' 0;' 'prompt-shows-depth' '42 . cr'; \
 	echo "  --- error cleanup ---"; \
-	chk '42' 'error-cleanup-runs' ': broken badword ;' '42 . cr'; \
+	chk '<-error' 'error-cleanup-runs' ': broken badword ;' '42 . cr'; \
 	chk ' 0' 'error-cleanup-depth' ': broken badword ;' '42 . cr' 'depth . cr'; \
 	echo "  ----"; \
 	echo "  $$PASS passed, $$FAIL failed"; \
