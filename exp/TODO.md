@@ -34,11 +34,9 @@ Last verified: 131 PASSED, 1 SKIPPED (`make testall`).
   (main-based) vs crashing (REPL) paths. Currently SKIPPED in
   `exp/Makefile`. **Blocks treeshake.**
 
-- **mmap-wrapper-fail**: `test/mmap.ff` fails when run via `ff64-`
-  wrapper but passes via `./ff64 -f`. Test 12 (`cmp` of written file)
-  finds an empty file. Likely the wrapper's closed-stdin or `-f`
-  interposition affects file I/O. Works on `static-elf64` branch.
-  Needs investigation.
+- ~~**mmap-wrapper-fail**~~: FIXED — test64 was using `ff64-` wrapper
+  unnecessarily. Wrapper is for exp Makefiles (bash-authored Forth),
+  not root test targets that pass pre-written .ff files.
 
 - ~~**hang-110-112**~~: FIXED — exp/110's `syscalls.ff` collided with
   `lib/x86-64/syscalls.ff` via `-f` path search. Fixed Makefile to use
