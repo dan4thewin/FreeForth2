@@ -83,14 +83,14 @@ test1:
 		timeout 10 $(FF) $(ARGS) -f $$d | tail -1; let e+=$$?; \
 	done; exit $$e
 
-test64: ff64-
+test64: ff64
 	@set -o pipefail; e=0; \
 	skip="core1.ff core2.ff"; \
 	for d in test/*.ff; do \
 		b=$$(basename $$d); \
 		echo -n $$d; printf %$$((20-$${#d}))s; \
 		case " $$skip " in *" $$b "*) echo "SKIPPED"; continue;; esac; \
-		r=$$(timeout 10 ./ff64- $$d 2>&1 | tail -1); \
+		r=$$(timeout 10 ./ff64 -f $$d </dev/null 2>&1 | tail -1); \
 		echo "$$r"; \
 		echo "$$r" | grep -q PASSED || echo "$$r" | grep -q SKIPPED || let e+=1; \
 	done; exit $$e
