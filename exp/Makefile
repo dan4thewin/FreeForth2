@@ -1,5 +1,4 @@
-EXPERIMENTS = 023-forthmacros64 \
-              024-moremacros64 025-loadvariants64 \
+EXPERIMENTS = 025-loadvariants64 \
               026-lit64 027-compilemacros64 \
               028-stackdivmod64 \
               029-placeshifts64 \
