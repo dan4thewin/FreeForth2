@@ -269,10 +269,10 @@ variable noauto pvt
 \ --------------------------------------------------------------------
 \ FLAGS-based conditionals
 \ 0-` emits test TOS,TOS; SWAPbit via s09
+variable ?#
 [64] [IF]
 : 0-` $DB8548, s09. ; \ 4885DB(test rbx,rbx)
 [ELSE]
-variable ?#
 : 0-` $DB09, s09 ; \ 09DB(or ebx,ebx)
 [THEN]
 \ helpers -- set FLAGS from known values

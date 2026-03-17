@@ -27,7 +27,7 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 | `openw` | ~~asm~~ | forth | forth/forth | 3 | **done** — in syscalls.ff (both arches) |
 | `openw0` | ~~asm~~ | forth | forth/forth | 3 | **done** — in syscalls.ff (both arches) |
 | `type` | ~~asm~~ | forth | forth/forth | 3 | **done** — shared in ff2.boot |
-| `exit` | ~~asm~~ | asm | forth/asm | 3 | **done** — i386 in syscalls.ff, x64 stays asm |
+| `exit` | ~~asm~~ forth | ~~asm~~ forth | forth/forth | 3 | **done** — shared via syscalls.ff (both arches) |
 | `accept` | ~~asm~~ | ~~asm~~ | forth/forth | 3 | **done** — shared `:^ accept 0 read 0 max ;` |
 | `search` | asm→forth | forth | forth/forth | 4 | ✓ done — pure Forth with >>r locals, $- comparison |
 | `$-.` | asm | — | forth/forth | 5 | pending — same as ff |
@@ -38,7 +38,7 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 | `tailrec` | asm | — | asm/asm | 7 | **done** — added to ff64.asm + WORD64 |
 | `which` | asm | — → **asm** | asm/asm | 7 | **done** — variable + WORD64 + _find saves hfa |
 | `xfp` | ~~—~~ → **asm** | asm | asm/asm | 7 | **done** — WORD header on i386 |
-| `?#` | forth | asm | both work | 7 | accepted — i386 Forth variable, x64 asm WORD64 (x64 boot skips `variable ?#` via [64] [IF]) |
+| `?#` | forth | ~~asm~~ forth | forth/forth | 7 | **done** — shared `variable ?#` in ff2.boot, removed asm cond_jmp+WORD64 |
 | `notfound` | asm | — | asm/asm | 7 | **deferred** — x64 inlines char/string/number |
 | `number` | asm | — → **asm** | asm/asm | 7 | **done** — WORD64 exposing _number |
 | `litcomp` | asm | — | asm/asm | 7 | **deferred** — x64 inlines suffix dispatch |

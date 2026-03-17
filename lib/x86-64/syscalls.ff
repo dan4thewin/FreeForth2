@@ -36,6 +36,7 @@
 : execve     ( envp argv filename -- ior )  3 59 syscall ;
 : wait4      ( rusage options status pid -- pid )  4 61 syscall ;
 : kill       ( sig pid -- ior )  2 62 syscall ;
+: exit       ( n -- )  1 60 syscall ;
 : exit_group ( status -- )  1 231 syscall ;
 : rt_sigaction ( sigsetsize oldact act signum -- ior )  4 13 syscall ;
 

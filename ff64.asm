@@ -30,8 +30,6 @@ xfp     dq 0                    ; exception frame pointer for catch/throw
 CS0     dq 0                    ; initial stack pointer (argc/argv/envp derived in Forth)
 bootxt  dq 0                    ; xt of _boot (set by ff64.boot)
 SC      db 0                    ; SWAPbit in bit 1: 0=rbx is TOS, 2=rdx is TOS
-cond_jmp dq 0                   ; ?# : pending conditional jump opcode (0=none)
-                                ; dq (not db) so Forth `0 ?#!` (cell store) is safe
 
 ;; =====================================================================
 ;; Runtime primitives
@@ -524,10 +522,6 @@ _header_forth:
         jmp _header
 
 ;; exit ( n -- ) — exit process with status code n
-_exit_word:
-        mov rdi, rbx            ; exit code in rdi
-        mov rax, 60             ; sys_exit
-        syscall
 
 ;; Runtime helper: print inline string after call instruction
 ;; Called via: call _dotstr_rt / db len / db "string..."
@@ -1745,7 +1739,6 @@ macro GENWORDS64 {
 
 ;; Constants (ct=1) — XT stores value, not code address; order irrelevant
 WORD64 "SC", SC, 1, 2
-WORD64 "?#", cond_jmp, 1, 2
 WORD64 "callmark", callmark, 1, 8
 WORD64 "tailrec", tailrec, 1, 7
 WORD64 "anon", anon, 1, 4
@@ -1789,7 +1782,6 @@ WORD64 "parse", _parse, 0, 5
 WORD64 "lnparse", _lnparse, 0, 7
 WORD64 "wsparse", _wsparse_forth, 0, 7
 WORD64 "header", _header_forth, 0, 6
-WORD64 "exit", _exit_word, 0, 4
 WORD64 ":`", _colon, 0, 2
 WORD64 ";`", _semi, 0, 2
 WORD64 ";;`", _semisemi, 0, 3
