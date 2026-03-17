@@ -44,7 +44,7 @@ Last verified: 151 PASSED, 1 SKIPPED (`make testall`).
   Both un-skipped.
 
 - ~~**home-naming-conflict**~~: DONE — renamed boot's `home` to
-  `homedir` in fflin2.boot and openlib.ff. console.ff keeps `home`.
+  `homedir` in ff2lin.boot and openlib.ff. console.ff keeps `home`.
 
 - **compat-jmp-alias**: `compat.ff` line 68 (`jmp` ' alias exit``)
   fails with `jmp` ???` on ff64. The word `jmp`` exists in the
@@ -83,11 +83,11 @@ Last verified: 151 PASSED, 1 SKIPPED (`make testall`).
   accept, syscall, sigrestorer, dlopen.  ff64.asm _accept removed.
   Remaining: syscall/sigrestorer/dlopen are genuinely asm-mandatory.
   ARM64/macOS split would still need an fflin-style glue file for
-  the remaining asm, but the Forth-side OS interface (fflin2.boot)
+  the remaining asm, but the Forth-side OS interface (ff2lin.boot)
   is already clean.
 
 - **fflin2-comment-porting**: Port comments from old fflin.boot and
-  fflin64.boot into the unified fflin2.boot. When the two files were
+  fflin64.boot into the unified ff2lin.boot. When the two files were
   merged (exp 151), their valuable comments were not carried over.
   DG specifically requested this; noted as undone in the exp 151
   checkpoint.
@@ -163,7 +163,7 @@ Last verified: 151 PASSED, 1 SKIPPED (`make testall`).
   verification that GDB-based disassembly output works for a real word.
 
 - ~~**dis-move-to-lib**~~: DONE — dis.ff promoted to lib/, sym
-  auto-loading added, lazy loader in fflin2.boot.
+  auto-loading added, lazy loader in ff2lin.boot.
 - **dis-see-shared-words**: Factor shared header-walking words
   between dis.ff and see.ff into common utility.
 - **fas2gdb-shakedown**: Thorough shakedown of `fas2gdb` (FASM symbol

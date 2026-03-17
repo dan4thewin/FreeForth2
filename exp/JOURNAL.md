@@ -13113,12 +13113,12 @@ Part 32 updated with note that it's superseded by Part 40.
 - loops.ff: 96/96 PASSED (5 new tests)
 - `make testall`: 115 PASSED, 6 SKIPPED, 0 FAILED
 
-## Experiment 151: Unified Linux Boot — fflin2.boot
+## Experiment 151: Unified Linux Boot — ff2lin.boot
 
 ### Goal
 
 Unify `fflin.boot` (i386) and `fflin64.boot` (x86-64) into a single
-`fflin2.boot` using ffpp's `[64] [IF]` conditional compilation and
+`ff2lin.boot` using ffpp's `[64] [IF]` conditional compilation and
 `^V` file includes. Minimize architecture-specific conditionals by
 extracting syscall wrappers into `lib/{x86,x86-64}/syscalls.ff`.
 
@@ -13137,7 +13137,7 @@ O_TRUNC) instead of the correct `$142` (O_RDWR|O_CREAT|O_NOCTTY).
 The i386 semantics are: `openw` opens without truncating, `openw0`
 truncates. Both now match.
 
-**2. Created fflin2.boot with three `[64] [IF]` blocks**
+**2. Created ff2lin.boot with three `[64] [IF]` blocks**
 
 The unified file has only three architecture-conditional blocks:
 
@@ -13155,7 +13155,7 @@ is shared code, identical for both architectures.
 **3. Discovered and fixed the `variable libc` shadow bug**
 
 On i386, `ff.asm` defines `DATA "libc",_libc,0` — an assembly
-variable. Adding `variable libc` in fflin2.boot created a Forth
+variable. Adding `variable libc` in ff2lin.boot created a Forth
 variable that shadowed it. `dlsetup` stored the dlopen handle
 into the Forth variable (found first by `find`), but `#fun` in
 `fflinio.asm` hardcodes the asm `_libc` address for `dlsym` —
@@ -13187,9 +13187,9 @@ needed/needs, turnkey -f\`, and the boot hook pattern.
 
 **6. Preserved git history via `git mv`**
 
-`git mv fflin64.boot fflin2.boot` preserves blame and log history.
+`git mv fflin64.boot ff2lin.boot` preserves blame and log history.
 `fflin.boot` removed via `git rm`. Both removed from `.gitignore`;
-`fflin2.boot` added.
+`ff2lin.boot` added.
 
 ### Debugging interlude: the exp 150 `_back` stack leak
 
@@ -13221,7 +13221,7 @@ to empirical methods — simplest repro, i386 cross-check, or GDB.
 ### Reasoning
 
 Lavarenne's cross-platform pattern separates architecture (ff64.asm/
-ff64.boot) from OS (fflin*.boot). The unified fflin2.boot makes this
+ff64.boot) from OS (fflin*.boot). The unified ff2lin.boot makes this
 cleaner — one file instead of two near-duplicates, with syscall
 numbers (the only truly arch-specific part) factored into lib files.
 
@@ -13239,7 +13239,7 @@ present; advertising them is noise.
 ### Guide
 
 Part 41 added to GUIDE.md: OS/architecture separation and the
-fflin2.boot unification.
+ff2lin.boot unification.
 
 ### Test results
 
@@ -13256,7 +13256,7 @@ Three changes shipped together:
 
 1. **openlib.ff** — DG's ground-up rewrite of the FFPATH/openlib
    subsystem, replacing both exp 146 (lua-style buffers) and exp 147
-   (tib-based scratch). Integrated into `fflin2.boot`.
+   (tib-based scratch). Integrated into `ff2lin.boot`.
 
 2. **ffpp [~] passthru** — `[~]` no longer errors; instead it passes
    the entire `[~] ... [THEN]` block through verbatim for the Forth
@@ -13285,13 +13285,13 @@ dirname. openlib.ff's line 20 does it in one line of Forth:
 exe BEGIN 1- 2dup+ c@ '/'- 0= drop UNTIL swap : exedir lit lit ;
 ```
 
-`exe` (defined in fflin2.boot) pushes the raw readlink result.
+`exe` (defined in ff2lin.boot) pushes the raw readlink result.
 The `BEGIN` loop walks backward to find '/'. `exedir` captures
 the addr+len as a compile-time constant via `lit lit`.
 
 **Eliminated HOME init.** Exp 147 stashed `getenv` results into
 `_ha`/`_hl` variables. openlib.ff uses `home` directly — it's
-already a double-lit constant defined in fflin2.boot from the
+already a double-lit constant defined in ff2lin.boot from the
 `getenv` result.
 
 **Named flags.** Raw numbers `0/1/2/$FF` replaced with `equ`
@@ -13402,9 +13402,9 @@ parser was generalized: `had_files` flag replaces the old
 `flag_64 && argc==2` stdin heuristic, correctly handling any
 combination of flags.
 
-### fflin2.boot changes
+### ff2lin.boot changes
 
-The old fflin2.boot had a 22-line inline `ffpath`/`openlib`
+The old ff2lin.boot had a 22-line inline `ffpath`/`openlib`
 implementation using `create` buffers and `START`/`ENTER` loops.
 Replaced with three lines:
 
@@ -13413,15 +13413,15 @@ Replaced with three lines:
 openlib.ff
 ```
 
-`exe` (raw readlink result) was already moved to fflin2.boot in
+`exe` (raw readlink result) was already moved to ff2lin.boot in
 an earlier session. `home` captures `getenv "HOME"` as a
 compile-time double-lit constant. Then `openlib.ff` is loaded
 (via the preprocessor `#include`-like mechanism in ff2.boot).
 
 ### Files
 
-- `openlib.ff` — 122 lines (new, replaces fflin2.boot inline code)
-- `fflin2.boot` — 22 lines removed, 3 added
+- `openlib.ff` — 122 lines (new, replaces ff2lin.boot inline code)
+- `ff2lin.boot` — 22 lines removed, 3 added
 - `ffpp.asm` — `[~]` passthru, `[DEBUG]`/`--debug`, `had_files`
 - `Makefile` — added `openlib.ff` to boot dependencies
 - `exp/153-openlib/` — Makefile, test.ff, test-full.ff, test-tilde.ff
@@ -13814,7 +13814,7 @@ is shared. Later, `type` was moved after the `stdout` constant:
 
 Added `read`, `openr`, `openw`, `openw0`, `close`, and `rt_sigaction`
 to lib/x86/syscalls.ff (matching x64 versions with i386 syscall numbers).
-Moved the `^Vsyscalls.ff` include in fflin2.boot to before the SEGV
+Moved the `^Vsyscalls.ff` include in ff2lin.boot to before the SEGV
 handler, so `rt_sigaction` is a named word instead of a raw syscall
 number. Unified the SEGV handler with `cell*` arithmetic — 14 bifurcated
 lines became 6 shared lines, with only the flags value needing `[64] [IF]`.
@@ -13833,19 +13833,19 @@ the last references to `_type` and `_accept` labels in ff.asm.
 
 **Phase 4: structural reorganization**
 
-DG asked: "can we move the fflin2.boot include before the REPL section?"
+DG asked: "can we move the ff2lin.boot include before the REPL section?"
 
-This was the key insight. Previously, `^Vfflin2.boot` loaded at line 766
+This was the key insight. Previously, `^Vff2lin.boot` loaded at line 766
 of ff2.boot — after the REPL (`_top`, `bye`, `doargv`). This forced
 `exit` to remain in assembly because `bye` (line 764) uses `exit` and
 syscalls.ff hadn't loaded yet.
 
 The reorganization:
-1. Moved `^Vfflin2.boot` from after the REPL to before it (after `eval.`)
+1. Moved `^Vff2lin.boot` from after the REPL to before it (after `eval.`)
 2. Extracted the turnkey section (`_postboot`, `-f`, `quit`, `mainxt`,
-   `_ffhide`, `_main`) from fflin2.boot into ff2.boot — these depend on
+   `_ffhide`, `_main`) from ff2lin.boot into ff2.boot — these depend on
    `_top`/`doargv` which are in the REPL section
-3. fflin2.boot became pure OS setup: syscalls, SEGV, env, file loading,
+3. ff2lin.boot became pure OS setup: syscalls, SEGV, env, file loading,
    boot hook
 
 With syscalls.ff loading before `bye`, `exit` could move to Forth
@@ -13854,7 +13854,7 @@ With syscalls.ff loading before `bye`, `exit` could move to Forth
 **Phase 5: accept — from assembly to Forth**
 
 DG noted that `key` isn't used until lib/console.ff, so it could move
-after the fflin2.boot include. And about the x64 assembly line editor:
+after the ff2lin.boot include. And about the x64 assembly line editor:
 "I can think of no reason to have editor in asm — if I wanted that
 functionality, I'd ultimately want it written in Forth. fwiw, I usually
 use rlwrap."
@@ -13900,10 +13900,10 @@ assembly layer (syscall dispatch + signal handling + C FFI) with
 everything else expressed in the language itself. This is Lavarenne's
 philosophy made real on both architectures.
 
-**The structural insight.** Moving `^Vfflin2.boot` before the REPL was
+**The structural insight.** Moving `^Vff2lin.boot` before the REPL was
 the domino that unlocked everything. It resolved the boot-order chicken-
 and-egg: exit/read needed for bye/accept, but only available after the
-include. DG's question — "can we move the fflin2.boot include before
+include. DG's question — "can we move the ff2lin.boot include before
 the REPL section?" — cut the Gordian knot. The turnkey section naturally
 separated out (it's REPL-coupled, not OS-coupled).
 
@@ -13923,11 +13923,11 @@ Forth `accept` is simpler, matches i386 behavior, and can be overridden
   Updated section comment.
 - **ff.asm**: Rewrote dotstr (inline sys_write, 15 lines replacing 9).
   Removed dead debugger REPL (46 lines).
-- **ff2.boot**: Moved ^Vfflin2.boot before REPL. Added shared `write`,
+- **ff2.boot**: Moved ^Vff2lin.boot before REPL. Added shared `write`,
   `type`, `accept`, `key` at appropriate points. Turnkey section
   (mainxt, _main, _ffhide, _postboot, -f, quit) moved here from
-  fflin2.boot.
-- **fflin2.boot**: Removed turnkey section (16 lines). Moved syscalls.ff
+  ff2lin.boot.
+- **ff2lin.boot**: Removed turnkey section (16 lines). Moved syscalls.ff
   include before SEGV handler. Unified SEGV handler with cell* (14→6
   lines). Now pure OS setup.
 - **lib/x86/syscalls.ff**: Added exit, read, openr, openw, openw0,

@@ -8,7 +8,7 @@ ffpp: tools/ffpp.asm
 	fasm $< $@
 	chmod +x $@
 
-ff.o ff.fas: fflin.asm ff.asm fflinio.asm ff.boot fflin2.boot
+ff.o ff.fas: fflin.asm ff.asm fflinio.asm ff.boot ff2lin.boot
 	fasm $< ff.o -s ff.fas
 
 ff: ff.o
@@ -29,16 +29,16 @@ ff64.sym: ff64.fas ff64 tools/fas2gdb
 ff64-full.sym: ff64 tools/fas2gdb
 	./$< .hdrs bye 2>/dev/null | perl tools/fas2gdb --hdrs -b $<
 
-ff.boot: ff2.boot fflin2.boot openlib.ff ffpp
+ff.boot: ff2.boot ff2lin.boot openlib.ff ffpp
 	./ffpp $< > $@
 
-ff64.boot: ff2.boot fflin2.boot openlib.ff ffpp
+ff64.boot: ff2.boot ff2lin.boot openlib.ff ffpp
 	./ffpp --64 $< > $@
 
-ff64.o ff64.fas: fflin64.asm ff64.asm ff64.boot fflin2.boot
+ff64.o ff64.fas: fflin64.asm ff64.asm ff64.boot ff2lin.boot
 	fasm $< ff64.o -s ff64.fas
 
-ff64s: fflin64s.asm ff64.asm ff64.boot fflin2.boot
+ff64s: fflin64s.asm ff64.asm ff64.boot ff2lin.boot
 	fasm $< $@
 	chmod +x $@
 

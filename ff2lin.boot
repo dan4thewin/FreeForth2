@@ -1,4 +1,4 @@
-\ fflin2.boot  unified Linux boot (i386 + x86-64)
+\ ff2lin.boot  unified Linux boot (i386 + x86-64)
 \ syscall wrappers in lib/{x86,x86-64}/syscalls.ff
 
 1 constant [os]`

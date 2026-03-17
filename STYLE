@@ -119,7 +119,7 @@ Which files use which style
 
 Lavarenne's style
 -----------------
-  ff2.boot, fflin2.boot
+  ff2.boot, ff2lin.boot
   ff.asm, ff64.asm, fflinio.asm, fflin64.asm
   lib/console.ff, lib/time.ff
   lib/x86/callback.ff, lib/x86/fpu.ff, lib/x86/longconds.ff

@@ -1,6 +1,6 @@
 \ syscalls.ff  --  x86-64 Linux syscall wrappers
 \ All words match i386 stack effects; only syscall numbers differ.
-\ Loaded at boot via ^V from fflin2.boot. Also loadable via needs.
+\ Loaded at boot via ^V from ff2lin.boot. Also loadable via needs.
 
 \ File I/O
 : read       ( addr # fd -- n ) >r swap r> 3 0 syscall ;

@@ -120,9 +120,9 @@ not assembly.
   syscall number; `type` = `stdout write drop ;` (after stdout const);
   `exit` in lib/x86/syscalls.ff; `read`/`open*`/`close` in both
   syscalls.ff; `accept` = `:^ accept 0 read 0 max ;` (shared Forth,
-  vector for override).  Structural: moved `^Vfflin2.boot` before REPL
+  vector for override).  Structural: moved `^Vff2lin.boot` before REPL
   in ff2.boot (unlocks Forth exit/read before bye); turnkey section
-  moved from fflin2.boot to ff2.boot (depends on _top/doargv).
+  moved from ff2lin.boot to ff2.boot (depends on _top/doargv).
   Rewrote ff.asm `dotstr` to inline `int $80` sys_write (no _type
   dependency). Removed ff.asm dead debugger REPL (46 lines).  Unified
   SEGV handler with `cell*` arithmetic (6 shared lines).  fflinio.asm

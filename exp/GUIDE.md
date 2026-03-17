@@ -6160,7 +6160,7 @@ provides the backward jump (loop back when NOT done), END resolves
 WHILE's forward reference (no backward jump from END itself), and
 `drop` between the flag-setter (`10-`) and TILL is flags-preserving.
 
-## Part 41: OS/Architecture Separation — The fflin2.boot Unification (Experiment 151)
+## Part 41: OS/Architecture Separation — The ff2lin.boot Unification (Experiment 151)
 
 FreeForth's cross-platform architecture separates three layers:
 
@@ -6168,12 +6168,12 @@ FreeForth's cross-platform architecture separates three layers:
    compiler core, ELF binary layout, syscall ABI
 2. **Architecture-specific Forth** (`ff64.boot` via `ff2.boot`) —
    compiler macros, stack ops, flow control, SWAPbit
-3. **OS-specific Forth** (`fflin2.boot`) — dlopen, SEGV handler,
+3. **OS-specific Forth** (`ff2lin.boot`) — dlopen, SEGV handler,
    file loading, environment, command-line processing
 
 Previously, the OS layer was duplicated: `fflin.boot` for i386 and
 `fflin64.boot` for x86-64. These files were 90% identical. Experiment
-151 unified them into `fflin2.boot`, loaded via `^V` from `ff2.boot`.
+151 unified them into `ff2lin.boot`, loaded via `^V` from `ff2.boot`.
 
 ### What's architecture-specific
 
@@ -6224,7 +6224,7 @@ ffpath construction, `openlib` (search-path file opener),
 dlsetup                        \ eager init at boot load time
 ```
 
-`dlsetup` runs twice: once immediately when fflin2.boot loads (eager
+`dlsetup` runs twice: once immediately when ff2lin.boot loads (eager
 init), and again via `linsetup` → `ossetup` at `_boot` time. The
 second call is for turnkey re-entry — a baked image starts fresh with
 `_boot`, which calls `ossetup`, which calls `linsetup`, which calls
@@ -6240,8 +6240,8 @@ which is harmless (dlsym returns null, `#call` does nothing).
 The separation makes future ports straightforward:
 
 - **ARM64 Linux**: replace `ff64.asm`/`ff64.boot`, add
-  `lib/aarch64/syscalls.ff`, reuse `fflin2.boot` unchanged
-- **macOS x86-64**: replace `fflin2.boot` with `ffmac2.boot`,
+  `lib/aarch64/syscalls.ff`, reuse `ff2lin.boot` unchanged
+- **macOS x86-64**: replace `ff2lin.boot` with `ffmac2.boot`,
   reuse `ff64.asm`/`ff64.boot` unchanged
 - **macOS ARM64**: replace both layers, reuse `ff2.boot` core
 

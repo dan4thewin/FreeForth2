@@ -123,17 +123,17 @@ The port follows Lavarenne's cross-platform pattern:
 
 - **`ff64.asm` + `ff64.boot`** — architecture-specific (x86-64):
   compiler, backtick macros, stack ops, flow control, SWAPbit, REPL
-- **`fflin2.boot`** — OS-specific (Linux): dlopen/dlsym, file
+- **`ff2lin.boot`** — OS-specific (Linux): dlopen/dlsym, file
   loading, command-line processing, SEGV handler, boot sequence
 
 The Makefile concatenates both into `ff64.boot.min` for embedding.
 Future ports: ARM64 would replace ff64.asm/ff64.boot but reuse
-fflin2.boot; macOS would replace fflin2.boot but reuse ff64.boot.
+ff2lin.boot; macOS would replace ff2lin.boot but reuse ff64.boot.
 
 ## File loading: eval, not assembly
 
 File loading is pure Forth — there is no assembly `_loadfile`.
-`needed` (in fflin2.boot) opens a file, reads it into the tib
+`needed` (in ff2lin.boot) opens a file, reads it into the tib
 buffer, and calls `eval`. `eval` saves/restores `>in`/`tp` around
 a call to `compiler`. This matches the i386 design exactly.
 

@@ -751,7 +751,7 @@ xhidepvt` ' alias hidepvt`
 
 \ --------------------------------------------------------------------
 \ Linux platform -- syscalls, SEGV, env, file loading
-fflin2.boot
+ff2lin.boot
 :^ accept 0 read 0 max ;
 : key tib 1 under accept drop c@ ; \ -- c
 
