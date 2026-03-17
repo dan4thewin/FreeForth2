@@ -17,14 +17,17 @@
 
 \ === x86-64 data sizes ===
 
-d@ ( addr -- n ) fetch 64-bit (double cell) value
-  On x86-64, @ already fetches 64 bits, so d@ is equivalent to @.
-  Provided for clarity when 64-bit intent matters.
-d! ( n addr -- ) store 64-bit (double cell) value
-  On x86-64, ! already stores 64 bits, so d! is equivalent to !.
-d, ( n -- ) compile a 64-bit value at here; advance here by 8
-  On i386, , compiles 32 bits. On x86-64, , compiles 32 bits (for opcodes).
-  d, compiles a full 64-bit value (addresses, pointers).
+d@ ( addr -- n ) fetch 32-bit (dword) value, sign-extended to 64-bit
+  On i386, d@ fetches 64-bit (double cell). On x86-64, d@ fetches 32-bit.
+  The "d" prefix means "double" on i386, "dword" on x86-64.
+  Use @ for cell-sized (64-bit) fetches on x86-64.
+d! ( n addr -- ) store 32-bit (dword) value
+  On i386, d! stores 64-bit (double cell). On x86-64, d! stores 32-bit.
+  Use ! for cell-sized (64-bit) stores on x86-64.
+d, ( n -- ) compile a 32-bit (dword) value at here; advance here by 4
+  On i386, d, compiles 64-bit (double cell, advance by 8).
+  On x86-64, , compiles 64 bits (cell). d, compiles 32 bits (dword).
+  d, is the complement of , — the "other" cell size on each arch.
 w, ( n -- ) compile a 16-bit value at here; advance here by 2
   Useful for emitting 16-bit opcode fragments.
 d@` d!` d,` 2dupd!` tuckd!` compile-time macros for the above
