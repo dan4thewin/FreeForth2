@@ -53,6 +53,13 @@ WORD "sigrestorer", _segv_restorer, 1
 ;;; FreeForth interface to Linux dynamic-link libraries
 
 saveSP  dd 0
+
+if defined ffdl
+
+extrn dlopen                    ; void* dlopen(const char* filename, int flag);
+extrn dlsym                     ; void* dlsym(void* handle, char* symbol);
+extrn dlerror                   ; const char* dlerror(void);
+
 CODE "#call",_dlcall            ; #args funh -- funresult
         lea edx,[eax+4*edx]     ; dataSP after funcall
         push edx                ; save it
@@ -62,48 +69,20 @@ CODE "#call",_dlcall            ; #args funh -- funresult
         mov esp,[saveSP]        ; restore callSP
         jmp nipeax
 
-if defined ffdl ;; TODO: try to inline dl* functions to compile with fasm only.
-
-extrn dlopen                    ; void* dlopen(const char* filename, int flag);
-extrn dlsym                     ; void* dlsym(void* handle, char* symbol);
-extrn dlerror                   ; const char* dlerror(void);
-;extrn dlclose                  ; int dlclose (void* handle);
-;libs   dd $+4, 16 dup 0        ; libraries handles for dlclose on exit
-;libsEnd                        ; libs buffer end address
-;CODE "-libs",_libsfree         ; --- ISN'T IT DONE BY THE LOADER ON EXIT? ---
-;       mov esi,libs+4
-;@@:    lodsd                   ; eax = library handle
-;       push esi
-;       push eax
-;;      extrn dlclose           ; int dlclose (void* handle);
-;       call dlclose            ; don't care returned error
-;       pop esi
-;       cmp esi,libsEnd
-;       jnz @b
-;       ret
-
-;;; : lib:` :` #lib lit #fun ' call, ;;` ;  \ "libc.so.6" lib: libc
-;;; : fun:` :` lit lit #call ' call, ;;` ;  \ 1 "puts" libc fun: puts
-
-        ;; : uselib 1 86 syscall ; \ int uselib(const char* library);
-;;; Note: when ffdl undefined, the following line must be commented:
 CODE "#lib",_dllib              ; @ # -- libh
         xchg eax,esp
         push eax                ; save callSP
         mov byte[edx+ebx],0     ; append zero-terminator
-;       extrn dlopen            ; void* dlopen(const char* filename, int flag);
         pushd $101              ; RTLD_LAZY | RTLD_GLOBAL
         push edx                ; filename, null-terminated
         call dlopen             ; eax = library handle (null on error)
         jmp dlret
 
-;;; Note: when ffdl undefined, the following line must be commented:
 CODE "#fun",_dlfun              ; @ # libh -- funh
         xchg eax,esp
         pop ecx                 ; ecx = @
         push eax                ; save callSP
         mov byte[ecx+edx],0     ; append zero-terminator
-;       extrn dlsym             ; void* dlsym(void* handle, char* symbol);
         push ecx                ; library function name, null-terminated
         push ebx                ; library handle
         call dlsym              ; eax = function handle (null on error)
@@ -116,7 +95,6 @@ dlret:  or eax,eax
         xchg eax,esp
         ret
 
-;       extrn dlerror           ; const char* dlerror(void);
 dlerr:  call dlerror            ; eax = null-terminated error string
         mov esi,eax             ; copy it to counted string at here
         mov edi,ebp
@@ -129,6 +107,35 @@ dlerr:  call dlerror            ; eax = null-terminated error string
         mov [ebp],al            ; setup string count
         mov ebx,ebp             ; counted error string address
         jmp _throw              ; raise exception
+
+else
+
+;; Static build — FFI stubs return 0 (not available)
+;; #lib returns 0 so dlsetup stores 0 in libc and all libc-dependent
+;; guards see 0 and skip gracefully.
+
+CODE "#lib",_dllib              ; @ # -- 0
+        xchg eax,esp
+        pop edx
+        xchg eax,esp
+        xor ebx,ebx
+        ret
+
+CODE "#fun",_dlfun              ; @ # libh -- 0
+        xchg eax,esp
+        pop ecx                 ; discard @
+        pop edx                 ; restore NOS
+        xchg eax,esp
+        xor ebx,ebx
+        ret
+
+CODE "#call",_dlcall            ; argN..arg1 N funh -- 0
+        lea edx,[eax+4*edx]     ; skip past N args
+        xchg eax,esp
+        pop edx                 ; restore NOS
+        xchg eax,esp
+        xor ebx,ebx
+        ret
 
 end if
 

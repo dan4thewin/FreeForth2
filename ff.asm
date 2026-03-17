@@ -1235,7 +1235,7 @@ boot:   file "ff.boot"          ; boot source code, initially moved to tib
     boot_size = $-boot
 
 ;if defined ffdl
-section '.bss'
+BSSSECTION
 ;    ebp0 = bss                  ; headers_size+boot_size are "lost"
 ;else
     ebp0 = heads                ; headers_size+boot_size are recovered

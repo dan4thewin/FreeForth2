@@ -2,7 +2,7 @@ SHELL=/bin/bash
 LD=ld -m elf_i386 -lc --dynamic-linker=/lib/ld-linux.so.2 -s
 LD64=ld -m elf_x86_64 -lc -ldl --dynamic-linker=/lib64/ld-linux-x86-64.so.2
 
-all: ff ff64 ff64s ff- ff64-
+all: ff ffs ff64 ff64s ff- ff64-
 
 ffpp: tools/ffpp.asm
 	fasm $< $@
@@ -13,6 +13,10 @@ ff.o ff.fas: fflin.asm ff.asm fflinio.asm ff.boot ff2lin.boot
 
 ff: ff.o
 	$(LD) -o $@ $<
+
+ffs: fflins.asm fflinio.asm ff.asm ff.boot ff2lin.boot
+	fasm $< $@
+	chmod +x $@
 
 ff.sym: ff.fas ff tools/fas2gdb
 	perl tools/fas2gdb ff.fas

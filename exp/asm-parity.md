@@ -38,7 +38,7 @@ Legend: **asm** = assembly only, **forth** = Forth boot only,
 | `tailrec` | asm | — | asm/asm | 7 | **done** — added to ff64.asm + WORD64 |
 | `which` | asm | — → **asm** | asm/asm | 7 | **done** — variable + WORD64 + _find saves hfa |
 | `xfp` | ~~—~~ → **asm** | asm | asm/asm | 7 | **done** — WORD header on i386 |
-| `?#` | forth | asm | both work | 7 | accepted — Forth variable / asm WORD64, same effect |
+| `?#` | forth | asm | both work | 7 | accepted — i386 Forth variable, x64 asm WORD64 (x64 boot skips `variable ?#` via [64] [IF]) |
 | `notfound` | asm | — | asm/asm | 7 | **deferred** — x64 inlines char/string/number |
 | `number` | asm | — → **asm** | asm/asm | 7 | **done** — WORD64 exposing _number |
 | `litcomp` | asm | — | asm/asm | 7 | **deferred** — x64 inlines suffix dispatch |
@@ -136,3 +136,15 @@ not assembly.
   `SEGVhndlr` in ff2lin.boot replaces it at boot.  Both `fflin64.asm`
   and `fflin64s.asm` define `macro OSINCLUDE { include "fflin64io.asm" }`.
   ff64.o shrank 88 bytes, ff64s shrank 96 bytes.  151 PASSED.
+- **i386 static binary (ffs)**: Added `fflins.asm` (mirrors
+  `fflin64s.asm`).  Restructured `fflinio.asm`: moved `_dlcall`
+  inside `ffdl` guard, added static stubs for `#lib`/`#fun`/`#call`
+  (return 0).  Added `BSSSECTION` macro to `fflin.asm`/`fflins.asm`
+  (`section '.bss'` vs no-op) — FASM's 32-bit `format elf executable`
+  doesn't support `section` directives.  ffs: 20,091 bytes, 14/15
+  tests pass (only malloc needs libc).
+- **shell.ff promoted to native syscalls**: Removed `[64] [IF]` gate
+  — `fork`/`execve`/`wait4` are in both arches' `syscalls.ff`.
+  `_sh_argv` uses `cell*` for portable pointer offsets.  Removed dead
+  libc `getpid`/`getppid` block.  This is what unlocked ffs passing
+  fileio, shell, mmap, and system tests.

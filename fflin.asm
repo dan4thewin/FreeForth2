@@ -33,6 +33,11 @@ end if
 
 }
 
+;;; BSSSECTION: linkable builds use section '.bss'; flat executables
+;;; need no directive — rb at end of segment gets MemSiz > FileSiz.
+
+macro BSSSECTION { section '.bss' }
+
 ;;; -----------------------------------------------------
 ;;; OSINCLUDE defines OS-specific ASM source to "include"
 
