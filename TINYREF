@@ -132,7 +132,7 @@ cs@`		( @ -- c )			fetch byte, sign-extend
 w@`		( @ -- w )			fetch 16-bit, zero-extend
 ws@`		( @ -- w )			fetch 16-bit, sign-extend
 2@`		( @ -- lo hi )			fetch double-cell (x86: 64-bit)
-d@`		( @ -- n )			fetch 32-bit, sign-extend [i386: 64-bit]
+d@`		( @ -- n )			fetch dword (32-bit), sign-extend [i386: =@]
 dup@`		( @ -- @ n )			fetch cell, keep address
 dupc@`		( @ -- @ c )			fetch byte, keep address
 dupw@`		( @ -- @ w )			fetch 16-bit, keep address
@@ -143,7 +143,7 @@ w@+`		( @ -- @+2 w )			fetch 16-bit and advance address
 c!`		( c @ -- )			store byte
 w!`		( w @ -- )			store 16-bit
 2!`		( lo hi @ -- )			store double-cell
-d!`		( n @ -- )			store 32-bit [i386: 64-bit]
+d!`		( n @ -- )			store dword (32-bit) [i386: =!]
 +!`		( n @ -- )			add n to cell at @
 -!`		( n @ -- )			subtract n from cell at @
 over!`		( @ n -- @ )			store n at @, keep @
@@ -156,13 +156,13 @@ tuckc!`		( c @ -- @ )			store byte, keep @ on top
 tuckw!`		( w @ -- @ )			store 16-bit, keep @ on top
 tuck+!`		( n @ -- @ )			add n at @, keep @ on top
 tuck-!`		( n @ -- @ )			sub n at @, keep @ on top
-tuckd!`		( n @ -- @ )			store 32-bit, keep @ [ff64]
+tuckd!`		( n @ -- @ )			store dword, keep @ [ff64]
 2dup!`		( n @ -- n @ )			store NOS at TOS, keep both
 2dupc!`		( c @ -- c @ )			store byte, keep both
 2dupw!`		( w @ -- w @ )			store 16-bit, keep both
 2dup+!`		( n @ -- n @ )			add NOS to [TOS], keep both
 2dup-!`		( n @ -- n @ )			sub NOS from [TOS], keep both
-2dupd!`		( n @ -- n @ )			store 32-bit, keep both [ff64]
+2dupd!`		( n @ -- n @ )			store dword, keep both [ff64]
 on`		( @ -- )			store -1 (all bits set) at @
 off`		( @ -- )			store 0 at @
 
@@ -174,7 +174,7 @@ align`		( -- )				align here to 4-byte boundary
 ,`		( n -- )			compile cell at here [i386: 32-bit, ff64: 64-bit]
 c,`		( c -- )			compile byte at here
 w,`		( w -- )			compile 16-bit at here
-d,`		( n -- )			compile 32-bit at here [i386: 64-bit]
+d,`		( n -- )			compile dword (32-bit) at here [i386: =,]
 ,1`		( -- )				advance compilation ptr by 1
 ,2`		( -- )				advance compilation ptr by 2
 ,3`		( -- )				advance compilation ptr by 3

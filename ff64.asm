@@ -991,18 +991,10 @@ _compiler:
         pop rdi
         pop qword [rdi]        ; restore original bytes
         jc .no_backtick
-        ;; Found via backtick: dispatch by ct
-        test ecx, 1            ; ct bit 0 set = literal/data word
-        jz .bt_exec
-        ;; ct=1 (or ct=3): push xt value as compile-time literal
-        sub r15, 8
-        mov [r15], rdx
-        mov rdx, rbx
-        mov rbx, rax
-        jmp _compiler
-.bt_exec:
-        ;; ct=0 (or ct=2): execute immediately
-        call rax
+        ;; Found via backtick: dispatch by ct (immediate column)
+        and ecx, 7
+        shl ecx, 4              ; ecx = ct * 16 (entry size)
+        call [_classes + rcx]   ; immediate handler
         jmp _compiler
 .no_backtick:
         dec ecx                ; restore original length
@@ -1014,20 +1006,8 @@ _compiler:
         ;; Found: rax=xt, ecx=ct
         add rsp, 16
         and ecx, 7              ; mask to compile class bits (0-2)
-        test ecx, ecx
-        jz .compilecall
-        cmp ecx, 1
-        je .compilelit
-        ;; ct >= 2: compile-time word → execute immediately
-        call rax
-        jmp _compiler
-.compilecall:
-        call _call_compile
-        jmp _compiler
-.compilelit:
-        ;; ct=1: literal word → push xt value as literal
-        ;; Value is in rax (xt); do NOT put in rbx (would corrupt compile-time stack)
-        call _lit_compile
+        shl ecx, 4              ; ecx = ct * 16 (entry size)
+        call [_classes + 8 + rcx] ; postponed handler
         jmp _compiler
 .notfound:
         pop rcx
@@ -1295,6 +1275,29 @@ _compiler:
 .error_throw:
         call _error
         db 3, "???"
+
+;; ─── Compiler class handlers ───
+;; rax = xt on entry (from _find); called via _classes table.
+
+_icall: jmp rax                 ; immediate: execute compile-time macro
+                                ; (rax's ret returns to compiler loop)
+_ilit:  sub r15, 8              ; immediate literal: push xt as value
+        mov [r15], rdx
+        mov rdx, rbx
+        mov rbx, rax
+        ret
+_ccerr: call _error
+        db 24, "undefined compiler class"
+
+_classes dq _icall, _call_compile ; 0: call
+        dq _ilit, _lit_compile   ; 1: literal
+        dq _ccerr, _ccerr        ; 2: (reserved)
+        dq _ccerr, _ccerr        ; 3: undefined
+        dq _ccerr, _ccerr        ; 4: undefined
+        dq _ccerr, _ccerr        ; 5: undefined
+        dq _ccerr, _ccerr        ; 6: undefined
+        dq _ccerr, _ccerr        ; 7: undefined
+
 _compiler_done:
         ret
         ;; ─── Suffix handlers ───
@@ -1717,6 +1720,12 @@ macro WORD64 name, xt_val, ct_val, namelen {
     \}
 }
 
+macro VECT64 name, entry, namelen {     ; vectorizable subroutine entry
+        WORD64 name, entry, 0, namelen
+entry:  push dword $+6                  ; 68(push dword)
+        ret                             ; C3(ret)
+}
+
 macro GENWORDS64 {
         dq 0
         db -1
@@ -1738,6 +1747,7 @@ macro GENWORDS64 {
 ;; chain walks in decreasing XT order — required for first-match findh.
 
 ;; Constants (ct=1) — XT stores value, not code address; order irrelevant
+WORD64 "classes", _classes, 1, 7
 WORD64 "SC", SC, 1, 2
 WORD64 "callmark", callmark, 1, 8
 WORD64 "tailrec", tailrec, 1, 7

@@ -14058,3 +14058,87 @@ Build    fflin.asm          Build wrapper (OSFORMAT + OSINCLUDE)
 ### Test results
 
 - `make testall`: 151 PASSED, 1 SKIPPED (073-turnkey)
+
+## Experiment 160: d-word doc fix + VECT64 macro + classes table
+
+### Goal
+
+Three related changes:
+1. Fix incorrect documentation for d-words (d@, d!, d,)
+2. Add VECT64 macro to ff64.asm
+3. Extract _classes dispatch table matching i386's compiler structure
+
+### Background
+
+DG asked whether ff64 has a VECT macro. Investigation revealed:
+- ff64 had no VECT macro, but `:^` in ff2.boot creates identical
+  push-imm32/ret trampolines — the vector mechanism already works
+- The d-word documentation was wrong everywhere: TINYREF, QUICKREF,
+  and ff64.help all claimed d@ d! d, were 64-bit on x64
+- In reality, `d` means dword (32-bit) on BOTH architectures:
+  on i386, d@ d! d, are aliases for @ ! , (both 32-bit = cell);
+  on x64, d@ d! d, are 32-bit while @ ! , are 64-bit (cell)
+- This matters because the vector patching macros (^^, !^, n^) use
+  d! to write the 4-byte push-imm32 field
+
+### Actions
+
+**Doc fix**: Corrected all three reference files:
+- d@ on x64: fetches 32-bit (movsxd = sign-extend), not 64-bit
+- d! on x64: stores 32-bit (mov [r],r32), not 64-bit
+- d, on x64: compiles 32-bit + advance 4, not 64-bit + advance 8
+- , (comma) compiles cell-sized: 64-bit on x64, not 32-bit as docs said
+
+**VECT64 macro**: Added to ff64.asm header generation section:
+```asm
+macro VECT64 name, entry, namelen {
+    WORD64 name, entry, 0, namelen
+entry:  push dword $+6      ; 68(push dword)
+        ret                  ; C3(ret)
+}
+```
+Identical 6-byte trampoline to i386's VECT. push imm32 sign-extends
+on x64 — safe for addresses below 2GB (load at 0x400000).
+
+**Classes table**: Replaced inline if/else ct dispatch with table-driven
+dispatch matching i386's architecture:
+
+i386 pattern (Lavarenne):
+- `_classes` table: 8 pairs of [immediate, postponed] handlers
+- Backtick path: `call [_classes + 8*ecx]` (immediate column)
+- Normal path: `call [_classes + 4 + 8*ecx]` (postponed column)
+- `icall`: push xt to return stack, DROP1, ret → jumps to xt
+- `ilit`: ret — xt stays on data stack
+
+x64 adaptation:
+- Table uses dq (64-bit pointers), entries are 16 bytes
+- `shl ecx, 4` to compute offset (SIB only scales to 8)
+- `_icall`: `jmp rax` — xt is in rax not on data stack, no DROP needed
+- `_ilit`: DUP1 + `mov rbx, rax / ret` — push xt as compile-time literal
+- `_ccerr`: error for undefined compiler classes
+
+Key insight from DG: the i386 code spells it all out. The x64 adaptation
+is mechanical — just adjust for the different calling convention (_find
+returns xt in rax on x64 vs data stack on i386).
+
+### FASM gotcha
+
+WORD64 macros cannot be placed mid-code — they must go at the bottom
+with the other WORD64 entries. The macro redefines GENWORDS64 which
+is expanded later; placing it mid-code caused "illegal instruction".
+The data table itself (_classes dq ...) can go anywhere in .flat.
+
+### Files changed
+
+- `TINYREF` — fixed d@ d! d, , descriptions
+- `QUICKREF` — same fixes
+- `ff64.help` — rewrote d-word section
+- `ff64.asm` — VECT64 macro, _icall/_ilit/_ccerr handlers, _classes
+  table, table-driven dispatch replacing inline if/else
+- `exp/asm-parity.md` — classes marked done
+
+### Test results
+
+- `make testall`: 149 PASSED, 1 SKIPPED (073-turnkey)
+- ff64: 92920 bytes (was 92304, +616 for table + handlers)
+- `classes` word accessible: returns table address

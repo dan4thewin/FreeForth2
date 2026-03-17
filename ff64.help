@@ -17,17 +17,17 @@
 
 \ === x86-64 data sizes ===
 
-d@ ( addr -- n ) fetch 32-bit (dword) value, sign-extended to 64-bit
-  On i386, d@ fetches 64-bit (double cell). On x86-64, d@ fetches 32-bit.
-  The "d" prefix means "double" on i386, "dword" on x86-64.
-  Use @ for cell-sized (64-bit) fetches on x86-64.
-d! ( n addr -- ) store 32-bit (dword) value
-  On i386, d! stores 64-bit (double cell). On x86-64, d! stores 32-bit.
-  Use ! for cell-sized (64-bit) stores on x86-64.
-d, ( n -- ) compile a 32-bit (dword) value at here; advance here by 4
-  On i386, d, compiles 64-bit (double cell, advance by 8).
+d@ ( addr -- n ) fetch dword (32-bit) value, sign-extended to 64-bit
+  On i386, d@ is an alias for @ (both 32-bit = cell-sized).
+  On x86-64, d@ fetches 32-bit (dword) while @ fetches 64-bit (cell).
+  The "d" prefix always means dword (32-bit) on both architectures.
+d! ( n addr -- ) store dword (32-bit) value
+  On i386, d! is an alias for ! (both 32-bit = cell-sized).
+  On x86-64, d! stores 32-bit (dword) while ! stores 64-bit (cell).
+d, ( n -- ) compile a dword (32-bit) value at here; advance here by 4
+  On i386, d, is an alias for , (both 32-bit = cell-sized).
   On x86-64, , compiles 64 bits (cell). d, compiles 32 bits (dword).
-  d, is the complement of , — the "other" cell size on each arch.
+  Use d, for opcode immediates, jump offsets, push imm32 fields.
 w, ( n -- ) compile a 16-bit value at here; advance here by 2
   Useful for emitting 16-bit opcode fragments.
 d@` d!` d,` 2dupd!` tuckd!` compile-time macros for the above
