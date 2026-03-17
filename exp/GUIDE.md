@@ -5045,16 +5045,20 @@ ff64.asm + ff64.boot      Architecture-specific (x86-64)
                            Compiler, macros, stack ops, flow control
                            SWAPbit, REPL, data stack, backtick words
 
-fflin64.boot               OS-specific (Linux)
+fflin64io.asm              OS-specific assembly (Linux x86-64)
+                           syscall, sigrestorer, dlopen/dlsym/dlcall
+
+ff2lin.boot                OS-specific Forth (Linux)
                            Syscall wrappers, FFI, file loading,
                            SEGV handler, command-line, boot sequence
 
 fflin64.asm / fflin64s.asm Build wrappers (dynamic / static)
-                           OSFORMAT macro, ffdl flag, include ff64.asm
+                           OSFORMAT + OSINCLUDE macros, include ff64.asm
 ```
 
-Future ports: ARM64 would replace ff64.asm/ff64.boot but reuse
-fflin64.boot.  macOS would replace fflin64.boot but reuse ff64.boot.
+Future ports: ARM64 would replace ff64.asm/ff64.boot/fflin64io.asm but
+reuse ff2lin.boot.  macOS would replace ff2lin.boot/fflin64io.asm but
+reuse ff64.boot.
 
 ### Cross-Platform Library Unification (exp 145)
 
@@ -6244,6 +6248,95 @@ The separation makes future ports straightforward:
 - **macOS x86-64**: replace `ff2lin.boot` with `ffmac2.boot`,
   reuse `ff64.asm`/`ff64.boot` unchanged
 - **macOS ARM64**: replace both layers, reuse `ff2.boot` core
+
+
+## Part 42: Assembly OS Extraction — fflin64io.asm (Experiment 159)
+
+Lavarenne's i386 design separates the assembly kernel from the OS
+interface:
+
+```
+fflin.asm          Build wrapper: OSFORMAT + OSINCLUDE macros
+  → includes ff.asm     Language kernel
+    → calls OSINCLUDE → fflinio.asm  OS interface (syscall, dlopen)
+```
+
+The x86-64 port originally had everything in `ff64.asm` — a monolith.
+Experiment 159 restored the clean separation:
+
+```
+fflin64.asm        Build wrapper: OSFORMAT + OSINCLUDE macros
+  → includes ff64.asm    Language kernel
+    → calls OSINCLUDE → fflin64io.asm  OS interface (syscall, dlopen)
+```
+
+### What moved to fflin64io.asm
+
+| Symbol | Lines | Purpose |
+|--------|-------|---------|
+| `_syscall` | ~55 | Generic Linux syscall dispatcher |
+| `_segv_restorer` | 3 | `rt_sigreturn` trampoline for signal handling |
+| `_dllib` | ~15 | `#lib` — `dlopen(filename, RTLD_LAZY\|RTLD_GLOBAL)` |
+| `_dlfun` | ~15 | `#fun` — `dlsym(handle, symbol)` |
+| `dl_err` | ~25 | Shared dlerror handler |
+| `_dlcall` | ~35 | `#call` — C function call via SysV ABI |
+| Static stubs | ~20 | `_dllib`/`_dlfun`/`_dlcall` returning 0 (no FFI) |
+
+The `extrn dlopen/dlsym/dlerror` declarations also moved into
+`fflin64io.asm`, guarded by `if defined ffdl`.
+
+### Dead code found and removed
+
+`_segv_handler` (17 lines) — an assembly SEGV handler that printed
+"*** SEGV ***" to stderr and exited.  This was dead code: the Forth
+`SEGVhndlr` in `ff2lin.boot` installs itself via `rt_sigaction` at
+boot time, completely replacing any assembly handler.  Only
+`_segv_restorer` (the `rt_sigreturn` trampoline) is live — the
+kernel requires it as `SA_RESTORER` for signal frame cleanup.
+
+Also removed: `segv_msg` and `segv_msg_len` data strings from
+ff64.asm's data section.
+
+### What stays in ff64.asm
+
+The `GENWORDS64` dictionary entries (`WORD64 "syscall"`, `"#lib"`,
+`"#fun"`, `"#call"`, `"sigrestorer"`) remain in ff64.asm's dictionary
+table.  Only the code implementations moved.  This matches the i386
+pattern where `CODE`/`WORD` macros define dictionary entries alongside
+the kernel.
+
+### Build wrapper pattern
+
+Both `fflin64.asm` (dynamic) and `fflin64s.asm` (static) define the
+same macro:
+
+```asm
+macro OSINCLUDE { include "fflin64io.asm" }
+```
+
+`ff64.asm` calls `OSINCLUDE` at the point between the dictionary
+lookup code (`_find_forth`) and the header generation macros. The
+Makefile dependencies include `fflin64io.asm`.
+
+### The four-layer architecture (final)
+
+```
+Layer 1  ff64.asm          x86-64 language kernel
+         fflin64io.asm     x86-64 Linux syscall/FFI (included by ff64.asm)
+
+Layer 2  ff2.boot          Shared compiler, stack ops, flow control
+         ff64.boot         [64]-conditional architecture specifics
+
+Layer 3  ff2lin.boot       Linux boot: dlopen, SEGV, needed, turnkey
+         syscalls.ff       Syscall number constants (lib/x86/ or lib/x86-64/)
+
+Build    fflin64.asm       Dynamic build wrapper (OSFORMAT + OSINCLUDE)
+         fflin64s.asm      Static build wrapper (same macros)
+```
+
+Future ports replace exactly the right files:
+- ARM64 Linux: new Layer 1 assembly, new syscalls.ff, reuse Layers 2–3
+- macOS x86-64: new fflin64io.asm + ff2lin.boot, reuse ff64.asm + ff2.boot
 
 
 ## Debugging: fas2gdb and the symbol gap

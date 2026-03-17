@@ -78,13 +78,12 @@ Last verified: 151 PASSED, 1 SKIPPED (`make testall`).
   Once resolved, shared macros (`w@`, `c@`, `over*`, etc.) can use
   `ext ... s09.` instead of `ext ... ,1 s09`.
 
-- ~~**io-extraction**~~: MOSTLY DONE (tier 3) — I/O words moved from
-  fflinio.asm to shared Forth.  fflinio.asm down to ~100 lines:
-  accept, syscall, sigrestorer, dlopen.  ff64.asm _accept removed.
-  Remaining: syscall/sigrestorer/dlopen are genuinely asm-mandatory.
-  ARM64/macOS split would still need an fflin-style glue file for
-  the remaining asm, but the Forth-side OS interface (ff2lin.boot)
-  is already clean.
+- ~~**io-extraction**~~: DONE — I/O words moved from fflinio.asm to
+  shared Forth (tier 3).  Assembly OS interface extracted into
+  `fflin64io.asm` (223 lines) — mirrors i386 `fflinio.asm`.  Contains
+  the genuinely asm-mandatory words: syscall, sigrestorer, dlopen block.
+  Dead `_segv_handler` removed.  ff64.asm is now a pure language kernel.
+  ARM64 port: replace ff64.asm + fflin64io.asm, reuse ff2lin.boot.
 
 - **fflin2-comment-porting**: Port comments from old fflin.boot and
   fflin64.boot into the unified ff2lin.boot. When the two files were

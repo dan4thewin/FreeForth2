@@ -35,10 +35,10 @@ ff.boot: ff2.boot ff2lin.boot openlib.ff ffpp
 ff64.boot: ff2.boot ff2lin.boot openlib.ff ffpp
 	./ffpp --64 $< > $@
 
-ff64.o ff64.fas: fflin64.asm ff64.asm ff64.boot ff2lin.boot
+ff64.o ff64.fas: fflin64.asm fflin64io.asm ff64.asm ff64.boot ff2lin.boot
 	fasm $< ff64.o -s ff64.fas
 
-ff64s: fflin64s.asm ff64.asm ff64.boot ff2lin.boot
+ff64s: fflin64s.asm fflin64io.asm ff64.asm ff64.boot ff2lin.boot
 	fasm $< $@
 	chmod +x $@
 

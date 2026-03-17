@@ -121,14 +121,20 @@ Key policies:
 
 The port follows Lavarenne's cross-platform pattern:
 
-- **`ff64.asm` + `ff64.boot`** — architecture-specific (x86-64):
-  compiler, backtick macros, stack ops, flow control, SWAPbit, REPL
-- **`ff2lin.boot`** — OS-specific (Linux): dlopen/dlsym, file
+- **`ff64.asm`** — architecture-specific (x86-64): compiler, backtick
+  macros, stack ops, flow control, SWAPbit, REPL
+- **`fflin64io.asm`** — OS-specific assembly (Linux x86-64): syscall
+  dispatcher, sigrestorer, dlopen/dlsym/dlcall (included by ff64.asm
+  via `OSINCLUDE` macro — mirrors i386's `fflinio.asm`)
+- **`ff2lin.boot`** — OS-specific Forth (Linux): dlopen/dlsym, file
   loading, command-line processing, SEGV handler, boot sequence
+- **`fflin64.asm`** / **`fflin64s.asm`** — build wrappers (dynamic /
+  static): define `OSFORMAT` + `OSINCLUDE` macros, include ff64.asm
 
-The Makefile concatenates both into `ff64.boot.min` for embedding.
-Future ports: ARM64 would replace ff64.asm/ff64.boot but reuse
-ff2lin.boot; macOS would replace ff2lin.boot but reuse ff64.boot.
+The Makefile concatenates ff2.boot + ff2lin.boot into `ff64.boot` for
+embedding. Future ports: ARM64 would replace ff64.asm/ff64.boot/
+fflin64io.asm but reuse ff2lin.boot; macOS would replace ff2lin.boot/
+fflin64io.asm but reuse ff64.boot.
 
 ## File loading: eval, not assembly
 

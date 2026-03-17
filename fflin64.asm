@@ -35,6 +35,11 @@ end if
 
 }
 
+;;; -----------------------------------------------------------------------
+;;; OSINCLUDE defines OS-specific ASM source to "include"
+
+macro OSINCLUDE { include "fflin64io.asm" }
+
 ;;; -----------------------------------------------------
 ;;; all macros ready: compile all:
 

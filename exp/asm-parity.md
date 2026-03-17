@@ -126,5 +126,13 @@ not assembly.
   Rewrote ff.asm `dotstr` to inline `int $80` sys_write (no _type
   dependency). Removed ff.asm dead debugger REPL (46 lines).  Unified
   SEGV handler with `cell*` arithmetic (6 shared lines).  fflinio.asm
-  reduced from 160 to ~100 lines (accept, syscall, sigrestorer, dlopen).
+  reduced from 160 to ~85 lines (syscall, sigrestorer, dlopen block).
   151 PASSED.
+- **Tier 3 (OS extraction)**: Extracted `fflin64io.asm` (223 lines)
+  from `ff64.asm` — mirrors i386's `fflinio.asm` separation.  Contains
+  `_syscall`, `_segv_restorer`, and full dlopen block (`_dllib`,
+  `_dlfun`, `dl_err`, `_dlcall` + static stubs).  Found and removed
+  dead `_segv_handler` (17 lines) + `segv_msg` data — the Forth
+  `SEGVhndlr` in ff2lin.boot replaces it at boot.  Both `fflin64.asm`
+  and `fflin64s.asm` define `macro OSINCLUDE { include "fflin64io.asm" }`.
+  ff64.o shrank 88 bytes, ff64s shrank 96 bytes.  151 PASSED.

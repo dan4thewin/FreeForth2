@@ -13946,3 +13946,115 @@ Forth `accept` is simpler, matches i386 behavior, and can be overridden
 ### Test results
 
 - `make testall`: 151 PASSED, 1 SKIPPED (073-turnkey)
+
+
+## Experiment 159: Extract fflin64io.asm — OS/Architecture separation at the assembly level
+
+**Date**: 2025-03-17
+**Branch**: asm-parity
+**Status**: Complete
+
+### Goal
+
+Restore Lavarenne's clean OS/architecture separation on x86-64.  The
+i386 build has `fflinio.asm` (OS interface) separate from `ff.asm`
+(language kernel), included via the `OSINCLUDE` macro.  The x64 had
+everything in one monolithic `ff64.asm`.
+
+DG's directive: the i386 separation is better.  Restore it on x64.
+
+### What was extracted
+
+Created `fflin64io.asm` (223 lines) containing:
+
+1. **`_syscall`** (~55 lines) — generic Linux syscall dispatcher.
+   Loads args from data stack into rdi/rsi/rdx/r10/r8/r9, saves/
+   restores rbp/rdx around the `syscall` instruction.
+
+2. **`_segv_restorer`** (3 lines) — `mov rax,15` + `syscall`.
+   The `rt_sigreturn` trampoline that the kernel requires as
+   `SA_RESTORER` for signal frame cleanup.
+
+3. **dlopen block** (~110 lines dynamic + ~20 static stubs):
+   - `_dllib` (`#lib`) — `dlopen(filename, RTLD_LAZY|RTLD_GLOBAL)`
+   - `_dlfun` (`#fun`) — `dlsym(handle, symbol_name)`
+   - `dl_err` — shared `dlerror()` handler → `_throw`
+   - `_dlcall` (`#call`) — SysV ABI call dispatcher (up to 6 args)
+   - `saveSP`, `dl_errbuf` — data/bss for C interop
+   - Static stubs (when `ffdl` not defined): return 0
+
+The `extrn dlopen/dlsym/dlerror` declarations moved into fflin64io.asm,
+guarded by `if defined ffdl`.
+
+### Dead code removed
+
+**`_segv_handler`** (17 lines) — an assembly SEGV handler that wrote
+"*** SEGV (segmentation fault) ***" to stderr and called `exit(139)`.
+This was dead code: the Forth `SEGVhndlr` in `ff2lin.boot` replaces
+it at boot time via `rt_sigaction`.  Only `_segv_restorer` is live.
+
+Also removed: `segv_msg` / `segv_msg_len` data strings from ff64.asm.
+
+### Build integration
+
+Both linker files define the include macro:
+
+```asm
+macro OSINCLUDE { include "fflin64io.asm" }
+```
+
+`ff64.asm` calls `OSINCLUDE` between `_find_forth` and the header
+generation macros.  The `GENWORDS64` dictionary entries for `syscall`,
+`sigrestorer`, `#lib`, `#fun`, `#call` remain in ff64.asm — only the
+code moved.
+
+Makefile updated: `fflin64io.asm` added to dependency lists for both
+`ff64.o` and `ff64s` targets.  `.gitignore` updated to un-ignore the
+new file.
+
+### Stale header fix
+
+The section header above `_find_forth` said ";; I/O — Forth-callable
+read/write" — left over from when `_syscall` was adjacent.  Fixed to
+";; Dictionary lookup" since `_find_forth` is the only thing there now.
+
+### Binary size delta
+
+- ff.o: 22000 → 22000 (unchanged — extraction is x64-only)
+- ff64.o: 92456 → 92368 (−88 bytes — dead `_segv_handler` + `segv_msg`)
+- ff64s: 89253 → 89157 (−96 bytes — same dead code removal)
+
+### The four-layer architecture
+
+```
+Layer 1  ff64.asm          x86-64 language kernel
+         fflin64io.asm     x86-64 Linux syscall/FFI (via OSINCLUDE)
+
+Layer 2  ff2.boot          Shared compiler, stack ops, flow control
+         ff64.boot         [64]-conditional architecture specifics
+
+Layer 3  ff2lin.boot       Linux boot: dlopen, SEGV, needed, turnkey
+         syscalls.ff       Syscall number constants (lib/x86/ or lib/x86-64/)
+
+Build    fflin64.asm       Dynamic build wrapper (OSFORMAT + OSINCLUDE)
+         fflin64s.asm      Static build wrapper (same macros)
+```
+
+This mirrors i386 exactly:
+
+```
+Layer 1  ff.asm             i386 language kernel
+         fflinio.asm        i386 Linux syscall/FFI (via OSINCLUDE)
+
+Layer 2  ff2.boot           Shared compiler, stack ops, flow control
+         ff.boot            [32]-conditional architecture specifics
+
+Layer 3  ff2lin.boot        Linux boot (same file, both arches)
+         syscalls.ff        lib/x86/syscalls.ff
+
+Build    fflin.asm          Build wrapper (OSFORMAT + OSINCLUDE)
+```
+
+### Test results
+
+- `make testall`: 151 PASSED, 1 SKIPPED (073-turnkey)

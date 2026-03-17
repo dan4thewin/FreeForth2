@@ -22,11 +22,10 @@
 !/QUICKREF
 !/TINYREF
 !/fflin.asm
-
 !/fflin64.asm
-
 !/fflin64s.asm
 !/fflinio.asm
+!/fflin64io.asm
 !/fftk.asm
 !/fftk64.asm
 !/fftk64s.asm
