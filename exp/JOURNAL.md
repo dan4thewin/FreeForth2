@@ -14279,3 +14279,76 @@ All actionable parity items are complete. Remaining items are
 
 Archived asm-parity.md. Discarded asm-asymmetry.md (superseded).
 Branches folded: exp64-1 → static-elf64 → asm-parity → exp64-1.
+
+## Experiment 166 — Maximize shared flow control code
+
+**Branch**: `no-cstack-shared` (from exp64-1)
+**Goal**: Follow up exp 165's proof-of-concept by refactoring the
+no-cstack flow control into an arch-specific / shared split that
+minimizes conditional code in ff2.boot.
+
+### Design
+
+Starting from the x-prefixed definitions in exp 165, the code was
+split into two layers:
+
+**Arch-specific primitives** (9 definitions — only the x64 versions
+are implemented here; i386 versions would differ in jump encoding,
+offset size, and SC packing):
+
+| Primitive | Purpose |
+|-----------|---------|
+| `_ythen` | Patch 4-byte rel32 forward reference |
+| `_ybegin` | Save old mrk to ct stack, set mrk[0]=here, mrk[8]=0 |
+| `_yend` | Resolve break chain from mrk[8], restore old mrk |
+| `_ybwdjmp` | Emit E9 backward to mrk[0] |
+| `_ycbwdjmp` | Emit 0F8x conditional backward to mrk[0] |
+| `_yfwdjmp` | Emit E9 forward, chain into mrk[8] |
+| `_yresolve_breaks` | Walk mrk[8] linked list, patch each |
+| `ySTART` | _ybegin + emit E9 forward + set mrk[0] |
+| `yENTER` | Resolve START's E9 (subtract 4 for rel32 width) |
+| `yRTIMES` | _ybegin + emit dec qword [rsp] / js rel32 |
+
+**Shared public words** (11 definitions — identical on both arches):
+
+| Word | Definition |
+|------|-----------|
+| `_yresolve_fwds` | Recursive WHILE forward-ref resolver |
+| `yBEGIN` | >S0 _ybegin 0 |
+| `yTIMES` | >r` (falls through to yRTIMES) |
+| `yWHILE` | IF` |
+| `yBREAK` | _yfwdjmp THEN` |
+| `yTILL` | _ycbwdjmp |
+| `yAGAIN` | _ybwdjmp + sentinel test |
+| `yUNTIL` | _ycbwdjmp + resolve fwds + end |
+| `yEND` | resolve fwds + end |
+| `yREPEAT` | _ybwdjmp + resolve fwds + end + TIMES check |
+
+### Comparison with exp 165
+
+The exp 165 x-words were a monolithic implementation — each public
+word contained its own jump encoding inline. This refactoring
+extracts 7 arch-specific primitives, making 11 public words shared.
+
+The shared words are exactly the words that would appear OUTSIDE the
+`[64] [IF] ... [ELSE] ... [THEN]` block in ff2.boot. The arch-specific
+primitives are what would go INSIDE that block.
+
+### Key observations
+
+1. **BREAK simplifies beautifully**: `_yfwdjmp THEN`` — just "emit a
+   chained forward jump, then resolve the preceding IF." Same on both
+   architectures.
+
+2. **TIMES/RTIMES fall-through**: TIMES must immediately precede RTIMES
+   for fall-through to work. This means RTIMES's placement is constrained
+   by TIMES, even though RTIMES's encoding is arch-specific.
+
+3. **11 of 20 flow control definitions are shared** (55%). The other 9
+   are arch-specific, but most are small (1-2 line primitives).
+
+### Result
+
+18/18 tests pass (same suite as exp 165). 155 total PASSED, 1 SKIPPED.
+
+**Files**: exp/166-no-cstack-shared/{Makefile,shared.ff,test.ff}

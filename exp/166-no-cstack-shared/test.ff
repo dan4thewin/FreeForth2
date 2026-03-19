@@ -1,0 +1,124 @@
+\ exp/166-no-cstack/test.ff
+\ Test the no-cstack flow control words
+needs test.ff
+needs exp/166-no-cstack-shared/shared.ff
+18 >plan
+
+\ ============================================================
+\ Basic loops
+\ ============================================================
+
+testing yBEGIN yUNTIL (count down)
+: yt1 5 yBEGIN 1- dup 0- 0= drop yUNTIL drop ;
+t{ yt1 -> }t
+
+testing yBEGIN yUNTIL (sum 5..1)
+: yt2 0 5 yBEGIN swap over+ swap 1- dup 0- 0= drop yUNTIL drop ;
+t{ yt2 -> 15 }t
+
+testing yBEGIN yWHILE yREPEAT (sum 5..1)
+: yt3 0 5 yBEGIN dup 0- 0<> drop yWHILE swap over+ swap 1- yREPEAT drop ;
+t{ yt3 -> 15 }t
+
+testing yBEGIN yAGAIN (;THEN exit at 0)
+: yt4 0 5 yBEGIN dup 0- 0= drop IF drop ;THEN swap over+ swap 1- yAGAIN ;
+t{ yt4 -> 15 }t
+
+\ ============================================================
+\ START/ENTER loops (do-while with initial skip)
+\ ============================================================
+
+testing ySTART yENTER yUNTIL
+: yt5 0 5 ySTART swap over+ swap 1- yENTER dup 0- 0= drop yUNTIL drop ;
+t{ yt5 -> 15 }t
+
+testing ySTART yENTER yWHILE yREPEAT
+: yt6 0 5 ySTART swap over+ swap 1- yENTER dup 0- 0<> drop yWHILE yREPEAT drop ;
+t{ yt6 -> 15 }t
+
+\ ============================================================
+\ BREAK
+\ ============================================================
+
+testing yBREAK yREPEAT (sum 5..3, break at 2)
+: yt7 0 5 yBEGIN dup 2- drop 0= IF drop yBREAK swap over+ swap 1- yREPEAT ;
+t{ yt7 -> 12 }t
+
+testing multiple yBREAK (find first: 7 or 3)
+: yt8 10 yBEGIN
+    dup 7- drop 0= IF yBREAK
+    dup 3- drop 0= IF yBREAK
+    1-
+  yREPEAT ;
+t{ yt8 -> 7 }t
+
+testing yBREAK yUNTIL (break at 5, else exit at 0)
+: yt9 0 10 yBEGIN dup 5- drop 0= IF yBREAK swap over+ swap 1- dup 0- 0= drop yUNTIL drop ;
+t{ yt9 -> 40 }t
+
+\ ============================================================
+\ TIMES (counted loops)
+\ ============================================================
+
+testing yTIMES yREPEAT (5 iterations)
+: yta 0 5 yTIMES 1+ yREPEAT ;
+t{ yta -> 5 }t
+
+testing yRTIMES yREPEAT (explicit >r)
+: ytb 0 5 >r yRTIMES 1+ yREPEAT ;
+t{ ytb -> 5 }t
+
+\ ============================================================
+\ Nested loops
+\ ============================================================
+
+testing nested yBEGIN yUNTIL (3x3=9)
+: ytc 0
+  3 yBEGIN
+    >r 3 yBEGIN >r 1+ r> 1- dup 0- 0= drop yUNTIL drop r>
+    1- dup 0- 0= drop
+  yUNTIL drop ;
+t{ ytc -> 9 }t
+
+testing nested yBREAK (inner breaks at 3, outer 3x)
+: ytd 0
+  3 yBEGIN
+    swap 5 yBEGIN swap 1+ swap 1- dup 3- drop 0= IF yBREAK dup 0- 0= drop yUNTIL drop
+    swap 1- dup 0- 0= drop
+  yUNTIL drop ;
+t{ ytd -> 6 }t
+
+\ ============================================================
+\ Multiple WHILE
+\ ============================================================
+
+testing double yWHILE (sum 10..6, exit at 5)
+: yte 0 10 yBEGIN dup 0- 0<> drop yWHILE dup 5- drop 0<> yWHILE swap over+ swap 1- yREPEAT drop ;
+t{ yte -> 40 }t
+
+\ ============================================================
+\ Edge cases
+\ ============================================================
+
+testing zero-trip yTIMES
+: ytf 42 0 yTIMES drop yREPEAT ;
+t{ ytf -> 42 }t
+
+testing yBEGIN yUNTIL (count up to 5)
+: ytg 0 yBEGIN 1+ dup 5- drop 0= yUNTIL ;
+t{ ytg -> 5 }t
+
+testing yAGAIN skip odd (sum even: 8+6+4+2=20)
+: yth 0 10 yBEGIN
+    1- dup 0- 0<> drop yWHILE
+    dup 1& 0- 0<> drop IF yAGAIN
+    swap over+ swap
+  yREPEAT drop ;
+t{ yth -> 20 }t
+
+\ verify standard flow control still works
+testing standard BEGIN UNTIL unaffected
+: yti 0 5 BEGIN swap over+ swap 1- dup 0- 0= drop UNTIL drop ;
+t{ yti -> 15 }t
+
+tally-exit ;

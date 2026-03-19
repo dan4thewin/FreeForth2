@@ -71,7 +71,8 @@ EXPERIMENTS = 025-loadvariants64 \
               052-repl-forth \
               143-openlib-port \
               144-native-libc \
-              153-openlib
+              153-openlib \
+              166-no-cstack-shared
 
 # Known-broken experiments — listed so we know they exist.
 # Fix and move back to EXPERIMENTS when passing.

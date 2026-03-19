@@ -1,0 +1,78 @@
+\ exp/166-no-cstack-shared/shared.ff
+\ Faithful port of i386 flow control to x64, maximizing shared code.
+\ Follows exp 165's proof that >cs/cs> is unnecessary.
+\
+\ Design: arch-specific primitives (prefixed with _y) define the
+\ 7 operations that differ between architectures. All public words
+\ are shared, calling the same primitives on both arches.
+\
+\ Arch-specific (9 definitions):
+\   _ythen  _ybegin  _yend  _ybwdjmp  _ycbwdjmp  _yfwdjmp
+\   _yresolve_breaks  ySTART  yENTER  yRTIMES
+\
+\ Shared (11 definitions):
+\   _yresolve_fwds  yBEGIN  yTIMES  yWHILE  yBREAK  yTILL
+\   yAGAIN  yUNTIL  yEND  yREPEAT  (+ dotted variants)
+
+\ ============================================================
+\ Arch-specific primitives — x64 versions
+\ (i386 versions would replace this block in ff2.boot)
+\ ============================================================
+
+\ patch 4-byte rel32 forward reference at addr to point to here
+:. _ythen here over- 4- swap d! 0 callmark! ;
+
+\ save old mrk on compile-time data stack, set new loop point
+:. _ybegin mrk 2@ here mrk! 0 mrk 8+ ! ;
+
+\ emit unconditional backward E9 jump to mrk[0]
+:. _ybwdjmp >S0 $E9 c, mrk@ here 4+ - d, ;
+
+\ emit conditional backward 0F8x jump to mrk[0]
+:. _ycbwdjmp >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
+
+\ emit unconditional forward E9 jump, chain into mrk[8]
+:. _yfwdjmp >S0 $E9 c, mrk 8+ @ d, here 4- mrk 8+ ! ;
+
+\ walk break chain: ( chain_head -- )
+:. _yresolve_breaks 0; dup d@ swap _ythen _yresolve_breaks ;
+
+\ resolve break chain from mrk[8], restore old mrk from ct stack
+\ ( old_mrk0 old_mrk8 sentinel -- sentinel )
+:. _yend mrk 8+ @ _yresolve_breaks >r mrk 2! r> ;
+
+\ --- arch-specific public words ---
+
+: ySTART` _ybegin 0 $E9 c, 0 d, here mrk! ;
+
+: yENTER` >S0 mrk@ 4- _ythen ;
+
+\ ============================================================
+\ Shared public words — identical logic on both architectures
+\ ============================================================
+
+\ resolve WHILE forward refs from compile-time stack (0 = sentinel)
+:. _yresolve_fwds 0- 0> IF THEN` _yresolve_fwds THEN ;
+
+: yBEGIN` >S0 _ybegin 0 ;
+
+\ TIMES falls through to RTIMES (arch-specific encoding)
+: yTIMES` >r`
+: yRTIMES` >S0 _ybegin -1 $240CFF48, ,4 $880F, ,2 here 4 allot ;
+
+: yWHILE.` cond.
+: yWHILE` IF` ;
+
+: yBREAK` _yfwdjmp THEN` ;
+
+: yTILL.` cond.
+: yTILL` _ycbwdjmp ;
+
+: yAGAIN` _ybwdjmp 0- 0<> IF THEN` ELSE _yend drop THEN ;
+
+: yUNTIL.` cond.
+: yUNTIL` _ycbwdjmp _yresolve_fwds _yend drop ;
+
+: yEND` >S0 _yresolve_fwds _yend drop ;
+
+: yREPEAT` _ybwdjmp _yresolve_fwds _yend 0- 0<> drop IF rdrop` THEN ;
