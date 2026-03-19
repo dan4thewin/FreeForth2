@@ -14240,3 +14240,42 @@ use the data stack.
 - `make testall`: all PASSED
 - Verified: `"FF" 16 number.` → 255, `"1010" 2 number.` → 10,
   `"77" 8 number.` → 63
+
+## Experiment 164: Promote $-. to shared Forth, conclude asm-parity
+
+### Goal
+
+Replace the i386 assembly `$-.` (case-insensitive string compare)
+with a shared Forth implementation in ff2.boot, and close out the
+asm-parity phase.
+
+### Actions
+
+DG wrote `$-.` in Forth using `cnt>` (copy ecx to TOS after `repz
+cmpsb`), `;CASE` (multi-exit helper for the return stack frame),
+and `;$20^<>` (case-insensitive single-char compare with A-z range
+checks). The implementation reuses the assembly `$-` as an inner
+loop — racing through matching regions at full `repz cmpsb` speed,
+falling back to Forth only at mismatch points for case folding.
+
+A bug in `;$20^<>` (misplaced `drop`) caused boundary characters
+(`[`/`{` etc.) to be treated as case-equivalent. DG found and fixed
+it. The test suite (test/strcmp.ff, 25 cases) now passes on both
+architectures identically.
+
+Removed the assembly `$-.` from ff.asm (CODE "$-.",_stringsubdot).
+Removed the `[64] [IF]` conditional — the Forth version is shared.
+
+Also fixed exp/049-hidepvt64 test: `pvtmargin` must be placed on a
+non-private word (matching how `needed` uses it in practice).
+
+### Closing asm-parity
+
+All actionable parity items are complete. Remaining items are
+**kept** as assembly by design:
+- `>SC`, `>S1` — structural SWAPbit differences between arches
+- `: ; anon anon:` — core compiler words, stay assembly
+- `c04` — i386-only encoding
+
+Archived asm-parity.md. Discarded asm-asymmetry.md (superseded).
+Branches folded: exp64-1 → static-elf64 → asm-parity → exp64-1.

@@ -1,6 +1,4 @@
 \ ff2.boot  FreeForth2 unified boot (i386 + x86-64)
-\ backtick macros: "dup" in source compiles via dup` defined here
-
 \ --------------------------------------------------------------------
 \ true primitives -- arch-specific register encodings
 \ swap` and SWAPbit adjusters (s01/s08/s09/s1) are assembly
@@ -83,8 +81,8 @@
 \ 4889DF(mov rdi,rbx)4889D1(mov rcx,rdx)498B37(mov rsi,[r15])
 \ 498B5708(mov rdx,[r15+8])4983C710(add r15,16)F3A4(rep movsb)
 : place` >S0
-    $DF8948, ,3 $D18948, ,3 $378B49, ,3
-    $08578B49, ,4 $10C78349, ,4 $A4F3, ,2 ;
+  $DF8948, ,3 $D18948, ,3 $378B49, ,3
+  $08578B49, ,4 $10C78349, ,4 $A4F3, ,2 ;
 
 \ 32-bit (dword) store -- for patching jump offsets
 : 2dupd!` $1389, s09 ; \ 8913(mov [ebx],edx) 32-bit store
@@ -132,10 +130,6 @@
 : rot` >rswapr>` swap` ;
 : 2xchg` swap` >rswapr>` swap` ;
 
-\ I/O -- write needed before dictionary listing
-: write ( addr # fd -- n ) >rswapr> 3 [64] [IF] 1 [ELSE] 4 [THEN] syscall ;
-
-\ compilation helpers
 : here` over` ext $EB89, s01 ; \ 4889EB(mov rbx,rbp)
 
 : ~`      ext $D3F7, s01 ; \ 48F7D3(not rbx)
@@ -172,8 +166,6 @@
 
 : 2+` 1+` 1+` ;
 : cmove` swap` place` drop` ;
-: std` $FD, ,1 ;
-: cld` $FC, ,1 ;
 
 \ consuming binary ops
 : &` over&` nip` ;
@@ -276,8 +268,8 @@ variable ?#
 : 0-` $DB09, s09 ; \ 09DB(or ebx,ebx)
 [THEN]
 \ helpers -- set FLAGS from known values
-: zFALSE 0 0- drop ;
-: nzTRUE 1 0- drop ;
+: zFALSE : setz  0 0- drop ;
+: nzTRUE : setnz 1 0- drop ;
 \ _?1 unary, _?2 binary, _?1. unary dotted, _?2. binary dotted
 :. _?1 ?# c! ;
 \ _?1./_?2. produce a Forth boolean [-1/0] in a register
@@ -491,8 +483,9 @@ cell 4 - 0= drop BOOL constant [32]`
 0 constant stdin
 1 constant stdout
 2 constant stderr
-: type stdout write drop ;
 
+: write ( addr # fd -- n ) >rswapr> 3 [64] [IF] 1 [ELSE] 4 [THEN] syscall ;
+: type stdout write drop ;
 : space 32
 :^ putc : emit tib 2dupc! swap 1_ type ; [THEN]
 :^ cr ."^J" ; \ print newline
@@ -559,6 +552,8 @@ variable features 100 allot
 "locals" features append ;
 
 \ move -- safe overlap-aware copy: std makes rep movsb go backward
+: std` $FD, ,1 ;
+: cld` $FC, ,1 ;
 : move >r u>= IF r> cmove ;THEN
   r 1- + swap r 1- + swap r> std cmove cld ;
 
@@ -640,11 +635,24 @@ r0!` ' alias r!`
   ENTER r1 r3 - drop 0>= WHILE REPEAT
   r0 r1 4 +r rot
   0- drop 0= IF 2>r 2drop 2r> ELSE 2drop THEN ;
+
+:. cnt>` dup` ext $CB89, s01 ;
+:. ;CASE` drop` IF` 2drop` 5 lit` +r` ;THEN` ;
+:. ;$20^<> 'A' < ;CASE 'z' > ;CASE $20^ 'A' < ;CASE 'z' > ;CASE <> 0 ;CASE 2drop ;
+: $-. 0 4 >>r \ ( @ @' # -- dif ; z? )  r0 is @ after >>r
+  START drop r0 1+ r0! r1 1+ r1!
+  ENTER r0 r1 r2 $- 0= IF 4 +r setz ;THEN cnt> r3!
+  dup abs $20- drop 0<> IF 4 +r ;THEN
+  r2 r3 dup r2! - 1- r0 over+ dup r0! c@
+  swap r1 + dup r1! c@ ;$20^<> drop
+  r3 0- 0= UNTIL 4 +r setz ;
+
 \ --------------------------------------------------------------------
 \ dictionary listing
 : words` H@ START 2dup+ 1+ -rot type space ENTER h.sz+ c@+ 0- 0= UNTIL 2drop cr ;
 
 \ dictionary inspector -- .hdr+ advances to next header
+: h.next h.sz+ c@+ + 1+ ;
 : .hdr+ dup .x\ .": " dup @ .x dup h.ct+ c@ .x h.sz+ c@+ 2dup type + 1+ ; \ addr -- next
 : .hdrs H@ START .hdr+ cr ENTER dup h.sz+ c@ 0- 0= drop UNTIL drop ;
 : .hdr .hdr+ cr drop ;
@@ -654,38 +662,20 @@ r0!` ' alias r!`
 \ walk chain, remove pvt headers, reclaim space; pvtmargin stops walk
 " hidepvt" features append ;
 variable hide hide on
-[64] [IF]
-: h.next dup h.sz+ c@ h.nm+ 1+ + ;
-:. _hdr_size h.sz+ c@ h.nm+ 1+ ;
-:. _remove_hdr \ addr -- addr+sz
-  dup _hdr_size
-  >r dup H@ - H@
-  swap H@ r + swap
-  move
-  r> dup H +! + ;
-:. _hidepvt hide@ 0; drop
-  H@ BEGIN dup h.sz+ c@ 0- 0<> drop WHILE
-    dup h.ct+ c@ dup $10& 0<> drop IF 2drop ;THEN
-    8& 0<> drop IF _remove_hdr ELSE h.next THEN
-  REPEAT drop ;
-: hidepvt` _hidepvt ;
-[THEN]
-
 :^ hidestop 0<> IF dup CT_MGN- drop THEN ; \ ct -- ct ; at pvtmargin?
-: xhidepvt` hide@ 0; drop   \ respect hide on/off
+: hidepvt` hide@ 0; drop   \ respect hide on/off
   \ hdrs grow down, H@ is most recent word at lowest address
   \ back over empty hdr, h.nm+1 bytes; set name size to 0 ( sentry H@ )
   H@ dup h.nm- 1- 0 over h.sz+ c! swap
-  \ push the hfa, hdr field address, of each pvt word until the next margin ( sentry H@ p1@ p2@ ... pn@ )
+  \ push the hfa, hdr field address, of each pvt word until the next margin
+  \ ( sentry H@ p1@ p2@ ... pn@ )
   START over h.sz+ c@+ + 1+ -rot CT_PVT& 0= drop swap IF nip THEN
   ENTER dup h.ct+ c@ dup $ff- drop hidestop 0= UNTIL 2drop
   \ pop addresses and pack headers
-  dup h.sz+ c@+ + 1+ >r START over h.sz+ c@+ + 1+ swap
+  dup h.sz+ c@+ + 1+ >r
+  START over h.sz+ c@+ + 1+ swap
     START 1- dupc@ r> 1- dup>r c! ENTER = UNTIL 2drop
   ENTER H@ h.nm- 1- = drop UNTIL drop r> H! ;
-[32] [IF]
-xhidepvt` ' alias hidepvt`
-[THEN]
 
 \ --------------------------------------------------------------------
 \ dictionary state save/restore

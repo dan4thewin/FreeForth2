@@ -1,0 +1,87 @@
+\ strcmp.ff — tests for $- and $-. (string compare)
+needs test.ff
+25 >plan
+
+\ nz? converts nonzero to -1, zero to 0 (for t{ }t matching)
+: nz? 0- 0<> IF. -1 ELSE 0 THEN ;
+
+\ ============================================================
+\ $- (case-sensitive string compare)
+\ ============================================================
+
+testing $- exact match
+t{ "abc" drop "abc" $- -> 0 }t
+
+testing $- mismatch
+t{ "abc" drop "axc" $- nz? -> -1 }t
+
+testing $- case sensitive
+t{ "abc" drop "ABC" $- nz? -> -1 }t
+
+testing $- single char match
+t{ "x" drop "x" $- -> 0 }t
+
+testing $- single char mismatch
+t{ "a" drop "b" $- nz? -> -1 }t
+
+testing $- empty string
+t{ "a" drop "b" drop 0 $- -> 0 }t
+
+testing $- first differs
+t{ "abc" drop "xbc" $- nz? -> -1 }t
+
+testing $- last differs
+t{ "abc" drop "abx" $- nz? -> -1 }t
+
+testing $- longer string
+t{ "hello_world" drop "hello_world" $- -> 0 }t
+
+\ ============================================================
+\ $-. (case-insensitive string compare)
+\ ============================================================
+
+testing $-. exact match
+t{ "abc" drop "abc" $-. -> 0 }t
+
+testing $-. all caps
+t{ "abc" drop "ABC" $-. -> 0 }t
+
+testing $-. mixed case
+t{ "Hello" drop "hELLO" $-. -> 0 }t
+
+testing $-. mismatch
+t{ "abc" drop "axc" $-. nz? -> -1 }t
+
+testing $-. single char case match
+t{ "a" drop "A" $-. -> 0 }t
+t{ "Z" drop "z" $-. -> 0 }t
+
+testing $-. single char mismatch
+t{ "a" drop "b" $-. nz? -> -1 }t
+
+testing $-. empty string
+t{ "a" drop "b" drop 0 $-. -> 0 }t
+
+testing $-. digits unchanged
+t{ "a1b" drop "A1B" $-. -> 0 }t
+t{ "a1b" drop "A2B" $-. nz? -> -1 }t
+
+testing $-. punctuation unchanged
+t{ "a.b" drop "A.B" $-. -> 0 }t
+t{ "a.b" drop "A,B" $-. nz? -> -1 }t
+
+testing $-. boundary chars
+\ [ and { differ by $20 but are not letters
+\ i386 asm $-. correctly rejects them as non-letter
+t{ "a[b" drop "a{b" $-. nz? -> -1 }t
+
+testing $-. longer string
+t{ "Hello_World" drop "hELLO_wORLD" $-. -> 0 }t
+
+testing $-. first char case
+t{ "Abc" drop "abc" $-. -> 0 }t
+
+testing $-. last char case
+t{ "abC" drop "abc" $-. -> 0 }t
+
+tally-exit ;

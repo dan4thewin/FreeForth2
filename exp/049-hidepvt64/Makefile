@@ -26,7 +26,7 @@ test:
 	  echo "  PASS: hide=0 disables hidepvt"; PASS=$$((PASS+1)); \
 	else echo "  FAIL: hide=0 disables hidepvt (got $$R)"; FAIL=$$((FAIL+1)); fi; \
 	echo "  --- pvtmargin ---"; \
-	R=$$(printf '%s\n' ':. early 1 ; pvtmargin :. late 2 ; hidepvt early . cr ;' \
+	R=$$(printf '%s\n' ':. early 1 ; : mid ; pvtmargin :. late 2 ; hidepvt early . cr ;' \
 	  > $(TMP); $(FF) $(TMP) 2>/dev/null | sed 's/^ *[0-9-]*; *//;s/ *[0-9-]*; *$$//' | head -1); \
 	if [ "$$R" = "1 " ]; then \
 	  echo "  PASS: early protected by pvtmargin"; PASS=$$((PASS+1)); \
