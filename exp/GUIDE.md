@@ -6385,3 +6385,135 @@ the call chain through named primitives instead of anonymous hex.
 This is a novel tool — no existing converter from FASM symbols to
 GDB-loadable ELF existed before this project.
 
+
+## Part 43: Compiler Restructuring — Exposing the Inner Architecture (Experiments 160–163)
+
+The i386 FreeForth compiler has a modular internal structure that
+Lavarenne made visible as named words: `classes`, `notfound`,
+`litcomp`, `number.`.  The x64 port originally inlined all this
+logic as a monolithic compiler loop.  Experiments 160–163 extracted
+these four components to match the i386 architecture.
+
+### The classes dispatch table (exp 160)
+
+When the compiler finds a word in the dictionary, it needs to decide
+what to do based on the word's compile type (ct).  The i386 uses a
+jump table (`_classes`) with pairs of function pointers: one for
+immediate execution, one for postponed compilation.
+
+The x64 version replaces inline if/else chains with the same table:
+
+```
+_classes:
+    dq _icall, _ilit      ; ct=0: code — immediate: call, postponed: push xt
+    dq _icall, _ccerr     ; ct=1: data — immediate: call, postponed: error
+    dq _icall, _icall     ; ct=2: immediate — both: call
+    ...
+```
+
+Dispatch: `shl ecx, 4` then `call [_classes + rcx]` (16 bytes per
+pair because x64 pointers are 8 bytes, vs 8 bytes on i386).
+
+A key difference: i386's `_icall` does `push ebx / DROP1 / ret`
+because the xt is on the data stack.  x64's `_icall` is simply
+`jmp rax` because the xt is already in rax from the dictionary
+lookup — never placed on the data stack.
+
+### The notfound vector (exp 161)
+
+When a token isn't found in the dictionary and isn't a literal,
+i386 calls through a vector: `call notfound`.  The default handler
+is `call _error / CDB "???"` — a simple error.  But because it's
+a vector, users can override it with custom handlers (cross-
+compilers, DSLs, etc.).
+
+The x64 version uses the same VECT trampoline: a 6-byte
+`push imm32 / ret` sequence.  FASM rejects `push dword` in 64-bit
+mode, so the encoding is manual: `db $68 / dd $+5 / ret`.  The
+imm32 is sign-extended to 64-bit — works because the binary loads
+below 2GB.
+
+### The literal compiler (exp 162)
+
+`litcomp` is the subroutine that handles tokens not found in the
+dictionary.  It tries, in order: character literal (`'X`), string
+(`"..."`), suffix dispatch (`8+`, `$FF&`, `foo@`), bare number.
+If all fail, it calls `notfound`.
+
+Previously inlined in the compiler loop; now extracted as
+`_literalcompiler` and called with `call _literalcompiler`.
+
+### The number parser with explicit base (exp 163)
+
+`number.` takes `( addr len base -- addr len | n 0 )` — parse a
+string as a number in an explicit base.  On i386 this is
+straightforward because `_number` uses the data stack directly.
+On x64, `_number` uses registers (rax=addr, ecx=len, returns
+rax=value + ZF).  The wrapper `_numberdot` bridges: it pulls the
+base from TOS, sets up registers, calls `_number_with_base` (a
+shared entry point into the parser body), and translates the
+register-based result back to the data stack.
+
+### The VECT64 macro
+
+Vectors on x64 use the same 6-byte trampoline as i386:
+`push imm32 / ret`.  The `push imm32` instruction sign-extends
+to 64 bits, which works for addresses in the low 2GB.  Vector
+patching macros (`^^`, `!^`, `n^`) use `d!` (32-bit store) to
+overwrite the 4-byte immediate.  The VECT64 FASM macro:
+
+```asm
+macro VECT64 nm, default
+    nm: db $68        ; push imm32
+        dd default    ; patched by !^ via d!
+        ret
+end macro
+```
+
+## Part 44: Assembly Parity — The Conclusion (Experiment 164)
+
+### The $-. promotion
+
+The last assembly parity item was `$-.` (case-insensitive string
+compare).  DG wrote a pure-Forth replacement in ff2.boot that
+reuses the assembly `$-` as an inner loop — racing through matching
+regions at full `repz cmpsb` speed, falling back to Forth only at
+mismatch points for case folding.
+
+The implementation introduces three private helpers:
+- `cnt>` — copy ecx (residual count after `repz cmpsb`) to TOS
+- `;CASE` — multi-exit from `$-.`'s return stack frame
+- `;$20^<>` — case-insensitive single-char compare with A-z range
+  checks (two passes: original range, then XOR $20 flipped range)
+
+The Forth version replaces the i386 assembly and serves both
+architectures from the same source.
+
+### The asm-parity tracker
+
+The systematic audit documented 100+ words across 8 tiers:
+
+| Tier | Scope | Result |
+|------|-------|--------|
+| 1 | Stack, arithmetic, memory | All promoted to shared Forth |
+| 2 | Literals, comma, compile helpers | Promoted or matched |
+| 3 | I/O, syscalls | fflinio.asm reduced to irreducible core |
+| 4 | Compiler (: ; anon anon:) | Kept as architecture-specific asm |
+| 5 | Strings ($-.) | Promoted to shared Forth |
+| 6 | Conditional compilation | Already shared |
+| 7 | Compiler internals (classes, notfound, litcomp, number.) | Exposed as named words |
+
+Six words remain assembly by design — the compiler definition words
+(`: ; anon anon:`) and two SWAPbit internals (`>SC`, `>S1`) that
+have structural differences between architectures.
+
+### Branch consolidation
+
+The port progressed through three branches:
+- `exp64-1` — experiments 001–105 (bootstrap through library parity)
+- `static-elf64` — experiments 106–155 (static builds through unification)
+- `asm-parity` — experiments 157–164 (systematic audit and conclusion)
+
+At the conclusion of asm-parity, all three branches were
+fast-forwarded to the same commit — consolidating the entire
+development history into a single lineage.

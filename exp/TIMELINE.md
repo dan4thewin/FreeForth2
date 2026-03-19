@@ -21,7 +21,9 @@ version through 2024.  The x86-64 port began on 2026-02-22.
 | Mar 5–6 | 2 | 135–145 | Flow control audit, \_loadfile removal |
 | Mar 7 | 1 | 146–150 | hanoi runs, test consolidation |
 | Mar 8–11 | 4 | 146–148 (2nd) | FFPATH, ffpp preprocessor |
-| **Total** | **~18 days** | **~148 experiments** | |
+| Mar 12–14 | 3 | 149–155 | Boot unification, header bug |
+| Mar 14–19 | 5 | 157–164 | Assembly parity — systematic audit and conclusion |
+| **Total** | **~26 days** | **~164 experiments** | |
 
 ---
 
@@ -340,25 +342,79 @@ unified boot files that serve both architectures from a single source.
 
 ---
 
+## Phase 11: Unification (Experiments 149–155)
+
+*2026-03-12 through 2026-03-14 (~3 days).  Boot files merge,
+OS-specific code separates, the build system matures.  The
+fflin unification (exp 149) proves the four-layer design:
+arch-specific assembly, arch-specific boot, OS-specific boot,
+shared boot.*
+
+| Exp | Milestone | What it unlocked |
+|-----|-----------|-----------------|
+| 149 | fflin unification | sigrestorer, light-touch alignment of Linux boot |
+| 150 | Boot alignment | Cross-word REPL coroutine — annotated walkthrough |
+| 151 | ff2lin.boot | Unified Linux boot file serving both architectures |
+| 152 | 3-byte SWAPbit adjusters | s01./s08./s09. — REX-aware stride for x86-64 |
+| 153 | openlib.ff rewrite | DG's rewrite with ffpp passthru and [DEBUG] |
+| 154 | i386 help fix | Help system working on both architectures |
+| 155 | Header bug fix | Wrong rbx/rdx load order in _header_forth |
+
+**Status:** Four-layer architecture proven: ff64.asm (arch),
+ff2.boot (shared Forth), ff2lin.boot (OS), fflin64io.asm (OS+arch).
+Boot file renamed from fflin2.boot to ff2lin.boot to match ff2.boot
+naming convention.
+
+---
+
+## Phase 12: Assembly Parity (Experiments 157–164)
+
+*2026-03-14 through 2026-03-19 (~5 days).  Systematic audit of
+every word in ff.asm vs ff64.asm — what's missing, what's extra,
+what can be shared.  The asm-parity tracker documented 100+ words
+across 8 tiers.  Most work was promotion: assembly → shared Forth.
+Concluded with all actionable items complete.*
+
+| Exp | Milestone | What it unlocked |
+|-----|-----------|-----------------|
+| 157 | fas2gdb | FASM symbols in GDB — ~490 named addresses |
+| 158 | Tier 3: I/O parity | fflinio.asm reduced to irreducible core |
+| 159 | fflin64io.asm extraction | OS code out of ff64.asm — clean separation |
+| 160 | classes table | Compiler dispatch via jump table (matching i386) |
+| 160b | VECT64 macro | push-imm32/ret trampoline for x86-64 vectors |
+| 161 | notfound vector | Patchable error handler (matching i386 exactly) |
+| 162 | litcomp extraction | Literal compiler as callable subroutine |
+| 163 | number. wrapper | Forth-callable number parser with explicit base |
+| 164 | **$-. to Forth** | **Case-insensitive compare promoted to shared Forth** |
+
+**Status:** Assembly parity complete.  Every actionable word from the
+i386 assembly now exists on x64 — either in assembly (architecture-
+specific) or shared Forth (both architectures).  Six words kept as
+assembly by design (>SC, >S1, : ; anon anon:).  The asm-parity
+tracker archived.  Branches folded: exp64-1, static-elf64, and
+asm-parity all converged to the same commit.
+
+---
+
 ## Current State
 
 | Metric | Value |
 |--------|-------|
-| ff64.asm | 2,179 lines |
-| ff64.boot | 803 lines |
-| fflin64.boot | 197 lines |
-| Assembly primitives | ~65 WORD64 entries |
+| ff64.asm | 1,913 lines |
+| ff.asm | 1,228 lines |
+| ff2.boot (shared) | 771 lines |
+| ff2lin.boot (OS) | 81 lines |
+| fflin64io.asm (OS+arch) | 223 lines |
+| Assembly primitives | ~60 WORD64 entries |
 | Forth-defined words | ~400+ |
-| Test suite | 120 tests (make testall) |
-| Binary size | ~100KB (static ELF64, no libc) |
-| Known compiler bugs | 2 (IF AGAIN, rdrop ;THEN) |
+| Test suite | 153 PASSED (`make testall`) |
+| Binary size | ~101KB (dynamic), ~87KB (static) |
+| Known compiler bugs | 0 |
 
 ### What the i386 has that ff64 doesn't yet
 
-- Lavarenne's compacting hidepvt (ff.boot) — ff64 has a cmove\>-based
-  reimplementation and an unconnected port of the original (xhidepvt)
 - Some ff.ff library code not yet ported
-- Networking (lib/x86-64/net.ff is new to ff64, not yet mature)
+- Networking (lib/x86-64/net.ff not yet mature)
 - FPU words
 
 ### The hidepvt question
@@ -368,5 +424,5 @@ bulk-copy approach was easier to get right than Lavarenne's original
 two-pass collect-and-pack algorithm (ff.boot:285).  The Lavarenne
 original uses START/ENTER loops with `c@+`/`dupc@` byte-copy loops
 and careful stack choreography — all of which existed by exp 071, but
-the cmove\> approach required less debugging.  `_postboot` still calls
-the cmove\>-based `_hidepvt`.
+the cmove\> approach required less debugging.  DG later restored
+Lavarenne's original algorithm.
