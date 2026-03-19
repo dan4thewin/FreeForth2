@@ -1,0 +1,124 @@
+\ exp/165-no-cstack/test.ff
+\ Test the no-cstack flow control words
+needs test.ff
+needs exp/165-no-cstack/nocstack.ff
+18 >plan
+
+\ ============================================================
+\ Basic loops
+\ ============================================================
+
+testing xBEGIN xUNTIL (count down)
+: xt1 5 xBEGIN 1- dup 0- 0= drop xUNTIL drop ;
+t{ xt1 -> }t
+
+testing xBEGIN xUNTIL (sum 5..1)
+: xt2 0 5 xBEGIN swap over+ swap 1- dup 0- 0= drop xUNTIL drop ;
+t{ xt2 -> 15 }t
+
+testing xBEGIN xWHILE xREPEAT (sum 5..1)
+: xt3 0 5 xBEGIN dup 0- 0<> drop xWHILE swap over+ swap 1- xREPEAT drop ;
+t{ xt3 -> 15 }t
+
+testing xBEGIN xAGAIN (;THEN exit at 0)
+: xt4 0 5 xBEGIN dup 0- 0= drop IF drop ;THEN swap over+ swap 1- xAGAIN ;
+t{ xt4 -> 15 }t
+
+\ ============================================================
+\ START/ENTER loops (do-while with initial skip)
+\ ============================================================
+
+testing xSTART xENTER xUNTIL
+: xt5 0 5 xSTART swap over+ swap 1- xENTER dup 0- 0= drop xUNTIL drop ;
+t{ xt5 -> 15 }t
+
+testing xSTART xENTER xWHILE xREPEAT
+: xt6 0 5 xSTART swap over+ swap 1- xENTER dup 0- 0<> drop xWHILE xREPEAT drop ;
+t{ xt6 -> 15 }t
+
+\ ============================================================
+\ BREAK
+\ ============================================================
+
+testing xBREAK xREPEAT (sum 5..3, break at 2)
+: xt7 0 5 xBEGIN dup 2- drop 0= IF drop xBREAK swap over+ swap 1- xREPEAT ;
+t{ xt7 -> 12 }t
+
+testing multiple xBREAK (find first: 7 or 3)
+: xt8 10 xBEGIN
+    dup 7- drop 0= IF xBREAK
+    dup 3- drop 0= IF xBREAK
+    1-
+  xREPEAT ;
+t{ xt8 -> 7 }t
+
+testing xBREAK xUNTIL (break at 5, else exit at 0)
+: xt9 0 10 xBEGIN dup 5- drop 0= IF xBREAK swap over+ swap 1- dup 0- 0= drop xUNTIL drop ;
+t{ xt9 -> 40 }t
+
+\ ============================================================
+\ TIMES (counted loops)
+\ ============================================================
+
+testing xTIMES xREPEAT (5 iterations)
+: xta 0 5 xTIMES 1+ xREPEAT ;
+t{ xta -> 5 }t
+
+testing xRTIMES xREPEAT (explicit >r)
+: xtb 0 5 >r xRTIMES 1+ xREPEAT ;
+t{ xtb -> 5 }t
+
+\ ============================================================
+\ Nested loops
+\ ============================================================
+
+testing nested xBEGIN xUNTIL (3x3=9)
+: xtc 0
+  3 xBEGIN
+    >r 3 xBEGIN >r 1+ r> 1- dup 0- 0= drop xUNTIL drop r>
+    1- dup 0- 0= drop
+  xUNTIL drop ;
+t{ xtc -> 9 }t
+
+testing nested xBREAK (inner breaks at 3, outer 3x)
+: xtd 0
+  3 xBEGIN
+    swap 5 xBEGIN swap 1+ swap 1- dup 3- drop 0= IF xBREAK dup 0- 0= drop xUNTIL drop
+    swap 1- dup 0- 0= drop
+  xUNTIL drop ;
+t{ xtd -> 6 }t
+
+\ ============================================================
+\ Multiple WHILE
+\ ============================================================
+
+testing double xWHILE (sum 10..6, exit at 5)
+: xte 0 10 xBEGIN dup 0- 0<> drop xWHILE dup 5- drop 0<> xWHILE swap over+ swap 1- xREPEAT drop ;
+t{ xte -> 40 }t
+
+\ ============================================================
+\ Edge cases
+\ ============================================================
+
+testing zero-trip xTIMES
+: xtf 42 0 xTIMES drop xREPEAT ;
+t{ xtf -> 42 }t
+
+testing xBEGIN xUNTIL (count up to 5)
+: xtg 0 xBEGIN 1+ dup 5- drop 0= xUNTIL ;
+t{ xtg -> 5 }t
+
+testing xAGAIN skip odd (sum even: 8+6+4+2=20)
+: xth 0 10 xBEGIN
+    1- dup 0- 0<> drop xWHILE
+    dup 1& 0- 0<> drop IF xAGAIN
+    swap over+ swap
+  xREPEAT drop ;
+t{ xth -> 20 }t
+
+\ verify standard flow control still works
+testing standard BEGIN UNTIL unaffected
+: xti 0 5 BEGIN swap over+ swap 1- dup 0- 0= drop UNTIL drop ;
+t{ xti -> 15 }t
+
+tally-exit ;

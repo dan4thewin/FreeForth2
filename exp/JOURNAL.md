@@ -14279,3 +14279,100 @@ All actionable parity items are complete. Remaining items are
 
 Archived asm-parity.md. Discarded asm-asymmetry.md (superseded).
 Branches folded: exp64-1 → static-elf64 → asm-parity → exp64-1.
+
+## Experiment 165 — Eliminate >cs/cs> with mrk-chain BREAK resolution
+
+**Branch**: `no-cstack` (from exp64-1)
+**Goal**: Prove that x64 flow control can use the i386/longconds
+mrk-chain technique for BREAK resolution, eliminating the >cs/cs>
+compile-time stack that was introduced during the x64 port.
+
+### Background
+
+The x64 port introduced `>cs` and `cs>` — a separate compile-time
+stack (cstack) for storing BREAK forward-reference addresses. The i386
+never had this; it used the `mrk` variable's second cell as a linked
+list head for BREAK chains. The longconds library (lib/x86/longconds.ff)
+demonstrates this mrk-chain approach for long jumps.
+
+DG's thesis: x64 doesn't need >cs/cs> — it can use the same mrk-chain
+approach as i386/longconds. This experiment proves or disproves it.
+
+### Design
+
+All flow control rewritten as x-prefixed words in nocstack.ff:
+
+**mrk layout** (unchanged from ff2.boot):
+- mrk[0]: backward jump target (loop body address)
+- mrk[8]: break chain head (linked list of BREAK displacement fields)
+
+**Key difference from current x64**: old mrk values are saved/restored
+on the compile-time DATA stack (the regular Forth stack during
+compilation), not on a separate cstack. This matches i386 exactly.
+
+**Core helpers**:
+- `x_begin`: save old mrk via `mrk 2@`, set mrk[0]=here, mrk[8]=0
+- `x_end`: resolve break chain from mrk[8], restore old mrk via `mrk 2!`
+- `x_then`: patch 4-byte rel32 forward reference (same as existing)
+- `x_resolve_breaks`: walk mrk[8] linked list, patch each with x_then
+- `x_resolve_fwds`: resolve WHILE forward refs from compile-time stack
+
+**BREAK chain mechanism**: each xBREAK emits E9 + 4-byte displacement.
+The displacement field stores the address of the previous BREAK's
+displacement field (linked list). xBREAK also updates mrk[8] to point
+to the new displacement field. x_resolve_breaks walks this chain at
+loop close, patching each E9 to jump past the loop.
+
+### Bugs found and fixed
+
+1. **x_resolve_breaks infinite loop**: Initially read mrk[8] directly
+   on each recursive call but never cleared it — infinite recursion.
+   Fix: take chain head from data stack (like longconds), not from mrk.
+
+2. **x_resolve_fwds sentinel handling**: x_end needed to preserve the
+   BEGIN/RTIMES sentinel (0 or -1) across mrk restoration for REPEAT
+   to check. Used `>r ... r>` around `mrk 2!`.
+
+### Test patterns (18 tests, all passing)
+
+| Pattern | Test | Description |
+|---------|------|-------------|
+| BEGIN/UNTIL | xt1,xt2 | Basic countdown and sum |
+| BEGIN/WHILE/REPEAT | xt3 | WHILE-guarded sum |
+| BEGIN/AGAIN | xt4 | ;THEN exit, bare AGAIN closes loop |
+| START/ENTER/UNTIL | xt5 | Do-while with initial skip |
+| START/ENTER/WHILE/REPEAT | xt6 | Do-while with WHILE guard |
+| BREAK/REPEAT | xt7 | Sum with early break |
+| Multiple BREAK | xt8 | Search with two break conditions |
+| BREAK/UNTIL | xt9 | Break or countdown exit |
+| TIMES/REPEAT | xta | Counted loop |
+| RTIMES/REPEAT | xtb | Explicit >r counted loop |
+| Nested UNTIL | xtc | 3×3 nested loops |
+| Nested BREAK | xtd | Inner break, outer UNTIL |
+| Double WHILE | xte | Two exit conditions |
+| Zero-trip TIMES | xtf | Zero iterations |
+| Immediate UNTIL | xtg | Count up to target |
+| IF AGAIN | xth | Conditional continue (skip odd) |
+| Standard unaffected | xti | Verify original words work |
+
+### Key insight: IF xAGAIN interaction
+
+xAGAIN tests the compile-time stack TOS. If it finds an IF forward
+ref (nonzero address), it resolves that IF with THEN` and emits a
+backward jump — acting as a "conditional continue" that doesn't
+close the loop. If it finds the sentinel (0), it closes the loop
+via x_end. This dual behavior is correct: `IF xAGAIN` inside a
+REPEAT loop works as C's `if (cond) continue;`, while bare xAGAIN
+works as a loop closer (like REPEAT without WHILE support).
+
+### Conclusion
+
+**Thesis confirmed.** The x64 can use mrk-chain BREAK resolution
+identical to i386/longconds. The >cs/cs> compile-time stack is
+unnecessary machinery. The x-prefixed words demonstrate full flow
+control (BEGIN, UNTIL, WHILE, REPEAT, AGAIN, BREAK, START, ENTER,
+TIMES, RTIMES, END, TILL) without any cstack — just the mrk variable
+and the compile-time data stack.
+
+**Files**: exp/165-no-cstack/{Makefile,nocstack.ff,test.ff}
+**Tests**: 18 PASSED, standard flow control unaffected

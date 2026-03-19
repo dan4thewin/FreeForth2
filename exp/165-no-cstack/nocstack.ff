@@ -1,0 +1,55 @@
+\ exp/165-no-cstack/nocstack.ff
+\ Prove that x64 flow control can use mrk-chain instead of >cs/cs>
+\
+\ Strategy: redefine flow control as x-prefixed words using the
+\ longconds/i386 mrk-chain technique for BREAK resolution.
+\
+\ The mrk layout (2 cells, same as ff2.boot):
+\   mrk[0]: loop body address (backward jump target)
+\   mrk[8]: break chain head (address of last BREAK's d, field, or 0)
+\
+\ BREAK chain: each BREAK emits E9 + 4-byte d, field. That field
+\ holds the address of the previous BREAK's d, field (or 0 sentinel).
+\ END walks the chain, patching each with the correct forward offset.
+\
+\ Old mrk values are saved/restored on the compile-time data stack
+\ (the regular Forth stack during compilation), same as i386.
+
+\ _then for long jumps: patch 4-byte rel32 at addr
+:. x_then here over- 4- swap d! 0 callmark! ;
+
+\ save/restore mrk on compile-time stack
+:. x_begin mrk 2@ here mrk! 0 mrk 8+ ! ;
+
+\ backward jumps
+:. x_jmpback >S0 $E9 c, mrk@ here 4+ - d, ;
+:. x_cjmpback >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
+
+\ resolve break chain: ( chain_head -- ) walk linked list
+:. x_resolve_breaks 0; dup d@ swap x_then x_resolve_breaks ;
+
+\ resolve WHILE forward refs on compile-time stack (0 = sentinel from BEGIN)
+:. x_resolve_fwds 0- 0> IF THEN` x_resolve_fwds THEN ;
+
+\ restore mrk from compile-time stack (pushed by x_begin)
+\ stack at this point: ( old_mrk0 old_mrk8 sentinel 0_or_whiles... )
+\ x_resolve_fwds already consumed WHILEs, leaving sentinel (0 or -1)
+\ Leave sentinel on stack for REPEAT to check (RTIMES uses -1)
+:. x_end mrk 8+ @ x_resolve_breaks >r mrk 2! r> ;
+
+\ --- public flow control words ---
+: xBEGIN` >S0 x_begin 0 ;
+: xSTART` x_begin 0 $E9 c, 0 d, here mrk! ;
+: xTIMES` >r`
+: xRTIMES` >S0 x_begin -1 $240CFF48, ,4 $880F, ,2 here 4 allot ;
+: xENTER` >S0 mrk@ 4- x_then ;
+: xWHILE.` cond.
+: xWHILE` IF` ;
+: xBREAK` >S0 $E9 c, mrk 8+ @ d, here 4- mrk 8+ ! THEN` ;
+: xTILL.` cond.
+: xTILL` >S0 cond $0F c, $10+ c, mrk@ here 4+ - d, ;
+: xAGAIN` x_jmpback 0- 0<> IF THEN` ELSE x_end drop THEN ;
+: xUNTIL.` cond.
+: xUNTIL` x_cjmpback x_resolve_fwds x_end drop ;
+: xEND` >S0 x_resolve_fwds x_end drop ;
+: xREPEAT` x_jmpback x_resolve_fwds x_end 0- 0<> drop IF rdrop` THEN ;
