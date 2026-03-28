@@ -1,6 +1,6 @@
 # FreeForth2 — Backlog
 
-Last verified: 151 PASSED, 1 SKIPPED (`make testall`).
+Last verified: 155 PASSED, 1 SKIPPED (`make testall`).
 
 ## Bugs
 
@@ -69,6 +69,15 @@ Last verified: 151 PASSED, 1 SKIPPED (`make testall`).
   fixed shell.ff system stack bug (wait4 missing rusage arg) and !!
   NUL-termination.
 - ~~**fill-bug**~~: FIXED — `fill` works for 100+ bytes.
+
+- **no-cstack-apply**: Apply no-cstack flow control to ff2.boot.
+  Experiments 165-166 proved x64 flow control can eliminate `>cs`/`cs>`
+  by using the i386/longconds mrk-chain technique for BREAK resolution.
+  Exp 166 refactored into 9 arch-specific primitives + 11 shared public
+  words (55% shared). Ready to apply: replace ff2.boot lines 366-394
+  with the arch-specific primitives, move shared words outside the
+  `[IF]/[ELSE]/[THEN]` block, remove cstack infrastructure.
+  Branches: `no-cstack` (165), `no-cstack-shared` (166).
 
 - **shared-s-dotted**: Make `s01.`/`s08.`/`s09.` (= `,1 s01` etc.)
   shared across both arches. Currently defined separately in `[64]`
