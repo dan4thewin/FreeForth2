@@ -114,3 +114,142 @@ fully compatible with the copy-and-inline compilation model.
 **Verdict:** PASS ✓
 
 ---
+
+## Experiment 004 — Minimal Forth Compiler
+
+**Goal:** Build the smallest possible Forth compiler in C that:
+discovers primitive bytes at runtime, compiles definitions by copying
+those bytes, and can execute `: double dup + ; 21 double` → 42.
+
+**Critical finding: NOS must be callee-saved.**
+
+The initial version used rdx for NOS (matching ff64).  Test 2
+(`21 dup +`) produced 32 instead of 42.  The cause: rdx is
+caller-saved in the SysV ABI.  Every C function call between
+primitive executions (strcmp, dict_find, even the eval loop itself)
+clobbered NOS.
+
+Fix: changed NOS from rdx to r13 (callee-saved).  This means the
+portable register assignment MUST use only callee-saved registers:
+
+| Role | x86-64 | Requirement |
+|------|--------|-------------|
+| TOS  | rbx    | callee-saved ✓ |
+| NOS  | r13    | callee-saved ✓ (was rdx — BROKEN) |
+| DSP  | r15    | callee-saved ✓ |
+
+This diverges from ff64's rdx assignment but is a necessary
+consequence of embedding the Forth engine in C.  The C compiler's
+calling convention must be respected for the interleaved C code
+(parsing, dictionary lookup, I/O) to work.
+
+**What the compiler supports:**
+- Integer literals (compiled as dup + movabs imm64)
+- Primitive words: + drop dup @ !
+- Colon definitions with CALL rel32 / RET
+- Nested definitions (quadruple calls double calls dup+add)
+- Immediate execution outside definitions
+
+**Test results:**
+```
+42 literal:                    TOS=42 — PASSED
+21 dup +:                      TOS=42 — PASSED
+: double dup + ; 21 double:    TOS=42 — PASSED
+: quadruple double double ; 10 quadruple: TOS=40 — PASSED
+7 quadruple:                   TOS=28 — PASSED
+```
+
+**Verdict:** PASS ✓
+
+**Implications:** A C-hosted FreeForth compiler is viable.  The
+fundamental model works: C functions produce copyable machine code,
+the Forth compiler copies those bytes to build definitions, and
+composed code executes correctly.  The architecture-specific pieces
+are small: the literal encoding (movabs), the call encoding (E8
+rel32), and the ret byte (C3).  Everything else — the compiler
+logic, the dictionary, the primitive implementations — is pure C.
+
+---
+
+## Experiment 005 — Cross-Architecture Validation
+
+**Goal:** Compile the identical C primitive source for both x86-64
+and ARM64.  Verify correct register usage on both targets.
+
+**ARM64 register mapping:**
+- TOS = x19 (callee-saved)
+- NOS = x20 (callee-saved)
+- DSP = x21 (callee-saved)
+
+The `#if defined(__aarch64__)` / `#elif defined(__x86_64__)` header
+selects the right registers.  The primitive function bodies are
+IDENTICAL — not a single `#ifdef` in the implementation code.
+
+**Results — ARM64 disassembly:**
+```
+prim_add:    add x19, x19, x20 ; add x21,x21,#8 ; ldur x20,[x21,#-8] ; ret
+prim_drop:   mov x19, x20 ; add x21,x21,#8 ; ldur x20,[x21,#-8] ; ret
+prim_dup:    mov x0, x21 ; sub x21,x21,#8 ; stur x20,[x0,#-8] ; mov x20,x19 ; ret
+prim_fetch:  ldr x19, [x19] ; ret
+prim_store:  str x20,[x19] ; ldp x19,x20,[x21] ; add x21,x21,#0x10 ; ret
+```
+
+**Notable:** The ARM64 compiler used `ldp` (load pair) in `store`
+to load both TOS and NOS in a single instruction — an optimization
+a non-ARM-expert would likely miss in hand-written assembly.  The
+C compiler is not just "good enough" — it's bringing architecture
+expertise we don't have.
+
+**Instruction counts:**
+| Primitive | x86-64 | ARM64 | Notes |
+|-----------|--------|-------|-------|
+| add       | 3+ret  | 3+ret | Identical structure |
+| drop      | 3+ret  | 3+ret | Identical structure |
+| dup       | 4+ret  | 4+ret | Both use scratch reg |
+| fetch     | 1+ret  | 1+ret | Perfect on both |
+| store     | 4+ret  | 3+ret | ARM64 wins with ldp |
+
+**Verdict:** PASS ✓
+
+The same C source produces correct, minimal primitives for two
+entirely different architectures.  The portability hypothesis is
+confirmed.
+
+---
+
+## Summary of findings
+
+Five experiments, five passes.  The viability question is answered:
+
+1. **GCC global register variables** produce clean, prologue-free
+   code for Forth primitives on both x86-64 and ARM64.
+
+2. **All pinned registers must be callee-saved** in the target ABI.
+   Using caller-saved registers (rdx) causes silent corruption
+   when C code runs between primitive executions.
+
+3. **Runtime byte extraction works** — no build-time tooling needed.
+   Function pointers + RET scanning gives us the bytes.
+
+4. **Copy-and-inline compilation works** — compose primitive bytes
+   into an executable buffer, append RET, call it.  The fundamental
+   FreeForth compilation model survives the C transition.
+
+5. **Cross-architecture portability works** — identical C source,
+   different register mappings in a header, correct output on both
+   x86-64 and ARM64.  The ARM64 compiler even found optimizations
+   (ldp) that a human porter would likely miss.
+
+**What remains for a full port:**
+- Flow control (IF/THEN/BEGIN) — needs architecture-specific jump
+  encoding (but it's a small lookup table, not a rewrite)
+- The compiler engine itself (parsing, dictionary, backtick macros)
+- Boot file loading (eval, needed)
+- I/O and OS interface
+- Clang compatibility (currently GCC-only due to global register vars)
+
+**Key design constraint discovered:**
+The register assignment for portable FreeForth2 is NOT the same as
+ff64's.  ff64 uses rdx (caller-saved) for NOS because it never
+interleaves C code.  The portable version must use only callee-saved
+registers because the compiler engine IS C code.

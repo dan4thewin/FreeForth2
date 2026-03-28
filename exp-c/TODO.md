@@ -2,10 +2,6 @@
 
 ## Active
 
-- **exp-001**: Naked primitives — verify Clang emits clean code
-- **exp-002**: Runtime byte extraction — read primitive bytes at runtime
-- **exp-003**: Copy-and-execute — copied primitives run correctly
-- **exp-004**: Minimal Forth compiler — compile and run `: double dup + ;`
 - **exp-005**: Cross-architecture — same source compiles for ARM64
 
 ## Deferred
@@ -18,4 +14,8 @@
 
 ## Done
 
-(none yet)
+- **exp-001**: GCC produces clean, prologue-free primitives ✓
+- **exp-002**: Runtime byte extraction via pointer arithmetic ✓
+- **exp-003**: Copy-and-execute: dup+add → 42 ✓
+- **exp-004**: Minimal Forth compiler: colon definitions work ✓
+- **exp-005**: ARM64 cross-compile: same source, correct output ✓

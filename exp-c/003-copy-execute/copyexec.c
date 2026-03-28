@@ -20,7 +20,7 @@
 
 /* --- Register pinning (x86-64) --- */
 register long    tos  asm("rbx");
-register long    nos  asm("rdx");
+register long    nos  asm("r13");
 register long   *dsp  asm("r15");
 
 /* --- Primitives --- */
