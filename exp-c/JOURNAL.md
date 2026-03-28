@@ -335,3 +335,75 @@ address handling, ENDBR64, stack alignment — is determined by what
 the C compiler emits, not by what we write.  The extraction code itself
 has `#ifdef` branches for scanning (4-byte aligned on ARM64 vs
 byte-at-a-time on x86-64), but the BYTES it extracts are pure C output.
+
+---
+
+## Experiment 007 — Minimal Flow Control
+
+**Goal:** Add IF...THEN and BEGIN...UNTIL.  Determine per-arch cost.
+
+### Stack booleans, not FLAGS
+
+FreeForth uses CPU FLAGS for conditionals — deeply x86.  For
+portability, this experiment uses stack booleans instead:
+- `0=` ( x -- flag ) replaces TOS with -1 (true) or 0 (false)
+- `IF` ( flag -- ) consumes the boolean, skips body if zero
+- `UNTIL` ( flag -- ) consumes the boolean, loops back if zero
+
+### The flags-through-drop problem
+
+First attempt: test TOS, inline drop, conditional branch.  **Failed.**
+GCC compiles `dsp++` as `ADD $8, %r15` on x86-64, which clobbers
+FLAGS.  The test result is destroyed before the branch reads it.
+ARM64 doesn't have this problem — `ADD` without `S` suffix preserves
+condition flags.
+
+FreeForth avoids this with `LEA` (flags-preserving).  But we can't
+control GCC's instruction selection from C.
+
+**Fix:** Save TOS to a scratch register (RAX / x0) BEFORE drop, then
+test the scratch AFTER:
+
+```
+emit_save_tos        ; mov rax, rbx  (x86) / mov x0, x19  (ARM64)
+emit_inline(drop)    ; clobbers FLAGS — doesn't matter now
+emit_test_scratch    ; test rax, rax (x86) / cmp x0, #0   (ARM64)
+emit_jz_forward      ; je / b.eq
+```
+
+### Per-arch cost
+
+Each architecture needs ~20 lines of branch emission code:
+- `emit_save_tos` — save TOS to scratch register
+- `emit_test_scratch` — test scratch for zero
+- `emit_jz_forward` — forward conditional branch (placeholder offset)
+- `patch_forward_branch` — patch forward branch to current HERE
+- `emit_jz_backward` — backward conditional branch to known target
+
+Plus C reference functions that can be disassembled (`objdump -d`)
+to deduce these sequences for a new target.
+
+### New primitives
+
+All from portable C, extracted from GCC output:
+- `-` (sub): 14 bytes x86-64, 12 bytes ARM64
+- `swap`: 9 bytes x86-64, 12 bytes ARM64
+- `0=`: 7 bytes x86-64, 12 bytes ARM64
+
+### Results
+
+| Test | x86-64 | ARM64 |
+|------|--------|-------|
+| Existing (literal, dup+, double, quadruple) | 4/4 | 4/4 |
+| New prims (-, swap, 0=) | 4/4 | 4/4 |
+| IF not taken | PASSED | PASSED |
+| IF taken | PASSED | PASSED |
+| BEGIN..UNTIL countdown (5→0) | PASSED | PASSED |
+| BEGIN..UNTIL accumulate (sum 1..5) | PASSED | PASSED |
+
+12/12 on both platforms.  Also passes with CET (ENDBR64) enabled.
+
+**Key lesson:** x86-64's "all arithmetic sets flags" is a trap when
+you let C compile your stack operations.  The save-to-scratch pattern
+is the portable escape hatch — it works on both architectures without
+requiring control over instruction selection.

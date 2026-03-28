@@ -23,3 +23,8 @@
   - W^X: dual-mapping (Linux) vs MAP_JIT (macOS)
   - Nonleaf frame extraction: C determines prologue/epilogue
   - Nested calls work on both platforms (5/5 tests)
+- **exp-007**: Minimal flow control: IF/THEN, BEGIN/UNTIL ✓
+  - Stack booleans (not FLAGS) for portable conditionals
+  - Save-to-scratch pattern works around x86 ADD clobbering flags
+  - ~20 lines per-arch for branch emission + C reference functions
+  - 12/12 tests on x86-64 and ARM64
