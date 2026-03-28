@@ -2,7 +2,7 @@
 
 ## Active
 
-- **exp-005**: Cross-architecture — same source compiles for ARM64
+- Next experiment TBD (flow control? deeper nesting? boot loading?)
 
 ## Deferred
 
@@ -19,3 +19,7 @@
 - **exp-003**: Copy-and-execute: dup+add → 42 ✓
 - **exp-004**: Minimal Forth compiler: colon definitions work ✓
 - **exp-005**: ARM64 cross-compile: same source, correct output ✓
+- **exp-006**: Portable mini-compiler: x86-64 Linux + ARM64 macOS ✓
+  - W^X: dual-mapping (Linux) vs MAP_JIT (macOS)
+  - Nonleaf frame extraction: C determines prologue/epilogue
+  - Nested calls work on both platforms (5/5 tests)

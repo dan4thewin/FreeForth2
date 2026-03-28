@@ -253,3 +253,85 @@ The register assignment for portable FreeForth2 is NOT the same as
 ff64's.  ff64 uses rdx (caller-saved) for NOS because it never
 interleaves C code.  The portable version must use only callee-saved
 registers because the compiler engine IS C code.
+
+---
+
+## Experiment 006 — Portable Mini-Compiler (macOS + Linux)
+
+**Goal:** Port the exp-004 mini-compiler to run natively on macOS ARM64,
+proving the same C source can compile and execute Forth definitions on
+both x86-64 and ARM64.
+
+**Two platform challenges solved:**
+
+### 1. W^X Code Buffer
+
+Linux allows dual-mapped code buffers — one RW for writing, one RX for
+execution — over the same physical memory via `memfd_create` + two
+`mmap` calls.  macOS rejects `PROT_EXEC` on `MAP_SHARED` pages entirely
+(Bus Error).
+
+The fix uses Apple's MAP_JIT API: a single mapping with
+`PROT_READ|PROT_WRITE|PROT_EXEC` and `MAP_JIT`.  The process toggles
+between write mode (`pthread_jit_write_protect_np(0)`) and execute mode
+(`pthread_jit_write_protect_np(1)` + `sys_icache_invalidate`).  On
+Linux, the toggle functions are no-ops.
+
+### 2. Nested Calls — the Nonleaf Frame Problem
+
+x86-64's `CALL` pushes the return address onto the stack.  ARM64's `BL`
+writes it to register x30 (link register) — no push.  Nested calls
+clobber x30, creating an infinite loop: `quadruple` calls `double`
+twice via BL, and double's `RET` (which reads x30) returns to the wrong
+place.
+
+**The C-native fix:** write a C "template" function that calls another
+function, forcing GCC to emit the correct save/restore sequence:
+
+```c
+void __attribute__((noinline)) template_nonleaf(void)
+{
+    prim_dup();
+    asm volatile("");  /* prevent tail-call optimization */
+}
+```
+
+We extract the bytes before the first CALL/BL (= prologue) and after it
+through RET (= epilogue).  The C compiler decides what's needed:
+
+| Architecture | Prologue | Epilogue |
+|-------------|----------|----------|
+| x86-64 | 0 bytes (CALL handles it) | 1 byte (just RET) |
+| x86-64 + CET | 4 bytes (ENDBR64) | 1 byte (just RET) |
+| ARM64 | 4 bytes (STR x30, [sp, -16]!) | 8 bytes (LDR x30, [sp], 16 + RET) |
+
+Colon definitions are wrapped: `prologue + body + epilogue`.  C remains
+the architecture oracle — we never hand-write ARM64 instructions.
+
+### 3. Interpret-Mode CALL Relocation
+
+A second bug: the interpret-mode path copied non-primitive code bodies
+(which contain relative BL/CALL instructions) to a temporary location
+for execution.  The relative offsets became invalid at the new address.
+
+Fix: instead of copying, emit a single CALL to the word's entry point.
+The word executes in-place (with correct offsets) and returns.  The
+interpret-mode block is wrapped in prologue/epilogue to handle x30
+correctly on ARM64.
+
+**Results:**
+
+| Test | x86-64 (Linux) | ARM64 (macOS) |
+|------|----------------|---------------|
+| 42 literal | PASSED | PASSED |
+| 21 dup + | PASSED | PASSED |
+| : double dup + ; 21 double | PASSED | PASSED |
+| : quadruple double double ; 10 quadruple | PASSED | PASSED |
+| 7 quadruple | PASSED | PASSED |
+
+**Key insight:** The nonleaf frame extraction is the capstone of the
+"C as oracle" approach.  Every architecture-specific detail — return
+address handling, ENDBR64, stack alignment — is determined by what
+the C compiler emits, not by what we write.  The extraction code itself
+has `#ifdef` branches for scanning (4-byte aligned on ARM64 vs
+byte-at-a-time on x86-64), but the BYTES it extracts are pure C output.
