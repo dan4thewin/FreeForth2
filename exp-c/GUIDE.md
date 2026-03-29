@@ -349,9 +349,23 @@ On x86-64, `ADD` and `SUB` always set flags.  On ARM64, they don't
 — only `ADDS` and `SUBS` do.  GCC emits the non-flag-setting form
 from C code because nothing in C reads the flags.
 
-This means `0-` (test_tos) is mandatory before any conditional on
-ARM64.  On x86-64 it's redundant but harmless.  This matches
-FreeForth's convention: the `0-` is always explicit in the source.
+This means that any word FreeForth relies on for flag-setting must
+emit a flag-setting instruction on every architecture.  On x86-64
+this is automatic — all ALU ops set flags.  On ARM64, it requires
+choosing `SUBS`/`ADDS` over `SUB`/`ADD`.
+
+The inline asm mechanism solves this.  Words like `-`, `+`, `1-`,
+`1+`, `&`, `|`, `^`, and `0-` need to be inline asm macros (not
+pure C ALU prims) so we can pick `SUBS` on ARM64 while x86-64
+gets flag-setting ADD/SUB for free.  `0-` is just one example —
+the non-destructive test case.  The full palette of flag-setting
+words all need the same treatment.
+
+In the current proof-of-concept (exp 008), only `0-` is
+implemented as a flag-setting macro.  A production system would
+need to promote all flag-setting ALU ops from C prims to inline
+asm macros on ARM64.  This is the same ~20-line-per-arch cost,
+just applied to more words.
 
 **See:** `exp-c/008-flags-flow/minicompiler.c` — the final form of
 the proof-of-concept.
