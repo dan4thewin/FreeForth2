@@ -407,3 +407,104 @@ All from portable C, extracted from GCC output:
 you let C compile your stack operations.  The save-to-scratch pattern
 is the portable escape hatch — it works on both architectures without
 requiring control over instruction selection.
+
+---
+
+## Experiment 008 — FLAGS-based Flow Control
+
+**Goal:** Restore FreeForth's FLAGS-based conditionals by decomposing
+primitives: C provides ALU ops (register-to-register), FreeForth
+controls stack plumbing with hand-picked instructions.
+
+### The decomposition
+
+Experiment 007 used stack booleans because GCC's `dsp++` compiled to
+ADD on x86-64, which clobbers FLAGS.  DG challenged this: if FreeForth
+controls the stack operations and uses LEA instead of ADD, FLAGS survive
+through drop — exactly as they do in the real FreeForth.
+
+The split:
+
+| Layer | Who picks instructions | What it does |
+|-------|----------------------|--------------|
+| C ALU prims | GCC | `tos += nos`, `tos = nos - tos`, `tos--` |
+| Inline asm macros | Us | drop (LEA), dup, swap, test_tos |
+| Composed Forth words | Init code | `+` = alu_add + drop_nos |
+
+C ALU prims are extracted from GCC output (same as before).  Inline
+asm macros are extracted the same way — `noinline` functions with
+`asm volatile` inside — but WE choose the instructions.
+
+### Key per-arch instructions
+
+x86-64 drop_nos (flags-preserving):
+```
+mov (%r15), %r13     ; nos = *dsp
+lea 8(%r15), %r15    ; dsp++ — LEA, not ADD
+```
+
+ARM64 drop_nos (flags-preserving):
+```
+ldr x20, [x21], #8   ; nos = *dsp++, post-indexed
+```
+
+x86-64 test_tos (sets ZF/SF):
+```
+test %rbx, %rbx      ; ZF=1 if TOS==0
+```
+
+ARM64 test_tos (sets flags):
+```
+tst x19, x19         ; ZF=1 if TOS==0
+```
+
+### FLAGS flow through drop — proven
+
+The FreeForth pattern `0- 0= drop IF` works:
+1. `0-` = `test_tos` — sets ZF based on TOS
+2. `0=` = compile-time Jcc selector: stores JZ (no runtime code)
+3. `drop` = `mov + mov + lea` — all flags-preserving
+4. `IF` = emits inverted JNZ forward — reads ZF from step 1
+
+### Why ARM64 ALU ops don't set flags
+
+x86-64 ADD/SUB always set flags — it's wired into the ISA.  ARM64
+separates flag-setting: `ADD` vs `ADDS`, `SUB` vs `SUBS`.  GCC emits
+the non-flag-setting form from C code because nothing in C reads the
+flags.
+
+This means `0-` (test_tos) is **mandatory** before any conditional
+on ARM64.  On x86-64 it's redundant (the ALU op already set flags)
+but harmless.  This matches FreeForth's convention: the `0-` is
+always present in the source.
+
+### False RET match bug
+
+x86-64 byte scanning for `0xC3` (RET) hit a false positive: the
+ModRM byte in `mov %rax, %rbx` (`48 89 C3`) is also `0xC3`.
+Fix: scan backward from the end of the function range — the last
+`0xC3` is the real RET.
+
+### Results
+
+| Test | x86-64 | x86-64+CET | ARM64 |
+|------|--------|-----------|-------|
+| literal, dup+, -, 1- | 4/4 | 4/4 | 4/4 |
+| : double, : quadruple | 2/2 | 2/2 | 2/2 |
+| IF taken/not taken (0=) | 2/2 | 2/2 | 2/2 |
+| IF taken/not taken (0<>) | 2/2 | 2/2 | 2/2 |
+| BEGIN..UNTIL countdown | 1/1 | 1/1 | 1/1 |
+| BEGIN..UNTIL sum5 | 1/1 | 1/1 | 1/1 |
+
+12/12 on all three configurations.
+
+ARM64 composed word sizes: `+` = 8 bytes, `-` = 8 bytes, `1-` = 4
+bytes, `0-` = 4 bytes.  These are competitive with hand-written
+assembly.
+
+**Key insight:** The right decomposition is NOT "let C do everything."
+It's "let C do the ALU, let FreeForth do the plumbing."  GCC is the
+oracle for operations (what does add look like?), but FreeForth is the
+architect for composition (how do you combine add with a stack pop
+while preserving flags?).  This matches Lavarenne's original design
+philosophy — assembly is minimal, but it's there where it matters.

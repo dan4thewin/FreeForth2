@@ -28,3 +28,9 @@
   - Save-to-scratch pattern works around x86 ADD clobbering flags
   - ~20 lines per-arch for branch emission + C reference functions
   - 12/12 tests on x86-64 and ARM64
+- **exp-008**: FLAGS-based flow control ✓
+  - Decomposed: C ALU ops + inline asm stack macros (LEA on x86-64)
+  - FLAGS survive through drop — FreeForth's model restored
+  - 0= / 0<> are compile-time Jcc selectors (no runtime code)
+  - False-RET bug: backward scan for x86-64 0xC3
+  - 12/12 tests on x86-64, x86-64+CET, and ARM64
