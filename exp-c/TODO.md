@@ -2,15 +2,24 @@
 
 ## Active
 
-- Next experiment TBD (flow control? deeper nesting? boot loading?)
+- Next experiment TBD (full flow control: ELSE, WHILE/REPEAT, BREAK, CASE?)
+- Investigate non-fusing ops (OR, XOR, NEG) + 0</0> on ARM64:
+  for non-fusing ops, the sacrifice adds a separate CMP that tests
+  the *original* TOS, not the result.  0= and 0<> work (they only
+  need ZF from the CMP-against-zero).  0< and 0> may give wrong
+  results because the sign/comparison is against the pre-op value.
+  Needs investigation if these combinations are ever used in practice.
 
 ## Deferred
 
-- Flow control emission (IF/THEN/BEGIN) — architecture-specific jump encoding
 - Dictionary structure in C
 - Boot file loading (ff2.boot equivalent)
 - libc interaction with global register variables
 - WASM target investigation
+- Return stack operations (>r, r>, r)
+- String handling and I/O
+- The REPL
+- Backtick macros and suffix handling
 
 ## Done
 
@@ -34,3 +43,12 @@
   - 0= / 0<> are compile-time Jcc selectors (no runtime code)
   - False-RET bug: backward scan for x86-64 0xC3
   - 12/12 tests on x86-64, x86-64+CET, and ARM64
+- **exp-009**: Sacrificial compare + full comparator×selector matrix ✓
+  - Sacrificial `return tos == 0` coerces SUBS/ADDS on ARM64
+  - Self-calibrating extraction (plain vs sacrifice, substring search)
+  - All 8 ALU ops with sacrifice pattern (6/8 fuse on ARM64)
+  - Non-consuming binary CMP from sacrifice-only extraction
+  - 4 Jcc selectors: 0= (ZF), 0<> (!ZF), 0< (SF), 0> (GT)
+  - Compound comparisons: =, <>, <, > (CMP + selector)
+  - New macros: over, 2drop
+  - 38/38 tests on x86-64 and ARM64

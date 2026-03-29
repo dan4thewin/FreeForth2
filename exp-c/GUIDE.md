@@ -367,11 +367,131 @@ need to promote all flag-setting ALU ops from C prims to inline
 asm macros on ARM64.  This is the same ~20-line-per-arch cost,
 just applied to more words.
 
-**See:** `exp-c/008-flags-flow/minicompiler.c` — the final form of
-the proof-of-concept.
+**See:** `exp-c/008-flags-flow/minicompiler.c` — the FLAGS-based
+proof-of-concept.  Superseded by `exp-c/009-comparators/minicompiler.c`
+which adds the sacrificial compare pattern and full comparator matrix.
 
 
-## Part 9: Per-Architecture Cost
+## Part 9: The Sacrificial Compare
+
+Experiment 008 left an open problem: ARM64's ALU instructions don't
+set CPU flags.  GCC emits `SUB`, not `SUBS`.  This meant that on
+ARM64, only the inline asm `test_tos` (`tst x19, x19`) could set
+flags — the C-compiled ALU ops were flag-inert.
+
+The solution came from an unexpected direction: lying to the compiler.
+
+### The pattern
+
+Every ALU primitive is compiled in two versions:
+
+```c
+void alu_sub_p(void) { tos = nos - tos; }                     // plain
+long alu_sub_s(void) { tos = nos - tos; return tos == 0; }    // sacrifice
+```
+
+The `return tos == 0` is the sacrifice.  We never use the return
+value.  But GCC sees a subtraction followed by a zero-compare on
+the same register, and its combine pass fuses them into a single
+`SUBS` instruction — exactly what we wanted.
+
+On x86-64, `SUB` already sets flags.  The sacrifice appends a dead
+`SETE %al` that we trim during extraction.  Same C source, both
+architectures get flag-setting ALU instructions.
+
+### Why it works (GCC internals)
+
+We analyzed GCC's ARM64 machine description (`aarch64.md`, 8,955
+lines).  Every pattern that emits `SUBS`/`ADDS`/`ANDS` requires
+both an arithmetic operation and a `(compare ... (const_int 0))`
+in the same RTL expression.  A standalone subtraction produces
+only `(set (reg) (minus ...))` — no compare, no `SUBS`, ever.
+
+The `return tos == 0` gives GCC the compare it needs.  The key
+pattern is `*sub<mode>3_compare0` — it matches when the compiler
+sees a subtraction whose result is compared to zero.  Our sacrifice
+creates exactly that pattern.
+
+### Which ops fuse
+
+| Op | Fuses on ARM64? | Sacrifice emits |
+|----|-----------------|-----------------|
+| SUB | ✅ | SUBS |
+| ADD | ✅ | ADDS |
+| DEC | ✅ | SUBS x19, x19, #1 |
+| INC | ✅ | ADDS x19, x19, #1 |
+| AND | ✅ | ANDS |
+| OR | ❌ | ORR + CMP + CSET |
+| XOR | ❌ | CMP + EOR + CSET |
+| NEG | ❌ | CMP + NEG + CSET |
+
+Six of eight fuse.  For the three that don't, the sacrifice still
+adds a CMP instruction that sets flags — just not fused.  After
+trimming CSET, we keep the ALU op + CMP, which works for `0=` and
+`0<>` selectors.
+
+### Self-calibrating extraction
+
+The extraction algorithm automatically selects the right bytes
+without knowing which architecture it's running on:
+
+1. Extract bytes from both the plain and sacrifice versions
+2. Find the common prefix (e.g., ENDBR64 on CET-enabled x86-64)
+3. Search for plain's unique tail as a substring inside sacrifice's
+   tail
+4. **Found** → the plain instruction is intact inside the sacrifice
+   output (x86-64: `SUB` is embedded in `SUB + SETE`).  Use plain.
+5. **Not found** → sacrifice changed the instruction itself (ARM64:
+   `SUB` → `SUBS`).  Use sacrifice bytes, trimmed to `plain.len`.
+
+On x86-64, it reports "using plain" for all eight ops.  On ARM64,
+it reports "using sacrifice" for the six that fuse, "using plain"
+for OR/XOR/NEG.  Zero `#ifdef` in the selection logic.
+
+### CMP: the special case
+
+The non-consuming binary compare (`nos` vs `tos`, both remain on
+stack) has no useful "plain" version — GCC optimizes away a
+comparison with no consumer.  We extract from the sacrifice version
+only (`return nos == tos`), then trim the CSET/SETE suffix:
+
+- **ARM64:** strip last 4 bytes → clean `CMP x20, x19`
+- **x86-64:** scan for CMP opcode bytes (REX + 0x39), extract 3 bytes
+
+### Compound comparisons
+
+With CMP and four Jcc selectors (`0=`, `0<>`, `0<`, `0>`), the
+compound comparison words fall out trivially:
+
+| Word | Compile-time action |
+|------|-------------------|
+| `=`  | emit CMP, store JCC_EQ |
+| `<>` | emit CMP, store JCC_NE |
+| `<`  | emit CMP, store JCC_LT |
+| `>`  | emit CMP, store JCC_GT |
+
+These match FreeForth's non-consuming semantics — both operands stay
+on the stack for `drop` or `2drop` to clean up after `IF`.
+
+### Why this matters for portability
+
+The sacrificial compare means C-compiled ALU ops set flags on ANY
+architecture where GCC can fuse ALU+compare — which is likely all
+of them, since it's a fundamental optimization.  On architectures
+where ALU ops already set flags (x86-64), the sacrifice is harmless.
+The self-calibrating extraction handles both cases automatically.
+
+This eliminates the need for per-architecture inline asm for ALU
+ops.  The only per-arch inline asm that remains is for stack
+plumbing (where we need control over flags preservation) and for
+`test_tos` (the non-destructive flag test).
+
+**See:** `exp-c/009-comparators/minicompiler.c` — lines 222–246
+(plain + sacrifice functions), lines 536–604 (self-calibrating
+extraction), lines 611–679 (CMP extraction).
+
+
+## Part 10: Per-Architecture Cost
 
 Adding a new architecture requires:
 
@@ -383,26 +503,28 @@ Adding a new architecture requires:
 3. **CALL/BL pattern** — for nonleaf frame extraction.  `0xE8` on
    x86-64, `0x94xxxxxx` on ARM64.
 
-4. **~6 inline asm macros** — `drop_tos`, `drop_nos`, `push_nos`,
-   `dup`, `swap`, `test_tos`.  These are the flags-preserving stack
-   operations specific to each architecture.
+4. **~8 inline asm macros** — `drop_tos`, `drop_nos`, `push_nos`,
+   `dup`, `swap`, `test_tos`, `over`, `2drop`.  These are the
+   flags-preserving stack operations specific to each architecture.
 
 5. **~5 branch emission functions** — `emit_call`, `emit_load_imm`,
    `emit_cond_forward`, `emit_cond_backward`, `patch_forward_branch`.
    These write architecture-specific instruction encodings.
 
+6. **Jcc condition codes** — a small lookup table mapping logical
+   conditions (EQ, NE, MI, GT, LT, GE) to architecture-specific
+   condition code values.  ~6 `#define`s per architecture.
+
 Everything else — the compiler engine, dictionary, eval loop,
-init/compose logic — is portable C.
+init/compose logic, ALU primitives (via sacrificial compare),
+self-calibrating extraction — is portable C.
 
-For reference, the x86-64 specific code in exp 008 is about 120
-lines.  A new architecture port would be roughly the same.
-
-The C reference functions (`ref_flags_through_drop`, etc.) exist
-as a porting aid: `objdump -d` them on the new target to see what
-instructions GCC emits, then write the inline asm macros to match.
+For reference, the architecture-specific code in exp 009 is about
+200 lines per target (x86-64 and ARM64).  A new architecture port
+would be roughly the same.
 
 
-## Part 10: What Remains
+## Part 11: What Remains
 
 The experiments prove viability for:
 - Primitive byte extraction from C ✓
@@ -411,6 +533,9 @@ The experiments prove viability for:
 - Cross-architecture portability (x86-64 + ARM64) ✓
 - W^X code buffers on both Linux and macOS ✓
 - FLAGS-based conditionals with IF/THEN/BEGIN/UNTIL ✓
+- Self-calibrating ALU extraction (sacrificial compare) ✓
+- Full comparator × selector matrix (0=, 0<>, 0<, 0>) ✓
+- Non-consuming binary comparisons (=, <>, <, >) ✓
 
 What hasn't been built yet:
 - Full flow control (ELSE, WHILE/REPEAT, BREAK, CASE)
@@ -420,7 +545,6 @@ What hasn't been built yet:
 - String handling and I/O
 - The REPL
 - Return stack operations (`>r`, `r>`, `r`)
-- More comparison words (`<`, `>`, `=`, `0<`)
 - Interaction between global register variables and libc edge cases
 
 The proof-of-concept is solid.  The open question is whether the
@@ -466,7 +590,11 @@ exp-c/
 │   ├── Makefile
 │   └── minicompiler.c
 │
-└── 008-flags-flow/      FLAGS-based flow (C ALU + asm stack macros)
+├── 008-flags-flow/      FLAGS-based flow (C ALU + asm stack macros)
+│   ├── Makefile
+│   └── minicompiler.c
+│
+└── 009-comparators/     Sacrificial compare + full comparator×selector matrix
     ├── Makefile
     └── minicompiler.c   ← The definitive proof-of-concept
 ```
@@ -478,31 +606,43 @@ runs all of them.
 
 ## Reading the Code
 
-The best entry point is `exp-c/008-flags-flow/minicompiler.c`.  It's
-~600 lines of code (plus comments) and contains every technique
-developed across all 8 experiments.  Read it in this order:
+The best entry point is `exp-c/009-comparators/minicompiler.c`.
+It's ~1,600 lines and contains every technique developed across all
+9 experiments.  Read it in this order:
 
-1. **Lines 28–170**: Per-arch section.  Register declarations,
-   `find_ret`, `emit_call`, `emit_load_imm`, branch emission.
-   This is the "~20 macros" per architecture.
+1. **Lines 37–210**: Per-arch section.  Register declarations,
+   `find_ret`, `emit_call`, `emit_load_imm`, branch emission,
+   Jcc condition codes (`JCC_EQ`, `JCC_NE`, `JCC_MI`, `JCC_GT`,
+   `JCC_LT`, `JCC_GE`), and `invert_jcc`.
 
-2. **Lines 172–192**: C ALU primitives.  Five one-line functions.
-   GCC picks the instructions.  Compare `alu_add` (3 bytes x86-64)
-   with the ARM64 version (4 bytes) using `objdump -d`.
+2. **Lines 212–246**: C ALU primitives in PAIRS — plain and sacrifice
+   versions.  Eight ops × two versions = sixteen one-line functions.
+   Plus the sacrifice-only `alu_cmp_s`.
 
-3. **Lines 194–262**: Inline asm macros.  Six functions.  WE pick
-   the instructions.  Notice `lea` on x86-64 vs `ldr` post-indexed
-   on ARM64 — both flags-preserving.
+3. **Lines 248–370**: Inline asm macros.  Eight functions (drop_tos,
+   drop_nos, push_nos, dup, swap, test_tos, over, 2drop).  WE pick
+   the instructions.  Notice `lea` on x86-64 vs post-indexed
+   `ldr`/`str` on ARM64 — both flags-preserving.
 
-4. **Lines 264–320**: Nonleaf template extraction.  How prologue and
+4. **Lines 372–453**: Nonleaf template extraction.  How prologue and
    epilogue bytes are discovered from a C function that calls another.
 
-5. **Lines 390–430**: Initialization.  Byte discovery for both ALU
-   and macro tables, then word composition (`+` = alu_add + drop_nos).
+5. **Lines 455–694**: Byte extraction.  `extract_alu_calibrated` is
+   the self-calibrating algorithm (plain vs sacrifice, substring
+   search).  `extract_cmp` handles the special CMP case.
+   `discover_macros` handles inline asm macros.
 
-6. **Lines 470–540**: `process_word`.  The compiler/interpreter.
-   Note `0=` and `0<>` — compile-time only, zero runtime bytes.
-   Note `IF` and `UNTIL` — invert the condition, emit a branch.
+6. **Lines 778–960**: Initialization.  Code buffer allocation, byte
+   discovery for all ALU ops and macros, then word composition
+   (`+` = alu_add + drop_nos, `cmp`, `drop`, `dup`, `swap`, `over`,
+   `2drop`, `0-`).
 
-7. **Lines 580–620**: Tests.  12 tests covering arithmetic, colon
-   definitions, nested calls, FLAGS-based IF/THEN, and BEGIN/UNTIL.
+7. **Lines 1005–1178**: `process_word`.  The compiler/interpreter.
+   Note the four Jcc selectors (`0=`, `0<>`, `0<`, `0>`) — compile-
+   time only, zero runtime bytes.  Note the compound comparisons
+   (`=`, `<>`, `<`, `>`) — emit CMP + store condition.  Note `IF`
+   and `UNTIL` — invert the condition, emit a branch.
+
+8. **Lines 1226–1597**: Tests.  38 tests in 7 sections covering
+   arithmetic (A), four Jcc selectors (B–E), loops (F), and
+   flags-through-composed-words (G).

@@ -508,3 +508,201 @@ oracle for operations (what does add look like?), but FreeForth is the
 architect for composition (how do you combine add with a stack pop
 while preserving flags?).  This matches Lavarenne's original design
 philosophy — assembly is minimal, but it's there where it matters.
+
+---
+
+## Experiment 009 — Comparators and Selectors (Sacrificial Compare)
+
+**Goal:** Solve the ARM64 flag-setting problem, implement the full
+comparator × selector matrix, and prove it works on both architectures
+with a single C source file.
+
+### The problem
+
+Experiment 008 noted that ARM64's `ADD` and `SUB` don't set CPU
+flags — only `ADDS` and `SUBS` do.  GCC emits the non-flag-setting
+form from C code because nothing in C reads the flags.  This meant
+that on ARM64, only `0-` (inline asm `tst x19, x19`) could set
+flags.  All ALU ops (`+`, `-`, `1-`, `1+`, `&`, `|`, `^`, `negate`)
+were flag-inert on ARM64.
+
+We explored several approaches before finding the solution.
+
+### Dead ends
+
+**MRS NZCV as sacrificial op.**  ARM64 has `MRS Xn, NZCV` (read
+status flags into a general register).  DG's hypothesis: if we add
+`MRS NZCV` as inline asm after a C subtraction, maybe GCC will
+recognize the dependency and emit `SUBS`.  Tested five variants.
+GCC treats `MRS` as an opaque blob — it never connects it to the
+preceding C computation.  Always emits `SUB`, never `SUBS`.
+
+**GCC source code analysis.**  DG asked whether we could get a
+decisive answer from GCC's own source.  We analyzed
+`gcc/config/aarch64/aarch64.md` (8,955 lines) — the machine
+description that controls ARM64 instruction selection.  Found ~17
+patterns that emit `SUBS`/`ADDS`/`ANDS`.  Every single one requires
+BOTH an arithmetic operation AND a `(compare ... (const_int 0))`
+in the same RTL expression.  A standalone subtraction in C produces
+only `(set (reg) (minus ...))` — no compare, no `SUBS`.
+
+**Decisive conclusion from GCC source:** GCC will NEVER emit `SUBS`
+from a standalone C subtraction.  The flag-setting form requires the
+compiler to see that the result is compared to zero in the same
+expression.
+
+### The breakthrough: sacrificial compare
+
+DG asked the key question: "so the compare can be our sacrificial op?"
+
+Yes.  Write every ALU primitive in two versions:
+
+```c
+void alu_sub_p(void) { tos = nos - tos; }                        // plain
+long alu_sub_s(void) { tos = nos - tos; return tos == 0; }       // sacrifice
+```
+
+The `return tos == 0` is the sacrifice — a zero-compare that we
+never actually use, but that GCC's combine pass fuses with the
+preceding arithmetic.  On ARM64, this triggers pattern
+`*sub<mode>3_compare0` in `aarch64.md`, emitting `SUBS` instead
+of `SUB`.
+
+**Which ops fuse (ARM64):**
+
+| Op | Plain | Sacrifice | Fused? |
+|----|-------|-----------|--------|
+| SUB | `sub x19, x20, x19` | `subs x19, x20, x19` | ✅ |
+| ADD | `add x19, x19, x20` | `adds x19, x19, x20` | ✅ |
+| DEC | `sub x19, x19, #1` | `subs x19, x19, #1` | ✅ |
+| INC | `add x19, x19, #1` | `adds x19, x19, #1` | ✅ |
+| AND | `and x19, x19, x20` | `ands x19, x19, x20` | ✅ |
+| OR | `orr x19, x19, x20` | `orr + cmp x19, 0` | ❌ |
+| XOR | `eor x19, x19, x20` | `cmp x20, x19 + eor` | ❌ |
+| NEG | `neg x19, x19` | `cmp x19, 0 + neg` | ❌ |
+
+Six of eight ops fuse into a single flag-setting instruction.
+The remaining three (OR, XOR, NEG) get a separate CMP added by
+the sacrifice, which still sets flags correctly for `0=` and `0<>`
+selectors.
+
+**On x86-64:** the sacrifice is harmless.  `SUB` already sets flags.
+The sacrifice appends a dead `SETE %al` (or `XORL %eax,%eax` +
+`SETE %al`) that we trim during extraction.  The core ALU instruction
+is unchanged.
+
+### Self-calibrating extraction
+
+The extraction algorithm is fully architecture-neutral.  No `#ifdef`
+for choosing between plain and sacrifice:
+
+1. Extract bytes from both the plain and sacrifice versions
+2. Find common prefix (e.g., ENDBR64 on CET-enabled x86-64)
+3. Search for the plain version's unique tail as a substring
+   within the sacrifice version's tail
+4. **Found** → plain instruction is intact inside sacrifice
+   (x86-64 case: SUB is embedded in SUB + SETE).  Use plain.
+5. **Not found** → sacrifice changed the instruction itself
+   (ARM64 case: SUB → SUBS).  Use sacrifice bytes, trimmed to
+   `plain.len` (stripping CSET/CSEL suffix).
+
+The algorithm makes the right choice on both architectures without
+knowing which one it's running on.  On x86-64, it reports "using
+plain" for all ops.  On ARM64, it reports "using sacrifice" for the
+six that fuse, "using plain" for OR/XOR/NEG (where the plain bytes
+happen to be found inside the sacrifice output).
+
+### CMP extraction
+
+The non-consuming binary compare (`cmp`: NOS vs TOS, both remain on
+stack) is special — it has no meaningful "plain" version because GCC
+optimizes away a comparison with no consumer.  We extract from the
+sacrifice version only (`return nos == tos`), then trim:
+
+- **ARM64:** strip last 4 bytes (CSET instruction) → leaves a clean
+  `CMP x20, x19`
+- **x86-64:** scan for the CMP opcode bytes (`4C 39` or `49 39`),
+  extract those 3 bytes, discard the surrounding XORL/SETE
+
+### Compound comparisons
+
+With CMP and the four Jcc selectors, compound comparisons are trivial:
+
+| Word | Compile-time action |
+|------|-------------------|
+| `=`  | emit CMP, set `cond_jmp = JCC_EQ` |
+| `<>` | emit CMP, set `cond_jmp = JCC_NE` |
+| `<`  | emit CMP, set `cond_jmp = JCC_LT` |
+| `>`  | emit CMP, set `cond_jmp = JCC_GT` |
+
+These are non-consuming (like FreeForth's comparisons) — both operands
+remain on the stack.  The `drop` or `2drop` after `IF` cleans up as
+needed.
+
+### New stack macros
+
+Two new inline asm macros were needed for the test cases:
+
+- **`over`** `( a b -- a b a )` — push NOS to memory stack, then swap
+  TOS and NOS.  First attempt was wrong (implemented `dup` behavior:
+  push NOS + copy TOS→NOS).  Fixed to push NOS + exchange registers.
+  On x86-64: `lea + mov + xchg` (10 bytes).  On ARM64:
+  `str + mov + mov + mov` (16 bytes via scratch x0).
+
+- **`2drop`** — drop two items in one macro.  On x86-64:
+  `mov + mov + lea` (10 bytes).  On ARM64: `ldp x19, x20, [x21], #16`
+  (4 bytes — ARM64 wins with load-pair).
+
+### Results
+
+| Section | Tests | Description |
+|---------|-------|-------------|
+| A: Basic arithmetic | 9/9 | +, -, 1-, 1+, &, \|, ^, negate |
+| B: 0= selector | 8/8 | Zero/equal: 0-, -, 1-, cmp |
+| C: 0<> selector | 4/4 | Nonzero/not-equal |
+| D: 0< selector | 6/6 | Negative/sign, < |
+| E: 0> selector | 5/5 | Positive/greater, > |
+| F: Loops | 3/3 | BEGIN...UNTIL with 1- 0=, 1+ 0>, swap+over sum |
+| G: Flags through composed words | 3/3 | + and & set flags through drop |
+| **Total** | **38/38** | |
+
+38/38 on x86-64 (Linux).  38/38 on ARM64 (macOS).  Same source.
+
+### Bugs fixed
+
+1. **over macro** — original implementation was `push_nos + mov TOS→NOS`,
+   which is `dup` (duplicates TOS as both TOS and NOS).  Fixed to
+   `push_nos + swap` (push NOS, then exchange TOS↔NOS, giving
+   `( a b -- a b a )`).
+
+2. **CMP extraction on x86-64** — initial attempt used the full
+   sacrifice output, which included XORL and SETE wrapping around
+   the CMP.  XORL clobbers flags.  Fixed by scanning for the actual
+   CMP opcode bytes (REX + 0x39) and extracting only those 3 bytes.
+
+3. **Test expectations for skip cases** — binary comparisons are
+   non-consuming, so when IF is skipped, TOS retains the value
+   pushed before the comparison (not the value consumed by a drop
+   that never executed).  Several test expectations needed adjustment.
+
+### Key insight
+
+The sacrificial compare pattern is the most important discovery since
+the decomposition insight (exp 008).  It solves the ARM64 flag-setting
+problem without inline assembly for ALU ops — pure C, same source
+on both architectures, with a self-calibrating extraction that
+automatically adapts.  The sacrifice is a lie we tell the compiler
+to get the instruction we want, and the extraction trims away the
+evidence.
+
+DG's observation that led here — "so the compare can be our
+sacrificial op?" — came from reading the GCC source analysis.
+Every SUBS pattern requires a compare.  Give GCC a compare, get
+SUBS.  The `return tos == 0` is the minimal compare that fuses.
+
+This also future-proofs the approach: on any architecture where
+GCC can fuse ALU+compare (likely all of them — it's a fundamental
+optimization), the same pattern works.  On architectures where
+ALU ops already set flags (x86-64, x86), the sacrifice is harmless.
+The self-calibrating extraction handles both cases without knowing
+which one it's on.
