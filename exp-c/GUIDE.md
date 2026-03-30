@@ -484,14 +484,97 @@ The self-calibrating extraction handles both cases automatically.
 This eliminates the need for per-architecture inline asm for ALU
 ops.  The only per-arch inline asm that remains is for stack
 plumbing (where we need control over flags preservation) and for
-`test_tos` (the non-destructive flag test).
+`test_tos` (the non-destructive flag test).  Experiment 010 tackles
+the stack plumbing question.
 
 **See:** `exp-c/009-comparators/minicompiler.c` — lines 222–246
 (plain + sacrifice functions), lines 536–604 (self-calibrating
 extraction), lines 611–679 (CMP extraction).
 
 
-## Part 10: Per-Architecture Cost
+## Part 10: Auto-Calibrating Stack Operations
+
+Experiment 009 still required inline asm for all 8 stack macros.
+DG's insight: now that we have a way to test flag preservation
+(compose ALU + stack op in the code buffer, execute with known
+values, check if the branch goes the right way), we can let the
+runtime decide whether C-compiled stack ops are good enough.
+
+### The test
+
+For each C-compiled stack op, compose:
+
+```
+[prologue] [alu_sub] [c_stack_op] [JZ forward] [load 42] [epilogue]
+```
+
+Run twice:
+- Test A: TOS=5, NOS=5 → sub=0, ZF=1 → JZ taken → skip marker
+- Test B: TOS=3, NOS=5 → sub=2, ZF=0 → JZ not taken → TOS=42
+
+If both produce expected results, flags survived through the C
+stack op → use it.  Otherwise → fall back to inline asm.
+
+The key: the ALU bytes and C stack op bytes come from SEPARATE
+functions.  GCC can't reorder across function boundaries.  We
+control the composition in the code buffer — same mechanism we
+use for building Forth words.
+
+### What it discovered
+
+**ARM64: ALL C stack ops preserve flags.**
+
+ARM64's `ADD` (without S suffix), `LDR`/`STR` post-indexed, and
+`MOV` don't touch NZCV flags.  GCC's natural code generation is
+flag-preserving on ARM64.  Only `test_tos` needs inline asm.
+
+**x86-64: nuanced.**
+
+| Op | Source | Why |
+|----|--------|-----|
+| drop_tos | asm | `dsp++` → ADD (clobbers) |
+| drop_nos | asm | `dsp++` → ADD (clobbers) |
+| push_nos | **C** | `dsp--` → LEA (preserves) |
+| dup | **C** | `dsp--` → LEA (preserves) |
+| swap | **C** | MOV only (preserves) |
+| test_tos | asm | always (sets flags) |
+| over | **C** | `dsp--` → LEA (preserves) |
+| 2drop | asm | `dsp += 2` → ADD (clobbers) |
+
+The pattern: `dsp--` compiles to LEA (flag-preserving), but `dsp++`
+compiles to ADD (flag-clobbering).  This is a GCC quirk — both
+COULD use LEA, but GCC prefers ADD for increment and LEA for
+decrement.
+
+### Impact on porting cost
+
+| Architecture | Inline asm macros needed |
+|-------------|------------------------|
+| ARM64 | 1 (`test_tos`) |
+| x86-64 | 4 (`test_tos`, `drop_tos`, `drop_nos`, `2drop`) |
+
+Compare with the 8 macros per architecture required before
+calibration.  The C-compiled equivalents are provided as
+CANDIDATES; the calibration selects them when safe.  The inline
+asm versions exist as fallbacks and are always available.
+
+### Why test_tos can't be C
+
+`test_tos` sets CPU flags based on TOS without any other effect.
+C can't express this:
+- `(void)(tos == 0)` — dead code, optimized away
+- `return tos == 0` — returns a value (wrong interface)
+- `tos | 0` — might be optimized to nothing
+
+Setting flags without side effects is inherently machine-level.
+`test_tos` (`test %rbx,%rbx` / `tst x19,x19`) stays as the one
+mandatory inline asm macro on all architectures.
+
+**See:** `exp-c/010-auto-stack-ops/minicompiler.c` — lines 835–907
+(calibration function), lines 1050–1085 (calibration in init).
+
+
+## Part 11: Per-Architecture Cost
 
 Adding a new architecture requires:
 
@@ -506,6 +589,9 @@ Adding a new architecture requires:
 4. **~8 inline asm macros** — `drop_tos`, `drop_nos`, `push_nos`,
    `dup`, `swap`, `test_tos`, `over`, `2drop`.  These are the
    flags-preserving stack operations specific to each architecture.
+   However, the calibration may eliminate most of them at runtime —
+   ARM64 needed only `test_tos`.  Providing all 8 as fallbacks is
+   still recommended for any new port.
 
 5. **~5 branch emission functions** — `emit_call`, `emit_load_imm`,
    `emit_cond_forward`, `emit_cond_backward`, `patch_forward_branch`.
@@ -517,14 +603,15 @@ Adding a new architecture requires:
 
 Everything else — the compiler engine, dictionary, eval loop,
 init/compose logic, ALU primitives (via sacrificial compare),
-self-calibrating extraction — is portable C.
+self-calibrating extraction, flag-preservation calibration — is
+portable C.
 
 For reference, the architecture-specific code in exp 009 is about
 200 lines per target (x86-64 and ARM64).  A new architecture port
 would be roughly the same.
 
 
-## Part 11: What Remains
+## Part 12: What Remains
 
 The experiments prove viability for:
 - Primitive byte extraction from C ✓
@@ -536,6 +623,7 @@ The experiments prove viability for:
 - Self-calibrating ALU extraction (sacrificial compare) ✓
 - Full comparator × selector matrix (0=, 0<>, 0<, 0>) ✓
 - Non-consuming binary comparisons (=, <>, <, >) ✓
+- Auto-calibrating stack ops (C when flag-preserving, asm fallback) ✓
 
 What hasn't been built yet:
 - Full flow control (ELSE, WHILE/REPEAT, BREAK, CASE)
@@ -595,6 +683,10 @@ exp-c/
 │   └── minicompiler.c
 │
 └── 009-comparators/     Sacrificial compare + full comparator×selector matrix
+│   ├── Makefile
+│   └── minicompiler.c
+│
+└── 010-auto-stack-ops/  Runtime calibration: C vs asm for stack ops
     ├── Makefile
     └── minicompiler.c   ← The definitive proof-of-concept
 ```
@@ -606,43 +698,34 @@ runs all of them.
 
 ## Reading the Code
 
-The best entry point is `exp-c/009-comparators/minicompiler.c`.
-It's ~1,600 lines and contains every technique developed across all
-9 experiments.  Read it in this order:
+The best entry point is `exp-c/010-auto-stack-ops/minicompiler.c`.
+It's ~1,800 lines and contains every technique developed across all
+10 experiments.  Read it in this order:
 
 1. **Lines 37–210**: Per-arch section.  Register declarations,
    `find_ret`, `emit_call`, `emit_load_imm`, branch emission,
-   Jcc condition codes (`JCC_EQ`, `JCC_NE`, `JCC_MI`, `JCC_GT`,
-   `JCC_LT`, `JCC_GE`), and `invert_jcc`.
+   Jcc condition codes, `invert_jcc`.
 
-2. **Lines 212–246**: C ALU primitives in PAIRS — plain and sacrifice
-   versions.  Eight ops × two versions = sixteen one-line functions.
-   Plus the sacrifice-only `alu_cmp_s`.
+2. **Lines 212–246**: C ALU primitives in PAIRS (plain + sacrifice).
 
-3. **Lines 248–370**: Inline asm macros.  Eight functions (drop_tos,
-   drop_nos, push_nos, dup, swap, test_tos, over, 2drop).  WE pick
-   the instructions.  Notice `lea` on x86-64 vs post-indexed
-   `ldr`/`str` on ARM64 — both flags-preserving.
+3. **Lines 248–370**: Inline asm macros (8 stack ops).  The FALLBACK
+   implementations that preserve flags by construction.
 
-4. **Lines 372–453**: Nonleaf template extraction.  How prologue and
-   epilogue bytes are discovered from a C function that calls another.
+4. **Lines 372–430**: C-compiled stack ops (7 candidates).  The SAME
+   operations written in pure C.  May or may not preserve flags.
 
-5. **Lines 455–694**: Byte extraction.  `extract_alu_calibrated` is
-   the self-calibrating algorithm (plain vs sacrifice, substring
-   search).  `extract_cmp` handles the special CMP case.
-   `discover_macros` handles inline asm macros.
+5. **Lines 455–694**: Byte extraction.  Self-calibrating ALU
+   extraction and CMP extraction (from exp 009).
 
-6. **Lines 778–960**: Initialization.  Code buffer allocation, byte
-   discovery for all ALU ops and macros, then word composition
-   (`+` = alu_add + drop_nos, `cmp`, `drop`, `dup`, `swap`, `over`,
-   `2drop`, `0-`).
+6. **Lines 835–907**: Flag-preservation calibration (NEW in exp 010).
+   `calibrate_one()` composes ALU+stack_op+Jcc, tests with known
+   values, returns whether flags survived.
 
-7. **Lines 1005–1178**: `process_word`.  The compiler/interpreter.
-   Note the four Jcc selectors (`0=`, `0<>`, `0<`, `0>`) — compile-
-   time only, zero runtime bytes.  Note the compound comparisons
-   (`=`, `<>`, `<`, `>`) — emit CMP + store condition.  Note `IF`
-   and `UNTIL` — invert the condition, emit a branch.
+7. **Lines 930–1120**: Initialization.  Extract both asm and C
+   versions, run calibration for each, select winner, compose words.
 
-8. **Lines 1226–1597**: Tests.  38 tests in 7 sections covering
-   arithmetic (A), four Jcc selectors (B–E), loops (F), and
-   flags-through-composed-words (G).
+8. **Lines 1200–1375**: `process_word`.  Compiler/interpreter with
+   Jcc selectors and compound comparisons.
+
+9. **Lines 1430–1800**: Tests.  38 tests in 7 sections — same as
+   exp 009, validating the calibration-selected stack ops.

@@ -52,3 +52,8 @@
   - Compound comparisons: =, <>, <, > (CMP + selector)
   - New macros: over, 2drop
   - 38/38 tests on x86-64 and ARM64
+- **exp-010**: Auto-calibrating stack operations ✓
+  - C-compiled stack ops tested for flag preservation at runtime
+  - ARM64: all 7 C stack ops pass — only test_tos needs asm
+  - x86-64: 4/7 C stack ops pass (push_nos, dup, swap, over)
+  - 38/38 tests on x86-64 and ARM64

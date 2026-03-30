@@ -706,3 +706,130 @@ optimization), the same pattern works.  On architectures where
 ALU ops already set flags (x86-64, x86), the sacrifice is harmless.
 The self-calibrating extraction handles both cases without knowing
 which one it's on.
+
+---
+
+## Experiment 010 — Auto-Calibrating Stack Operations
+
+**Goal:** Determine at runtime whether C-compiled stack operations
+preserve CPU flags, eliminating inline asm where possible.
+
+### The hypothesis
+
+ARM64's `ADD` (without `S` suffix), `LDR`/`STR` post-indexed, and
+`MOV` are all flag-preserving.  If GCC compiles `dsp++` using these
+instructions, the C-compiled stack ops should preserve flags set by
+a preceding ALU operation — making inline asm unnecessary on ARM64.
+
+On x86-64, `dsp++` compiles to `ADD $8, %r15`, which clobbers
+FLAGS.  The inline asm uses `LEA 8(%r15), %r15` instead.
+
+But rather than guessing, we can TEST each C stack op empirically
+and auto-select at runtime.
+
+### The calibration test
+
+For each C-compiled stack op, we compose a test sequence into the
+code buffer (the same code buffer used for compiled Forth words):
+
+```
+[prologue]
+[alu_sub bytes]        ← sets flags: TOS = NOS - TOS
+[c_stack_op bytes]     ← preserves or clobbers flags?
+[JZ forward]           ← branch if ZF=1 (result was zero)
+[load_imm 42]          ← marker: TOS = 42
+[target:]
+[epilogue]
+```
+
+Run it twice with known values:
+
+- **Test A:** TOS=5, NOS=5 → sub=0, ZF=1.  If preserved, JZ taken,
+  TOS is whatever the stack op left.  Expected value depends on the
+  stack op (e.g., drop_tos → 5, drop_nos → 0, 2drop → 777).
+
+- **Test B:** TOS=3, NOS=5 → sub=2, ZF=0.  If preserved, JZ not
+  taken, load 42 executes → TOS=42.
+
+If both tests produce expected results, flags survived → use C.
+If either fails, flags were clobbered → use inline asm.
+
+**Key design:** the ALU bytes and C stack op bytes are extracted from
+SEPARATE, ISOLATED functions.  GCC can't reorder across function
+boundaries.  WE compose them in the code buffer, guaranteeing the
+ALU op runs first and the stack op runs second.  This is exactly the
+same composition model used for building Forth words.
+
+### Results
+
+**ARM64: ALL 7 C stack ops pass!**
+
+| Stack op | x86-64 | ARM64 | x86-64 reason |
+|----------|--------|-------|---------------|
+| drop_tos | asm | **C** | `dsp++` → ADD (clobbers) |
+| drop_nos | asm | **C** | `dsp++` → ADD (clobbers) |
+| push_nos | **C** | **C** | `dsp--` → LEA (preserves) |
+| dup | **C** | **C** | `dsp--` → LEA (preserves) |
+| swap | **C** | **C** | no dsp change (MOV only) |
+| test_tos | asm | asm | always asm (sets flags) |
+| over | **C** | **C** | `dsp--` → LEA (preserves) |
+| 2drop | asm | **C** | `dsp += 2` → ADD (clobbers) |
+
+On ARM64, only `test_tos` (4 bytes, `tst x19, x19`) needs inline
+asm.  Every other stack operation is pure C.
+
+On x86-64, the split is more nuanced than expected: `dsp--` ops
+(push_nos, dup, over) compile to LEA and preserve flags, while
+`dsp++` ops (drop_tos, drop_nos, 2drop) compile to ADD and clobber
+them.  swap uses only MOV (no dsp change) and preserves flags.
+
+### x86-64 size comparison
+
+Some C versions are larger than their asm equivalents:
+
+| Op | C bytes | asm bytes | Notes |
+|----|---------|-----------|-------|
+| push_nos | 15 | 11 | C uses scratch reg |
+| dup | 18 | 14 | C uses scratch reg |
+| swap | 13 | 7 | 3 MOVs vs XCHG |
+| over | 24 | 14 | C uses scratch reg |
+
+GCC's code is correct but not as compact as hand-picked asm.  For
+a portable system this is acceptable — the asm alternatives are
+always available as fallbacks if size matters.  ARM64 has no size
+penalty: C and asm versions are the same size for most ops (2drop
+is 4 bytes either way via `ldp`).
+
+### Per-architecture inline asm summary
+
+After calibration, the remaining inline asm per architecture:
+
+| Architecture | Inline asm macros needed |
+|-------------|------------------------|
+| ARM64 | `test_tos` only (1 macro, 4 bytes) |
+| x86-64 | `test_tos`, `drop_tos`, `drop_nos`, `2drop` (4 macros) |
+
+Compare with exp 009, which required 8 inline asm macros on both.
+
+### The test_tos problem
+
+`test_tos` is the one operation that CAN'T be expressed in C.  Its
+job is "set CPU flags based on TOS, change nothing else."  In C:
+- `(void)(tos == 0)` — GCC optimizes away a dead comparison
+- `return tos == 0` — returns a value (different interface)
+- `tos | 0` — might be optimized to nothing
+
+There's no way to tell C "I want the side effect of setting flags
+without any other effect."  This is inherently a machine-level
+concept.  `test_tos` stays as inline asm on all architectures.
+
+### Key insight
+
+The calibration eliminates the assumption that "all architectures
+need inline asm for stack ops."  Instead, each architecture PROVES
+what it needs at runtime.  ARM64 proves it needs almost nothing.
+x86-64 proves it needs asm for the incrementing cases.  A future
+RISC-V port would auto-discover its own requirements without any
+changes to the calibration code.
+
+38/38 tests on x86-64.  38/38 tests on ARM64.  Same source.
