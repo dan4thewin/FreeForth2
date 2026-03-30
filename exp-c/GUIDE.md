@@ -340,8 +340,12 @@ value 0- 0= drop IF ... THEN
    (skip body when condition is false).
 
 The flags from step 1 survive through step 3 because drop never
-uses ADD.  This is the same mechanism as the original FreeForth —
-Lavarenne used LEA for the same reason.
+uses ADD.  The original i386 FreeForth used a different trick:
+`xchg eax,esp` to swap the data stack pointer into ESP, then
+hardware `push`/`pop` (which are also flags-preserving), then
+`xchg eax,esp` back.  The ff64 port uses `lea r15,[r15±8]`
+instead, which achieves the same flag preservation without the
+pointer-swapping dance.
 
 ### ARM64 ALU Ops Don't Set Flags
 
