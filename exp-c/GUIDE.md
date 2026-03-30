@@ -548,27 +548,33 @@ decrement.
 
 ### Impact on porting cost
 
-| Architecture | Inline asm macros needed |
-|-------------|------------------------|
-| ARM64 | 1 (`test_tos`) |
-| x86-64 | 4 (`test_tos`, `drop_tos`, `drop_nos`, `2drop`) |
+| Architecture | Inline asm macros selected |
+|-------------|--------------------------|
+| ARM64 | **none** (0 of 8) |
+| x86-64 | 3 of 8 (`drop_tos`, `drop_nos`, `2drop`) |
 
 Compare with the 8 macros per architecture required before
 calibration.  The C-compiled equivalents are provided as
 CANDIDATES; the calibration selects them when safe.  The inline
 asm versions exist as fallbacks and are always available.
 
-### Why test_tos can't be C
+### test_tos from C sacrifice
 
-`test_tos` sets CPU flags based on TOS without any other effect.
-C can't express this:
-- `(void)(tos == 0)` — dead code, optimized away
-- `return tos == 0` — returns a value (wrong interface)
-- `tos | 0` — might be optimized to nothing
+Initially we thought `test_tos` ("set flags, change nothing")
+couldn't be expressed in C.  But it uses the same sacrifice
+pattern as ALU ops:
 
-Setting flags without side effects is inherently machine-level.
-`test_tos` (`test %rbx,%rbx` / `tst x19,x19`) stays as the one
-mandatory inline asm macro on all architectures.
+```c
+long c_test_tos_s(void) { return tos == 0; }
+```
+
+GCC emits TEST/TST + SETE/CSET.  We extract just the TEST/TST
+(3 bytes on x86-64, 4 bytes on ARM64) and trim the return-value
+suffix — same technique as CMP extraction.
+
+Both architectures pass calibration.  ARM64 selects C for all 8
+macros.  x86-64's C version is actually smaller (3 bytes vs 7 for
+the asm wrapper).
 
 **See:** `exp-c/010-auto-stack-ops/minicompiler.c` — lines 835–907
 (calibration function), lines 1050–1085 (calibration in init).
@@ -589,9 +595,10 @@ Adding a new architecture requires:
 4. **~8 inline asm macros** — `drop_tos`, `drop_nos`, `push_nos`,
    `dup`, `swap`, `test_tos`, `over`, `2drop`.  These are the
    flags-preserving stack operations specific to each architecture.
-   However, the calibration may eliminate most of them at runtime —
-   ARM64 needed only `test_tos`.  Providing all 8 as fallbacks is
-   still recommended for any new port.
+   However, the calibration may eliminate ALL of them at runtime —
+   ARM64 needed none.  Providing all 8 as fallbacks is still
+   recommended for any new port, but the C-compiled versions may
+   suffice.
 
 5. **~5 branch emission functions** — `emit_call`, `emit_load_imm`,
    `emit_cond_forward`, `emit_cond_backward`, `patch_forward_branch`.

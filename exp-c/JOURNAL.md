@@ -806,30 +806,46 @@ After calibration, the remaining inline asm per architecture:
 
 | Architecture | Inline asm macros needed |
 |-------------|------------------------|
-| ARM64 | `test_tos` only (1 macro, 4 bytes) |
-| x86-64 | `test_tos`, `drop_tos`, `drop_nos`, `2drop` (4 macros) |
+| ARM64 | **none** |
+| x86-64 | `drop_tos`, `drop_nos`, `2drop` (3 macros) |
 
 Compare with exp 009, which required 8 inline asm macros on both.
 
-### The test_tos problem
+### test_tos: not special after all
 
-`test_tos` is the one operation that CAN'T be expressed in C.  Its
-job is "set CPU flags based on TOS, change nothing else."  In C:
-- `(void)(tos == 0)` — GCC optimizes away a dead comparison
-- `return tos == 0` — returns a value (different interface)
-- `tos | 0` — might be optimized to nothing
+Initially we said `test_tos` couldn't be expressed in C.  DG
+challenged this: "what about a different sacrifice — say an if/else
+that modified a throwaway register?"
 
-There's no way to tell C "I want the side effect of setting flags
-without any other effect."  This is inherently a machine-level
-concept.  `test_tos` stays as inline asm on all architectures.
+This is exactly the same sacrifice pattern as the ALU ops.  Write:
+
+```c
+long c_test_tos_s(void) { return tos == 0; }
+```
+
+GCC emits TEST/TST (to evaluate the condition) + SETE/CSET (to
+produce the return value).  We extract just the TEST/TST bytes
+and trim the SETE/CSET suffix — the same extraction technique
+used for CMP.
+
+Results:
+- **ARM64:** `tst x19, x19` — 4 bytes (identical to hand-written)
+- **x86-64:** `test %rbx, %rbx` — 3 bytes (SMALLER than the 7-byte
+  asm wrapper, which includes function overhead)
+
+Both pass calibration.  The "test_tos is inherently machine-level"
+claim was wrong — the sacrifice pattern handles it identically
+to ALU ops.  With this fix, ARM64 selects C for ALL 8 macros.
+Zero inline asm selected.
 
 ### Key insight
 
 The calibration eliminates the assumption that "all architectures
 need inline asm for stack ops."  Instead, each architecture PROVES
-what it needs at runtime.  ARM64 proves it needs almost nothing.
-x86-64 proves it needs asm for the incrementing cases.  A future
-RISC-V port would auto-discover its own requirements without any
-changes to the calibration code.
+what it needs at runtime.  ARM64 proves it needs nothing.
+x86-64 proves it needs asm for the three incrementing cases
+(where GCC uses ADD instead of LEA).  A future RISC-V port would
+auto-discover its own requirements without any changes to the
+calibration code.
 
 38/38 tests on x86-64.  38/38 tests on ARM64.  Same source.

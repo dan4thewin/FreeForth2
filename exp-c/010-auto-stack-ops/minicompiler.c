@@ -18,8 +18,12 @@
  * S suffix, LDR/STR post-indexed, MOV — none set flags).
  * On x86-64, dsp++ compiles to ADD which clobbers flags.
  *
- * Result: ARM64 needs near-zero inline asm.  x86-64 keeps asm
- * for stack ops.  Future architectures auto-detect.
+ * test_tos uses the same sacrifice pattern as ALU ops:
+ *     long c_test_tos_s(void) { return tos == 0; }
+ * GCC emits TEST/TST + SETE/CSET.  We extract just the TEST/TST.
+ *
+ * Result: ARM64 needs zero inline asm.  x86-64 keeps asm where
+ * GCC clobbers flags.  Future architectures auto-detect.
  */
 
 #include <stdio.h>
@@ -428,6 +432,12 @@ void __attribute__((noinline)) c_2drop(void)
 	dsp += 2;
 }
 
+/* test_tos: same sacrifice pattern as ALU ops.  GCC emits
+ * TEST/TST to evaluate the condition, SETE/CSET for the return.
+ * We extract the TEST/TST and trim the return-value suffix. */
+long __attribute__((noinline)) c_test_tos_s(void) { return tos == 0; }
+void __attribute__((noinline)) c_test_tos_end(void) { asm volatile("nop"); }
+
 void __attribute__((noinline)) c_end(void) { asm volatile("nop"); }
 
 /* ================================================================
@@ -739,6 +749,55 @@ static int extract_cmp(void *func, void *next, fragment *out,
 	return 0;
 }
 
+/*
+ * test_tos from C sacrifice: `return tos == 0`.
+ * Same idea as CMP extraction — trim the return-value suffix.
+ *
+ * GCC emits:
+ *   ARM64: TST x19, x19 / CSET x0, eq  → trim CSET (4 bytes)
+ *   x86-64: [xorl %eax,%eax /] test %rbx,%rbx / sete %al
+ *           → find TEST opcode (48 85 DB), extract 3 bytes
+ */
+static int extract_test_tos(fragment *out)
+{
+	fragment raw;
+	if (extract_one((void *)c_test_tos_s, (void *)c_test_tos_end,
+	                &raw) != 0) {
+		fprintf(stderr, "extract: no RET in c_test_tos\n");
+		return -1;
+	}
+
+#if defined(__aarch64__)
+	if (raw.len >= 4) {
+		out->code = raw.code;
+		out->len  = raw.len - 4;  /* trim CSET */
+	}
+	else {
+		*out = raw;
+	}
+#elif defined(__x86_64__)
+	/*
+	 * test %rbx, %rbx = 48 85 DB (REX.W + TEST + ModRM)
+	 * Find this sequence and extract 3 bytes.
+	 */
+	int found = 0;
+	for (size_t i = 0; i + 2 < raw.len; i++) {
+		if (raw.code[i] == 0x48 && raw.code[i+1] == 0x85 &&
+		    raw.code[i+2] == 0xDB) {
+			out->code = raw.code + i;
+			out->len  = 3;
+			found = 1;
+			break;
+		}
+	}
+	if (!found) {
+		/* Fallback: use raw */
+		*out = raw;
+	}
+#endif
+	return 0;
+}
+
 /* Macro extraction — straightforward, no sacrifice needed */
 static int discover_macros(func_info *table, fragment *out, int count)
 {
@@ -1027,10 +1086,11 @@ static int init(void)
 		return -1;
 
 	/* ---- Extract C-compiled stack ops ---- */
-	/* Skip test_tos (index MAC_TEST_TOS) — always asm */
 	for (int i = 0; i < MAC_COUNT; i++) {
 		if (i == MAC_TEST_TOS) {
-			c_mac[i] = asm_mac[i]; /* no C candidate */
+			/* test_tos uses sacrifice extraction (like CMP) */
+			if (extract_test_tos(&c_mac[i]) != 0)
+				c_mac[i] = asm_mac[i];
 			continue;
 		}
 		if (extract_one((void *)c_macro_table[i].func,
@@ -1049,13 +1109,56 @@ static int init(void)
 	}
 
 	/* ---- Flag-preservation calibration ---- */
-	printf("\nStack op calibration (flag preservation):\n");
+	printf("\nStack op calibration:\n");
 	for (int i = 0; i < MAC_COUNT; i++) {
 		if (i == MAC_TEST_TOS) {
-			mac[i] = asm_mac[i];
-			mac_source[i] = "asm (always)";
-			printf("  %-10s → asm (always — sets flags, no C equivalent)\n",
-			       macro_table[i].name);
+			/*
+			 * test_tos SETS flags — different calibration.
+			 * Compose: c_test_tos + JZ + load_42 + epilogue
+			 * Test A: TOS=0 → ZF=1 → JZ taken → TOS stays 0
+			 * Test B: TOS=5 → ZF=0 → JZ not taken → TOS=42
+			 */
+			size_t save = here;
+			emit_bytes(prologue_buf, prologue_len);
+			emit_bytes(c_mac[MAC_TEST_TOS].code,
+			           c_mac[MAC_TEST_TOS].len);
+			size_t patch = emit_cond_forward(codebuf_w,
+			                                 &here, JCC_EQ);
+			emit_load_imm(codebuf_w, &here, 42);
+			patch_forward_branch(codebuf_w, patch, here);
+			emit_bytes(epilogue_buf, epilogue_len);
+
+			jit_exec_mode();
+
+			/* Test A: TOS=0 → should stay 0 */
+			dsp = &data_stack[DATA_STACK_SZ / 2];
+			tos = 0; nos = 777;
+			((void (*)(void))(codebuf_x + save))();
+			long ra = tos;
+
+			/* Test B: TOS=5 → should become 42 */
+			dsp = &data_stack[DATA_STACK_SZ / 2];
+			tos = 5; nos = 777;
+			((void (*)(void))(codebuf_x + save))();
+			long rb = tos;
+
+			jit_write_mode();
+			here = save;
+
+			int ok = (ra == 0 && rb == 42);
+			if (ok) {
+				mac[i] = c_mac[i];
+				mac_source[i] = "C";
+			} else {
+				mac[i] = asm_mac[i];
+				mac_source[i] = "asm";
+			}
+			printf("  %-10s C=%2zu bytes  asm=%2zu bytes → %s%s\n",
+			       macro_table[i].name,
+			       c_mac[i].len, asm_mac[i].len,
+			       mac_source[i],
+			       ok ? " (sets flags correctly)"
+			          : " (flags incorrect)");
 			continue;
 		}
 
