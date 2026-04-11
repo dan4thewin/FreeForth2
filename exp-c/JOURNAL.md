@@ -942,3 +942,80 @@ specific ops that failed.  No speculative asm.  No `#ifdef` forest.
 38/38 tests passed on x86-64.
 
 **Files**: exp-c/011-c-default/{Makefile,minicompiler.c,overrides_x86_64.h}
+
+## Experiment 012 — Full Flow Control
+
+**Goal**: Complete the flow control vocabulary: ELSE, WHILE, REPEAT,
+AGAIN, BREAK, END, ;THEN — bringing the mini-compiler to parity with
+FreeForth's core control structures.
+
+### What was added
+
+| Word | Semantics |
+|------|-----------|
+| ELSE | Forward jump from IF body, patch IF, push new forward ref |
+| ;THEN | Emit epilogue (early return), patch IF forward ref |
+| WHILE | Conditional forward branch inside BEGIN loop |
+| REPEAT | Unconditional backward jump to BEGIN + resolve forwards |
+| AGAIN | Unconditional backward jump to BEGIN (continue, no close) |
+| BREAK | Unconditional forward jump, resolved by REPEAT/END |
+| END | Resolve forwards (no backward jump) |
+
+### Bugs found and fixed
+
+**1. WHILE/REPEAT ordering (infinite loop).**  The initial code did
+`resolve_whiles(); pop BEGIN; emit_backward_jump();` — which patches
+WHILE forward refs to land at the backward jump instruction, not
+after it.  When WHILE's condition fails, execution lands on the
+backward jump and loops forever.  Fix: emit the backward jump FIRST,
+then resolve forwards to land after it.
+
+**2. BREAK/WHILE interleaving on flow stack.**  BREAK pushes
+`FLOW_BREAK` entries that interleave with `FLOW_WHILE` and
+`FLOW_SENTINEL` entries.  The original `resolve_whiles()` only
+popped `FLOW_WHILE`, so a BREAK entry blocked it from reaching the
+sentinel.  Fix: unified `resolve_loop_forwards()` that pops both
+WHILE and BREAK entries, patching each appropriately, until it hits
+the sentinel.
+
+### Flow stack design
+
+Tagged entries (tag + code offset):
+
+- `FLOW_IF` — forward ref from IF (patched by THEN/ELSE)
+- `FLOW_BEGIN` — loop origin (jumped to by REPEAT/AGAIN/UNTIL)
+- `FLOW_SENTINEL` — marks boundary between loop-internal refs and outer context
+- `FLOW_WHILE` — conditional forward ref (patched to land after loop)
+- `FLOW_BREAK` — unconditional forward ref (patched to land after loop)
+
+BEGIN pushes `[BEGIN, SENTINEL]`.  WHILE and BREAK push above the
+sentinel.  REPEAT/UNTIL/END find BEGIN by scanning down past
+everything above it.  `resolve_loop_forwards()` pops and patches
+everything above the sentinel, then pops the sentinel itself.
+
+For AGAIN (continue), the BEGIN address is found by scanning without
+popping — the loop isn't being closed.  If preceded by IF (the
+`IF AGAIN` pattern), the IF is resolved to land after the AGAIN.
+
+### Test suite
+
+39 tests across 12 sections:
+
+| Section | Tests | What |
+|---------|-------|------|
+| A | 9 | Arithmetic (sanity) |
+| B | 4 | IF/THEN |
+| C | 4 | IF/ELSE/THEN |
+| D | 5 | ;THEN (early return, multiple) |
+| E | 3 | BEGIN/UNTIL |
+| F | 3 | BEGIN/WHILE/REPEAT |
+| G | 2 | AGAIN (continue, skip odd) |
+| H | 3 | BREAK (from REPEAT and UNTIL loops) |
+| I | 1 | END (no backward jump) |
+| J | 1 | Multiple WHILE |
+| K | 1 | Nested loops |
+| L | 3 | Flags through composed words |
+
+39/39 passed on x86-64.
+
+**Files**: exp-c/012-flow-control/{Makefile,minicompiler.c,overrides_x86_64.h}

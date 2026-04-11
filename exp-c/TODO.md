@@ -54,6 +54,12 @@
   - x86-64: 5/8 ops pure C, 3 need asm override (ADD clobbers flags)
   - Without overrides file: exactly 3 clear FATAL errors naming ops to fix
   - 38/38 tests on x86-64
+- **exp-012**: Full flow control ✓
+  - ELSE, ;THEN, WHILE, REPEAT, AGAIN, BREAK, END
+  - Tagged flow stack (IF, BEGIN, SENTINEL, WHILE, BREAK)
+  - Bug fix: emit backward jump before resolving forwards
+  - Bug fix: unified resolve_loop_forwards() handles interleaved BREAK/WHILE
+  - 39/39 tests on x86-64
   - Decomposed: C ALU ops + inline asm stack macros (LEA on x86-64)
   - FLAGS survive through drop — FreeForth's model restored
   - 0= / 0<> are compile-time Jcc selectors (no runtime code)

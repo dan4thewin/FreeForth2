@@ -63,3 +63,4 @@ exp/*/forthmacros64
 exp/*/moremacros64
 exp-c/011-c-default/minicompiler_noasm
 exp-c/011-c-default/minicompiler
+exp-c/012-flow-control/minicompiler
