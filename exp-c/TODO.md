@@ -2,7 +2,9 @@
 
 ## Active
 
-- Next experiment TBD (full flow control: ELSE, WHILE/REPEAT, BREAK, CASE?)
+- Next experiment TBD (full flow control: ELSE, WHILE/REPEAT, BREAK, CASE?
+  Now that asm-optional is established, flow control can be built on
+  the same C-default principle.)
 - Investigate non-fusing ops (OR, XOR, NEG) + 0</0> on ARM64:
   for non-fusing ops, the sacrifice adds a separate CMP that tests
   the *original* TOS, not the result.  0= and 0<> work (they only
@@ -38,6 +40,20 @@
   - ~20 lines per-arch for branch emission + C reference functions
   - 12/12 tests on x86-64 and ARM64
 - **exp-008**: FLAGS-based flow control ✓
+- **exp-009**: Sacrificial compare + full comparator×selector matrix ✓
+- **exp-010**: Auto-calibrating stack operations ✓
+  - Runtime flag-preservation calibration selects C or asm per op
+  - ARM64: zero inline asm selected.  x86-64: 3 asm ops (dsp++ cases)
+  - test_tos from C sacrifice — zero asm on ARM64
+  - 38/38 tests on both architectures, same source
+- **exp-011**: C-default, asm-optional ✓
+  - Principle: C is default, asm is escape hatch
+  - Zero inline asm in main file stack ops
+  - Asm overrides via `__has_include("overrides_<arch>.h")`
+  - Calibration failure without override → hard error with diagnostic
+  - x86-64: 5/8 ops pure C, 3 need asm override (ADD clobbers flags)
+  - Without overrides file: exactly 3 clear FATAL errors naming ops to fix
+  - 38/38 tests on x86-64
   - Decomposed: C ALU ops + inline asm stack macros (LEA on x86-64)
   - FLAGS survive through drop — FreeForth's model restored
   - 0= / 0<> are compile-time Jcc selectors (no runtime code)

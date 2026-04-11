@@ -61,3 +61,5 @@ exp/*/litcomma64
 exp/*/backtick64
 exp/*/forthmacros64
 exp/*/moremacros64
+exp-c/011-c-default/minicompiler_noasm
+exp-c/011-c-default/minicompiler

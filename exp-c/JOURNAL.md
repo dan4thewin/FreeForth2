@@ -849,3 +849,96 @@ auto-discover its own requirements without any changes to the
 calibration code.
 
 38/38 tests on x86-64.  38/38 tests on ARM64.  Same source.
+
+## Experiment 011 — C-default, asm-optional
+
+**Goal**: Establish the principle that C is the default and asm is the
+escape hatch.  A new port starts with zero asm.  Calibration discovers
+what (if anything) needs asm overrides.
+
+### What changed from exp 010
+
+Exp 010 required every port to provide **both** C and inline asm
+versions of all 8 stack macros.  The calibration chose between them,
+but both had to exist.  This meant every new architecture needed
+`#ifdef` blocks with hand-written inline asm — exactly the portability
+tax we're trying to eliminate.
+
+Exp 011 inverts the structure:
+
+1. **C functions are the only source.**  `c_drop_tos`, `c_push_nos`,
+   etc. are architecture-neutral C code.  No inline asm anywhere in
+   the main file's stack operations.
+
+2. **Asm overrides are optional, per-architecture.**  If
+   `overrides_x86_64.h` exists (detected via `__has_include`), it's
+   pulled in.  If it doesn't exist, there are no overrides — C must
+   work for everything.
+
+3. **Calibration gates the build.**  For each stack op, the calibration
+   tests the C version.  If flags are preserved → use C.  If not →
+   look for an asm override.  If neither exists → hard error with a
+   clear diagnostic naming the exact op and the file to create.
+
+4. **test_tos uses C sacrifice on all architectures.**  The exp 010
+   claim that "test_tos is inherently machine-level" was already
+   disproved in that experiment.  Now there's no asm version at all —
+   the C sacrifice `return tos == 0` produces correct flag-setting
+   code on both x86-64 and ARM64.
+
+### Results on x86-64
+
+Calibration selects:
+
+| Stack op   | Source | Bytes | Why |
+|-----------|--------|-------|-----|
+| drop_tos  | asm    | 14    | C uses ADD (clobbers flags) |
+| drop_nos  | asm    | 11    | C uses ADD (clobbers flags) |
+| push_nos  | C      | 15    | LEA (preserves flags) |
+| dup       | C      | 18    | LEA (preserves flags) |
+| swap      | C      | 13    | MOV only (preserves flags) |
+| test_tos  | C      | 3     | sacrifice → TEST (sets flags) |
+| over      | C      | 24    | LEA (preserves flags) |
+| 2drop     | asm    | 15    | C uses ADD (clobbers flags) |
+
+5 of 8 ops are pure C.  3 need asm overrides, all for the same reason
+(GCC uses ADD instead of LEA for `dsp++`).
+
+### Without overrides (simulating a new port)
+
+Removing `overrides_x86_64.h` produces exactly 3 hard errors:
+
+```
+FATAL: C version of 'drop_tos' clobbers flags, but no asm override found for x86_64.
+  Create overrides_x86_64.h with an asm version of 'drop_tos'.
+FATAL: C version of 'drop_nos' clobbers flags, but no asm override found for x86_64.
+  Create overrides_x86_64.h with an asm version of 'drop_nos'.
+FATAL: C version of '2drop' clobbers flags, but no asm override found for x86_64.
+  Create overrides_x86_64.h with an asm version of '2drop'.
+```
+
+A new porter sees exactly what to fix.  On ARM64, where C produces
+flag-preserving code for all ops, no overrides file is needed at all.
+
+### Code structure
+
+```
+011-c-default/
+  minicompiler.c        — 1648 lines.  Zero inline asm in stack ops.
+  overrides_x86_64.h    — 110 lines.  3 ops that need asm on x86-64.
+  Makefile
+```
+
+The overrides file is `#include`d via `__has_include`.  The main file
+compiles and runs on any architecture — it just fails at calibration
+time if the C output doesn't work and no override exists.
+
+### Key insight
+
+The barrier to a new port is: define register assignments, compile,
+run.  If calibration passes, you're done.  If not, write asm for the
+specific ops that failed.  No speculative asm.  No `#ifdef` forest.
+
+38/38 tests passed on x86-64.
+
+**Files**: exp-c/011-c-default/{Makefile,minicompiler.c,overrides_x86_64.h}
