@@ -460,6 +460,7 @@ static size_t def_start = 0;
 
 enum {
 	FLOW_IF,
+	FLOW_UNCOND,    /* unconditional forward ref (ELSE jump) */
 	FLOW_BEGIN,
 	FLOW_SENTINEL,
 	FLOW_WHILE,
@@ -1146,7 +1147,10 @@ static void process_word(const char *word)
 	if (strcmp(word, "THEN") == 0) {
 		if (!compiling || flow_sp == 0) return;
 		flow_entry e = flow_pop();
-		patch_forward_branch(codebuf_w, e.value, here);
+		if (e.tag == FLOW_UNCOND)
+			patch_uncond_forward(codebuf_w, e.value, here);
+		else
+			patch_forward_branch(codebuf_w, e.value, here);
 		return;
 	}
 
@@ -1157,8 +1161,8 @@ static void process_word(const char *word)
 		/* Patch the IF to land here (start of ELSE body) */
 		flow_entry if_entry = flow_pop();
 		patch_forward_branch(codebuf_w, if_entry.value, here);
-		/* Push ELSE's forward ref as a new IF (resolved by THEN) */
-		flow_push(FLOW_IF, else_patch);
+		/* Push ELSE's forward ref — unconditional, resolved by THEN */
+		flow_push(FLOW_UNCOND, else_patch);
 		return;
 	}
 
