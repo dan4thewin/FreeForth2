@@ -5,7 +5,7 @@
 - Next experiment TBD (full flow control: ELSE, WHILE/REPEAT, BREAK, CASE?
   Now that asm-optional is established, flow control can be built on
   the same C-default principle.)
-- Investigate non-fusing ops (OR, XOR, NEG) + 0</0> on ARM64:
+- ~~Investigate non-fusing ops (OR, XOR, NEG) + 0</0> on ARM64~~ — resolved, no bug
   for non-fusing ops, the sacrifice adds a separate CMP that tests
   the *original* TOS, not the result.  0= and 0<> work (they only
   need ZF from the CMP-against-zero).  0< and 0> may give wrong

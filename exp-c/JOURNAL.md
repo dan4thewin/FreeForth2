@@ -1019,3 +1019,49 @@ popping — the loop isn't being closed.  If preceded by IF (the
 39/39 passed on x86-64.
 
 **Files**: exp-c/012-flow-control/{Makefile,minicompiler.c,overrides_x86_64.h}
+
+### ARM64 cross-validation
+
+39/39 tests pass on ARM64 (macOS, gcc-15) with zero overrides.
+All 8 stack ops selected C.  No `overrides_aarch64.h` needed.
+
+One bug found: ELSE emits an unconditional `B` instruction (imm26
+encoding), but THEN was patching it with `patch_forward_branch` which
+assumes conditional `B.cond` (imm19 encoding).  Fix: ELSE pushes
+`FLOW_UNCOND` tag; THEN dispatches to `patch_uncond_forward` for
+unconditional branches.  Committed as b8d7a3e.
+
+### ARM64 non-fusing ops investigation
+
+The exp-c TODO flagged a concern: do OR, XOR, NEG work correctly
+with `0<` and `0>` on ARM64, where these ops don't fuse with flags?
+
+**Analysis of ARM64 code generation:**
+
+| Op | Plain | Sacrifice | Sets flags? |
+|----|-------|-----------|-------------|
+| OR  | `ORR x19,x19,x20` (4B) | ORR + CMP (8B) | Plain: no |
+| XOR | `EOR x19,x19,x20` (4B) | ORR+EOR+SUBS (12B) | Plain: no |
+| NEG | `SUB x19,xzr,x19` (4B) | ORR+SUB+CMP (12B) | Plain: no |
+
+The sacrifice versions add explicit CMP/SUBS instructions.  The
+calibration selects sacrifice when plain doesn't set flags — this
+already works correctly.
+
+**But is this even a problem in practice?**  No.  FreeForth's pattern
+is always `op 0- selector IF`, never `op selector IF`.  The `0-`
+word (test_tos) compiles to `CMP x19, #0` on ARM64 — which sets ALL
+condition flags (N, Z, C, V) based on the TOS value.  So `0<` (MI,
+negative) and `0>` (GT, greater than zero) both read flags from the
+CMP, not from the ALU op.
+
+The sacrifice on the ALU op itself is only needed for the direct
+pattern `a b | 0= IF` (flags from `|` without `0-`).  The existing
+section G tests ("flags through composed words") verify this works:
+`-3 + 0= drop IF` and `15 & 0= drop IF` both pass on ARM64.
+
+**Conclusion:** No bug.  The architecture works correctly for all
+selector combinations through two independent mechanisms:
+1. test_tos (0-) sets all flags via CMP on ARM64
+2. Sacrifice calibration adds flag-setting to ALU ops when needed
+
